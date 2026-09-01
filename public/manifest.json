@@ -1,0 +1,21 @@
+{
+  "name": "Aurora — AI Chat",
+  "short_name": "Aurora",
+  "description": "Private, offline-first AI chat. On-device models or your own API keys.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090C",
+  "theme_color": "#7C6CFF",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "48x48", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    { "src": "/icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
