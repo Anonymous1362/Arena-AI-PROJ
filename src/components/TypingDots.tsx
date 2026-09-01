@@ -29,10 +29,15 @@ function Dot({ index, color }: { index: number; color: string }) {
 }
 
 /** Animated thinking indicator used while the first token is pending. */
-export function TypingDots() {
+export function TypingDots({ label }: { label?: string }) {
   const { colors } = useTheme();
   return (
     <View style={styles.row}>
+      {label ? (
+        <Text numberOfLines={1} style={[styles.label, { color: colors.textSub }]}>
+          {label}
+        </Text>
+      ) : null}
       <Dot index={0} color={colors.accent} />
       <Dot index={1} color={colors.accent} />
       <Dot index={2} color={colors.accent} />
@@ -43,4 +48,5 @@ export function TypingDots() {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4 },
   dot: { width: 7, height: 7, borderRadius: 4 },
+  label: { fontSize: 13, fontWeight: '600', marginRight: 4 },
 });

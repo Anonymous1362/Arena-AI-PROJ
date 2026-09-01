@@ -5,11 +5,13 @@
  * no network, no server, no account. Only one model stays loaded at a time;
  * switching models releases the previous context.
  */
+import { AppState } from 'react-native';
 import { initLlama, releaseAllLlama } from 'llama.rn';
 import type { EngineRequest, EngineResult } from '@/src/ai/types';
 import type { LocalModelRecord } from '@/src/store/settings';
 import { catalogById, fallbackChatTemplate } from '@/src/ai/local/catalog';
 import { StreamAssembler } from '@/src/ai/assembler';
+import { useEngineStatus } from '@/src/ai/engineStatus';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -49,14 +51,22 @@ export async function unloadLocal(): Promise<void> {
 /** Load a GGUF file into a llama.cpp context (swaps out any previous model). */
 export async function ensureLocalModel(record: LocalModelRecord, contextSize: number): Promise<void> {
   if (loaded?.id === record.id) return;
+  const status = useEngineStatus.getState();
+  status.set('loading', record.name);
   await unloadLocal();
-  const ctx: RawContext = await initLlama({
-    model: record.fileUri,
-    n_ctx: Math.max(512, Math.min(16384, contextSize)),
-    n_batch: 512,
-    use_mlock: true,
-  } as any);
-  loaded = { id: record.id, ctx };
+  try {
+    const ctx: RawContext = await initLlama({
+      model: record.fileUri,
+      n_ctx: Math.max(512, Math.min(16384, contextSize)),
+      n_batch: 512,
+      use_mlock: true,
+    } as any);
+    loaded = { id: record.id, ctx };
+    status.set('ready', record.name);
+  } catch (e) {
+    status.set('error', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
 }
 
 export function cancelLocal(): void {
@@ -65,6 +75,25 @@ export function cancelLocal(): void {
   } catch {
     /* noop */
   }
+}
+
+/* ------------------------- background memory release ------------------------ */
+
+let generating = false;
+let lifecycleHooked = false;
+
+/**
+ * Release the llama.cpp context when the app is backgrounded (native RAM is
+ * precious and iOS may jetsam us). Never mid-generation.
+ */
+export function setupLifecycle(): void {
+  if (lifecycleHooked) return;
+  lifecycleHooked = true;
+  AppState.addEventListener('change', (state) => {
+    if (state === 'background' && !generating) {
+      unloadLocal().finally(() => useEngineStatus.getState().set('idle'));
+    }
+  });
 }
 
 async function buildPrompt(ctx: RawContext, messages: any[], family: any): Promise<string> {
@@ -94,43 +123,48 @@ export async function runLocal(
 
   const prompt = await buildPrompt(ctx, req.messages, cat?.family ?? 'qwen');
 
-  // Same reasoning-aware assembly as remote: splits <think>…</think> and
-  // throttles UI updates so token streaming stays at 60/120fps.
-  const assembler = new StreamAssembler({
-    throttleMs: 80,
-    onUpdate: (content, reasoning) => {
-      req.handlers.onContent?.(content);
-      if (reasoning) req.handlers.onReasoning?.(reasoning);
-    },
-  });
+  generating = true;
+  try {
+    // Same reasoning-aware assembly as remote: splits <think>…</think> and
+    // throttles UI updates so token streaming stays at 60/120fps.
+    const assembler = new StreamAssembler({
+      throttleMs: 80,
+      onUpdate: (content, reasoning) => {
+        req.handlers.onContent?.(content);
+        if (reasoning) req.handlers.onReasoning?.(reasoning);
+      },
+    });
 
-  const result = await ctx.completion({
-    prompt,
-    n_predict: req.params.maxTokens,
-    temperature: req.params.temperature,
-    top_p: req.params.topP,
-    penalize_nl: false,
-    stop: ['<|im_end|>', '<|eot_id|>', '<end_of_turn>', '<|end|>', '</s>'],
-    onText: (token: { text?: string }) => {
-      if (token?.text) assembler.feed(token.text);
-    },
-  });
+    const result = await ctx.completion({
+      prompt,
+      n_predict: req.params.maxTokens,
+      temperature: req.params.temperature,
+      top_p: req.params.topP,
+      penalize_nl: false,
+      stop: ['<|im_end|>', '<|eot_id|>', '<end_of_turn>', '<|end|>', '</s>'],
+      onText: (token: { text?: string }) => {
+        if (token?.text) assembler.feed(token.text);
+      },
+    });
 
-  const final = assembler.flush();
-  const raw: string = result?.text ?? '';
-  // Prefer llama.cpp's own accumulated text when it diverges (e.g. stops).
-  const content = raw && !final.content ? raw : final.content || raw;
-  const tps: number | undefined = result?.timings?.predicted_per_second;
+    const final = assembler.flush();
+    const raw: string = result?.text ?? '';
+    // Prefer llama.cpp's own accumulated text when it diverges (e.g. stops).
+    const content = raw && !final.content ? raw : final.content || raw;
+    const tps: number | undefined = result?.timings?.predicted_per_second;
 
-  const out: EngineResult = {
-    content,
-    reasoning: final.reasoning || undefined,
-    tokensOut: result?.timings?.predicted_n ?? undefined,
-    ms: Date.now() - started,
-    tps: tps && Number.isFinite(tps) ? tps : undefined,
-  };
-  req.handlers.onContent?.(out.content);
-  if (out.reasoning) req.handlers.onReasoning?.(out.reasoning);
-  req.handlers.onDone?.(out);
-  return out;
+    const out: EngineResult = {
+      content,
+      reasoning: final.reasoning || undefined,
+      tokensOut: result?.timings?.predicted_n ?? undefined,
+      ms: Date.now() - started,
+      tps: tps && Number.isFinite(tps) ? tps : undefined,
+    };
+    req.handlers.onContent?.(out.content);
+    if (out.reasoning) req.handlers.onReasoning?.(out.reasoning);
+    req.handlers.onDone?.(out);
+    return out;
+  } finally {
+    generating = false;
+  }
 }

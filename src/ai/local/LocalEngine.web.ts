@@ -31,6 +31,10 @@ export function cancelLocal(): void {
   /* noop */
 }
 
+export function setupLifecycle(): void {
+  /* noop on web */
+}
+
 export async function runLocal(_record: LocalModelRecord, _req: EngineRequest): Promise<EngineResult> {
   throw new EngineUnavailableError(
     'On-device models are available in the iOS & Android app. On the web, connect an OpenAI-compatible API instead.'

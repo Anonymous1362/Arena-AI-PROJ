@@ -5,6 +5,8 @@ import { useSettingsStore } from '@/src/store/settings';
 import { runGeneration, cancelLocal, describeModel } from '@/src/ai/engine';
 import { streamRemoteChat } from '@/src/ai/remote';
 import { resolveRemoteTarget, buildWireMessages } from '@/src/ai/engine';
+
+export { setupLifecycle } from '@/src/ai/engine';
 import { haptics } from '@/src/utils/haptics';
 import { truncate } from '@/src/utils/format';
 
@@ -199,11 +201,33 @@ export function consumeNoModel(convId: string): boolean {
 /* --------------------------------- helpers ---------------------------------- */
 
 function friendlyError(err: Error): string {
-  const msg = err?.message ?? 'Something went wrong.';
-  if (msg.includes('Network request failed') || msg.includes('fetch') || msg.includes('connect')) {
-    return 'Couldn’t reach the server. Check your connection, base URL, and that the server allows this device.';
+  const raw = err?.message ?? 'Something went wrong.';
+  const m = raw.toLowerCase();
+  if (m.includes('401') || m.includes('unauthorized')) {
+    return 'API key rejected (401). Check the key in Settings → API providers.';
   }
-  return msg;
+  if (m.includes('402') || m.includes('insufficient') || m.includes('credit')) {
+    return 'This endpoint says you’re out of credits (402). Top up or switch provider.';
+  }
+  if (m.includes('403') || m.includes('forbidden')) {
+    return 'Access denied (403). Your key may not have access to this model.';
+  }
+  if (m.includes('404') || m.includes('not found')) {
+    return 'Not found (404). Check the base URL and the model name.';
+  }
+  if (m.includes('429') || m.includes('rate limit') || m.includes('quota')) {
+    return 'Rate limited or quota exceeded (429). Wait a moment or check your plan.';
+  }
+  if (m.includes('502') || m.includes('503') || m.includes('bad gateway') || m.includes('server error')) {
+    return 'The provider had a server error. Try again shortly.';
+  }
+  if (m.includes('timed out') || m.includes('timeout')) {
+    return 'The server took too long to respond. Try again, or pick a faster model.';
+  }
+  if (m.includes('network') || m.includes('connect') || m.includes('dns') || m.includes('resolve')) {
+    return 'Network error. Check internet/DNS — for LAN servers (Ollama, LM Studio), verify the IP, port and same Wi-Fi.';
+  }
+  return raw;
 }
 
 async function maybeAutoTitle(convId: string, model: Conversation['model']): Promise<void> {

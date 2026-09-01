@@ -72,6 +72,8 @@ export interface MessageBubbleProps {
   message: ChatMessage;
   /** true while this message is being generated */
   streaming?: boolean;
+  /** Optional status label shown while waiting for the first token (e.g. "Loading Qwen…"). */
+  pendingLabel?: string;
   onLongPress?: (message: ChatMessage) => void;
   onRetry?: (message: ChatMessage) => void;
   /** base font size from theme */
@@ -81,6 +83,7 @@ export interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({
   message,
   streaming,
+  pendingLabel,
   onLongPress,
   onRetry,
   fontSize,
@@ -137,7 +140,7 @@ export const MessageBubble = memo(function MessageBubble({
           ) : null}
 
           {showTyping ? (
-            <TypingDots />
+            <TypingDots label={pendingLabel} />
           ) : (
             <>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>

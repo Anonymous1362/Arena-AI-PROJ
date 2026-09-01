@@ -76,7 +76,7 @@ export default function ModelsScreen() {
         addLocalModel({ id: model.id, name: label, fileUri, sizeBytes: size, url: model.url, downloadedAt: Date.now() });
         haptics.success();
         Alert.alert('Model ready', `${label} was downloaded and set as the active model. It now works fully offline.`, [
-          { text: 'Chat now', onPress: () => router.push('/(tabs)') },
+          { text: 'Chat now', onPress: () => router.push('/') },
           { text: 'OK' },
         ]);
         setActiveModel({ kind: 'local', modelId: model.id });

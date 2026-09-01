@@ -11,4 +11,5 @@ export declare function loadedModelId(): string | null;
 export declare function unloadLocal(): Promise<void>;
 export declare function ensureLocalModel(record: LocalModelRecord, contextSize: number): Promise<void>;
 export declare function cancelLocal(): void;
+export declare function setupLifecycle(): void;
 export declare function runLocal(record: LocalModelRecord, req: EngineRequest): Promise<EngineResult>;

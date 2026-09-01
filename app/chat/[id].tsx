@@ -7,10 +7,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useChatsStore, type ChatMessage } from '@/src/store/chats';
 import { useSettingsStore } from '@/src/store/settings';
+import { useEngineStatus } from '@/src/ai/engineStatus';
 import {
   consumeNoModel,
   onNoModel,
   sendMessage,
+  setupLifecycle,
   stopGeneration,
   useStreamingStore,
 } from '@/src/ai/session';
@@ -73,6 +75,7 @@ export default function ChatScreen() {
   const sendOnEnter = useSettingsStore((s) => s.behavior.sendOnEnter);
   const msgFontSize = useTheme().msgFontSize;
   const streaming = useStreamingStore((s) => !!s.ids[id!]);
+  const engineStatus = useEngineStatus();
 
   const [modelSheet, setModelSheet] = useState(false);
   const [menuSheet, setMenuSheet] = useState(false);
@@ -98,8 +101,13 @@ export default function ChatScreen() {
     });
   }, [id]);
 
+  // native: free llama.cpp RAM when the app is backgrounded
   useEffect(() => {
-    if (!conv) router.replace('/(tabs)');
+    setupLifecycle();
+  }, []);
+
+  useEffect(() => {
+    if (!conv) router.replace('/');
   }, [conv, router]);
 
   const send = useCallback(
@@ -215,16 +223,27 @@ export default function ChatScreen() {
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: streaming })}
             showsVerticalScrollIndicator={false}
           >
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                fontSize={msgFontSize}
-                streaming={streaming && m === lastMessage && m.role === 'assistant'}
-                onLongPress={setActionsMsg}
-                onRetry={retry}
-              />
-            ))}
+            {messages.map((m, i) => {
+              const prev = i > 0 ? messages[i - 1] : null;
+              const showDivider = !prev || m.createdAt - prev.createdAt > 5 * 60_000;
+              return (
+                <React.Fragment key={m.id}>
+                  {showDivider ? <TimeDivider ts={m.createdAt} /> : null}
+                  <MessageBubble
+                    message={m}
+                    fontSize={msgFontSize}
+                    streaming={streaming && m === lastMessage && m.role === 'assistant'}
+                    pendingLabel={
+                      streaming && m === lastMessage && engineStatus.status === 'loading'
+                        ? `Loading ${engineStatus.detail ?? 'model'}…`
+                        : undefined
+                    }
+                    onLongPress={setActionsMsg}
+                    onRetry={retry}
+                  />
+                </React.Fragment>
+              );
+            })}
           </ScrollView>
         )}
 
@@ -343,3 +362,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+
+function TimeDivider({ ts }: { ts: number }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ alignItems: 'center', marginVertical: spacing(2) }}>
+      <View
+        style={{
+          backgroundColor: colors.surface2,
+          borderRadius: radius.full,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+        }}
+      >
+        <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '600' }}>
+          {dividerLabel(ts)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function dividerLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  if (d.toDateString() === yesterday.toDateString()) {
+    return `Yesterday ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+  }
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}

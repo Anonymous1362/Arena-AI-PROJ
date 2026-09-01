@@ -3,10 +3,10 @@ import type { ActiveModel } from '@/src/store/settings';
 import { useSettingsStore, type SettingsState } from '@/src/store/settings';
 import type { EngineRequest, EngineResult, RemoteTarget, WireMessage } from '@/src/ai/types';
 import { streamRemoteChat } from '@/src/ai/remote';
-import { runLocal, cancelLocal, isLocalSupported } from '@/src/ai/local/LocalEngine';
+import { runLocal, cancelLocal, isLocalSupported, setupLifecycle } from '@/src/ai/local/LocalEngine';
 import { estimateTokens } from '@/src/utils/format';
 
-export { cancelLocal, isLocalSupported };
+export { cancelLocal, isLocalSupported, setupLifecycle };
 
 export class NoEngineError extends Error {
   constructor() {

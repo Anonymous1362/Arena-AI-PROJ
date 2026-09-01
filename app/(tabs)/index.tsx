@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -44,6 +44,20 @@ export default function ChatsScreen() {
 
   const sorted = useMemo(() => selectSortedConversations(conversations), [conversations]);
   const [welcome, setWelcome] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      q
+        ? sorted.filter(
+            (c) =>
+              c.title.toLowerCase().includes(q) ||
+              c.messages.some((m) => m.content.toLowerCase().includes(q))
+          )
+        : sorted,
+    [sorted, q]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -93,8 +107,40 @@ export default function ChatsScreen() {
         </PressableScale>
       </View>
 
+      {conversations.length > 0 ? (
+        <View style={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2) }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.surface,
+              borderRadius: radius.full,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.border,
+              paddingHorizontal: spacing(3.5),
+              gap: 8,
+            }}
+          >
+            <Ionicons name="search" size={16} color={colors.textFaint} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search chats"
+              placeholderTextColor={colors.textFaint}
+              style={{ flex: 1, color: colors.text, fontSize: 14.5, paddingVertical: spacing(2.4) }}
+              autoCorrect={false}
+            />
+            {query ? (
+              <PressableScale haptic="none" scale={0.9} onPress={() => setQuery('')}>
+                <Ionicons name="close-circle" size={16} color={colors.textFaint} />
+              </PressableScale>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       <FlatList
-        data={sorted}
+        data={filtered}
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ paddingHorizontal: spacing(4), paddingBottom: spacing(12), flexGrow: 1 }}
         renderItem={({ item }) => (
@@ -110,7 +156,16 @@ export default function ChatsScreen() {
           />
         )}
         ListEmptyComponent={
-          <EmptyState engineReady={!!activeModel} onPick={(t) => newChat(t)} />
+          query.trim() ? (
+            <View style={{ alignItems: 'center', paddingVertical: spacing(12) }}>
+              <Ionicons name="search" size={28} color={colors.textFaint} />
+              <Text style={{ color: colors.textSub, marginTop: spacing(3), fontSize: 14.5 }}>
+                No chats match “{query.trim()}”
+              </Text>
+            </View>
+          ) : (
+            <EmptyState engineReady={!!activeModel} onPick={(t) => newChat(t)} />
+          )
         }
         showsVerticalScrollIndicator={false}
       />
