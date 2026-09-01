@@ -10,6 +10,7 @@ import { buildSystemPrompt } from '@/src/agent/prompts';
 import { currentRoot } from '@/src/agent/fs';
 import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
+import { useUsageStore } from '@/src/store/usage';
 import { truncate } from '@/src/utils/format';
 
 /* ------------------------- ephemeral streaming state ------------------------- */
@@ -199,7 +200,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
           onText: paintContent,
           onPlan: upsertPlan,
           onToolEvent: upsertToolEvent,
-          onDone: ({ text, ms, transcriptTail, toolCallCount }) => {
+          onDone: ({ text, ms, transcriptTail, toolCallCount, tokensIn, tokensOut }) => {
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               content: text,
               done: true,
@@ -207,10 +208,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
               transcriptTail: transcriptTail.slice(-24),
               stats: {
                 ms,
-                tokensOut: toolCallCount,
-                tps: undefined,
+                tokensIn,
+                tokensOut,
+                tps: tokensOut && ms > 0 ? tokensOut / (ms / 1000) : undefined,
               },
             });
+            useUsageStore.getState().record({ profileId: model.profileId, model: model.model, tokensIn, tokensOut });
             haptics.light();
           },
           onError: (err) => {
@@ -242,6 +245,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
           ms: result.ms,
           tps: result.tps,
         },
+      });
+      useUsageStore.getState().record({
+        profileId: model.profileId,
+        model: model.model,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
       });
       haptics.light();
     }

@@ -12,6 +12,7 @@ import Animated, {
 import { useTheme, radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import type { PlanStep, ToolEvent } from '@/src/ai/types';
+import { Terminal as TerminalIcon, Wrench as WrenchIcon } from '@/src/components/Icons';
 
 /* ------------------------------- shared atoms ------------------------------- */
 
@@ -24,6 +25,19 @@ function SpinningIcon({ name, size, color }: { name: keyof typeof Ionicons.glyph
   return (
     <Animated.View style={style}>
       <Ionicons name={name} size={size} color={color} />
+    </Animated.View>
+  );
+}
+
+function Spinning({ icon: Icon, size, color }: { icon: React.ComponentType<{ size: number; color: string }>; size: number; color: string }) {
+  const rot = useSharedValue(0);
+  useEffect(() => {
+    rot.set(withRepeat(withTiming(360, { duration: 1100, easing: Easing.linear }), -1, false));
+  }, [rot]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rot.get()}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <Icon size={size} color={color} />
     </Animated.View>
   );
 }
@@ -129,13 +143,17 @@ export function ToolEventCard({ ev }: { ev: ToolEvent }) {
       <View style={[styles.toolHeader, { backgroundColor: headerBg }]}>
         <View style={styles.toolHeaderLeading}>
           {ev.running ? (
-            <SpinningIcon name={isCommand ? 'terminal' : 'construct'} size={14} color={titleColor} />
+            <Spinning icon={isCommand ? TerminalIcon : WrenchIcon} size={14} color={titleColor} />
           ) : (
-            <Ionicons
-              name={isCommand ? 'terminal' : ev.ok ? 'construct' : 'alert-circle'}
-              size={14}
-              color={titleColor}
-            />
+            <>
+              {isCommand ? (
+                <TerminalIcon size={14} color={titleColor} />
+              ) : ev.ok ? (
+                <WrenchIcon size={14} color={titleColor} />
+              ) : (
+                <Ionicons name="alert-circle" size={14} color={colors.danger} />
+              )}
+            </>
           )}
           <Text numberOfLines={1} style={[styles.toolTitle, { color: titleColor }]}>
             {title}

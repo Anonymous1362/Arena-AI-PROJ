@@ -5,6 +5,8 @@ import type { RemoteProfile } from '@/src/store/settings';
 
 /* ------------------------------ provider presets ----------------------------- */
 
+export type Pricing = 'free' | 'freemium' | 'paid' | 'local';
+
 export interface RemotePreset {
   id: string;
   name: string;
@@ -13,6 +15,9 @@ export interface RemotePreset {
   note?: string;
   noKey?: boolean;
   localNetwork?: boolean;
+  /** Free tier / freemium / pay-as-you-go / runs-on-your-machine. */
+  pricing: Pricing;
+  pricingNote?: string;
   /** Model ids shown as quick picks in the model panel. */
   suggestedModels?: string[];
   /** Which capabilities this provider/preset family is known to support. */
@@ -21,6 +26,8 @@ export interface RemotePreset {
 
 export const PROVIDER_PRESETS: RemotePreset[] = [
   {
+    pricing: 'paid',
+    pricingNote: 'Pay per token. No free tier.',
     id: 'anthropic',
     name: 'Anthropic',
     baseUrl: 'https://api.anthropic.com/v1',
@@ -30,6 +37,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'vision', 'reasoning'],
   },
   {
+    pricing: 'paid',
+    pricingNote: 'Pay per token.',
     id: 'openai',
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
@@ -38,6 +47,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'vision', 'reasoning'],
   },
   {
+    pricing: 'free',
+    pricingNote: 'Generous free tier at AI Studio — best first pick.',
     id: 'google',
     name: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/open',
@@ -47,6 +58,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'vision'],
   },
   {
+    pricing: 'free',
+    pricingNote: 'Free tier with generous rate limits, very fast.',
     id: 'groq',
     name: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
@@ -56,6 +69,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools'],
   },
   {
+    pricing: 'freemium',
+    pricingNote: 'Free models available; premium models pay-per-token.',
     id: 'openrouter',
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -71,6 +86,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'vision', 'reasoning'],
   },
   {
+    pricing: 'paid',
+    pricingNote: 'Trial credits for new accounts, then pay-per-token.',
     id: 'together',
     name: 'Together AI',
     baseUrl: 'https://api.together.xyz/v1',
@@ -79,6 +96,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools'],
   },
   {
+    pricing: 'freemium',
+    pricingNote: 'Free tier on La Plateforme with rate limits.',
     id: 'mistral',
     name: 'Mistral',
     baseUrl: 'https://api.mistral.ai/v1',
@@ -87,6 +106,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools'],
   },
   {
+    pricing: 'paid',
+    pricingNote: 'Very cheap per token.',
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
@@ -95,6 +116,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'reasoning'],
   },
   {
+    pricing: 'paid',
+    pricingNote: 'Pay per token; trial credits vary.',
     id: 'xai',
     name: 'xAI (Grok)',
     baseUrl: 'https://api.x.ai/v1',
@@ -103,6 +126,19 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools', 'vision'],
   },
   {
+    pricing: 'free',
+    pricingNote: 'Free API tier, extremely fast inference.',
+    id: 'cerebras',
+    name: 'Cerebras',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    keyUrl: 'https://cloud.cerebras.ai',
+    note: 'Wafer-scale speed. Free tier with high rate limits.',
+    suggestedModels: ['llama-3.3-70b', 'qwen-3-32b', 'gpt-oss-120b'],
+    caps: ['tools'],
+  },
+  {
+    pricing: 'local',
+    pricingNote: 'Free — runs on your own computer.',
     id: 'ollama',
     name: 'Ollama (your computer)',
     baseUrl: 'http://localhost:11434/v1',
@@ -113,6 +149,8 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools'],
   },
   {
+    pricing: 'local',
+    pricingNote: 'Free — runs on your own computer.',
     id: 'lmstudio',
     name: 'LM Studio (your computer)',
     baseUrl: 'http://192.168.1.10:1234/v1',
@@ -122,6 +160,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     caps: ['tools'],
   },
   {
+    pricing: 'paid',
     id: 'custom',
     name: 'Custom / self-hosted',
     baseUrl: '',

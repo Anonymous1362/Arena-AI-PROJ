@@ -35,6 +35,8 @@ export interface LoopCallbacks {
     /** Transcript without the system prompt — persist to resume tool context. */
     transcriptTail: WireMessage[];
     toolCallCount: number;
+    tokensIn: number;
+    tokensOut: number;
   }) => void;
   onError: (err: Error) => void;
 }
@@ -98,6 +100,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
 
   const started = Date.now();
   const toolEvents: ToolEvent[] = [];
+  let tokensInTotal = 0;
+  let tokensOutTotal = 0;
   let fullText = '';
   let steps: PlanStep[] = [];
   let toolCallCount = 0;
@@ -161,6 +165,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
         },
       });
 
+      tokensInTotal += result.tokensIn ?? 0;
+      tokensOutTotal += result.tokensOut ?? 0;
       fullText = stripPlan(result.content);
       callbacks.onText(fullText);
 
@@ -243,6 +249,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
       stopReason,
       transcriptTail: working.slice(1),
       toolCallCount,
+      tokensIn: tokensInTotal,
+      tokensOut: tokensOutTotal,
     });
   } catch (e) {
     const err = e as Error;
@@ -255,6 +263,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
         stopReason: 'aborted',
         transcriptTail: working.slice(1),
         toolCallCount,
+        tokensIn: tokensInTotal,
+        tokensOut: tokensOutTotal,
       });
       return;
     }

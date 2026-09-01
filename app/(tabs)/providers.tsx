@@ -5,7 +5,9 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useSettingsStore } from '@/src/store/settings';
-import { PROVIDER_PRESETS } from '@/src/ai/remote';
+import { PROVIDER_PRESETS, type Pricing } from '@/src/ai/remote';
+import { useUsageStore, summarizeUsage } from '@/src/store/usage';
+import { Gauge } from '@/src/components/Icons';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Card, SectionHeader } from '@/src/components/ui';
 import { Sheet } from '@/src/components/Sheet';
@@ -56,6 +58,21 @@ export default function ProvidersScreen() {
             </View>
           </View>
         </Card>
+
+        <PressableScale haptic="light" scale={0.98} onPress={() => router.push('/settings/usage')}>
+          <Card style={{ marginTop: spacing(3) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3) }}>
+              <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+                <Gauge size={17} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800' }}>Live usage</Text>
+                <UsageSummaryLine />
+              </View>
+              <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>Details</Text>
+            </View>
+          </Card>
+        </PressableScale>
 
         <SectionHeader title={`Your providers (${profiles.length})`} />
         {profiles.length === 0 ? (
@@ -162,8 +179,21 @@ function ProviderPresetSheet({
   onPick: (presetId: string) => void;
 }) {
   const { colors } = useTheme();
-  const cloud = PROVIDER_PRESETS.filter((p) => !p.localNetwork);
-  const local = PROVIDER_PRESETS.filter((p) => p.localNetwork);
+  const local = PROVIDER_PRESETS.filter((p) => p.pricing === 'local');
+  const free = PROVIDER_PRESETS.filter((p) => p.pricing === 'free');
+  const freemium = PROVIDER_PRESETS.filter((p) => p.pricing === 'freemium');
+  const paid = PROVIDER_PRESETS.filter((p) => p.pricing === 'paid');
+
+  const PriceBadge = ({ tier }: { tier: Pricing }) => {
+    const tint =
+      tier === 'free' ? colors.success : tier === 'freemium' ? colors.warning : tier === 'local' ? colors.accent : colors.textFaint;
+    const label = tier === 'free' ? 'FREE TIER' : tier === 'freemium' ? 'FREE + PAID' : tier === 'local' ? 'YOUR MACHINE' : 'PAY AS YOU GO';
+    return (
+      <View style={{ backgroundColor: tier === 'paid' ? colors.surface2 : tint + '22', borderRadius: radius.full, paddingHorizontal: 7, paddingVertical: 2 }}>
+        <Text style={{ color: tint, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 }}>{label}</Text>
+      </View>
+    );
+  };
 
   const Row = ({ p }: { p: (typeof PROVIDER_PRESETS)[number] }) => (
     <PressableScale haptic="light" scale={0.98} onPress={() => onPick(p.id)}>
@@ -181,9 +211,12 @@ function ProviderPresetSheet({
           <Ionicons name={p.localNetwork ? 'home-outline' : 'cloud-outline'} size={16} color={colors.accent} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{p.name}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>{p.name}</Text>
+            <PriceBadge tier={p.pricing} />
+          </View>
           <Text numberOfLines={2} style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>
-            {p.note ?? p.baseUrl}
+            {p.pricingNote ?? p.note ?? p.baseUrl}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
@@ -191,23 +224,44 @@ function ProviderPresetSheet({
     </PressableScale>
   );
 
+  const Group = ({ title, items }: { title: string; items: typeof PROVIDER_PRESETS }) => (
+    <>
+      <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing(3.5), marginBottom: spacing(1) }}>
+        {title}
+      </Text>
+      {items.map((p) => (
+        <Row key={p.id} p={p} />
+      ))}
+    </>
+  );
+
   return (
-    <Sheet visible={visible} onClose={onClose} title="Add a provider" maxHeight="76%">
+    <Sheet visible={visible} onClose={onClose} title="Add a provider" maxHeight="78%">
       <ScrollView style={{ paddingHorizontal: spacing(4) }} keyboardShouldPersistTaps="handled">
-        <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing(3), marginBottom: spacing(1) }}>
-          Cloud
-        </Text>
-        {cloud.map((p) => (
-          <Row key={p.id} p={p} />
-        ))}
-        <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing(4), marginBottom: spacing(1) }}>
-          On your network
-        </Text>
-        {local.map((p) => (
-          <Row key={p.id} p={p} />
-        ))}
+        {free.length ? <Group title="Free tier" items={free} /> : null}
+        {freemium.length ? <Group title="Free + paid" items={freemium} /> : null}
+        {paid.length ? <Group title="Pay as you go" items={paid} /> : null}
+        {local.length ? <Group title="On your network · free" items={local} /> : null}
         <View style={{ height: spacing(4) }} />
       </ScrollView>
     </Sheet>
   );
+}
+
+function UsageSummaryLine() {
+  const { colors } = useTheme();
+  const events = useUsageStore((s) => s.events);
+  const limits = useUsageStore((s) => s.limits);
+  const sum = summarizeUsage(events);
+  return (
+    <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>
+      {sum.hourReq}/{limits.hour} per hour · {sum.dayReq}/{limits.day} per day · {fmt(sum.todayTokens)} tokens today
+    </Text>
+  );
+}
+
+function fmt(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
 }

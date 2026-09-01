@@ -40,7 +40,7 @@ export function AppHeader({
           },
         ]}
       >
-        {Platform.OS !== 'web' ? (
+        {Platform.OS === 'ios' ? (
           <BlurView intensity={50} tint={scheme} style={StyleSheet.absoluteFill} />
         ) : null}
         <View style={styles.row}>

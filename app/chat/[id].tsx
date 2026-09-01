@@ -227,6 +227,7 @@ export default function ChatScreen() {
             keyboardShouldPersistTaps="handled"
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: streaming })}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={Platform.OS === 'android'}
           >
             {messages.map((m, i) => {
               const prev = i > 0 ? messages[i - 1] : null;

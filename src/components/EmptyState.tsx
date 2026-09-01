@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { Asterisk } from '@/src/components/Icons';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 
@@ -16,15 +16,8 @@ export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => 
   const { colors } = useTheme();
   return (
     <View style={styles.wrap}>
-      <View style={styles.orbShadow}>
-        <LinearGradient
-          colors={[colors.userBubbleFrom, colors.userBubbleTo, colors.accent2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.orb}
-        >
-          <Ionicons name="sparkles" size={34} color="#FFFFFF" />
-        </LinearGradient>
+      <View style={[styles.orb, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Asterisk size={44} color={colors.accent} />
       </View>
       <Text style={[styles.headline, { color: colors.text }]}>How can I help?</Text>
       <Text style={[styles.sub, { color: colors.textSub }]}>
@@ -72,6 +65,7 @@ const styles = StyleSheet.create({
     width: 92,
     height: 92,
     borderRadius: 46,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },

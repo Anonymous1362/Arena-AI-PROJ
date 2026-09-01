@@ -15,17 +15,20 @@ function Routes() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.bg },
-          animationDuration: 240,
+          animation: 'slide_from_right',
+          animationDuration: 260,
+          gestureEnabled: true,
         }}
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
-        <Stack.Screen name="settings/api" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="settings/agent" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="settings/generation" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings/api" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="settings/agent" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="settings/usage" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="settings/generation" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="settings/appearance" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="settings/data" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="settings/about" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings/data" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="settings/about" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       </Stack>
     </>
   );

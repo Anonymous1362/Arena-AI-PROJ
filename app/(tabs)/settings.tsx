@@ -77,6 +77,12 @@ export default function SettingsScreen() {
           onPress={() => router.push('/settings/generation')}
         />
         <ListNavItem
+          icon="stats-chart-outline"
+          label="Usage & limits"
+          sublabel="Rolling windows, tokens, activity"
+          onPress={() => router.push('/settings/usage')}
+        />
+        <ListNavItem
           icon="server-outline"
           label="Data & privacy"
           sublabel="Export, import, erase"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ChevronDown } from '@/src/components/Icons';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import type { ActiveModel } from '@/src/store/settings';
@@ -32,7 +33,7 @@ export function ModelPill({ model, onPress }: { model: ActiveModel; onPress: () 
         <Text numberOfLines={1} style={{ color: colors.textSub, fontSize: 12.5, fontWeight: '700', maxWidth: 170 }}>
           {label}
         </Text>
-        <Ionicons name="chevron-down" size={13} color={colors.textFaint} />
+        <ChevronDown size={13} color={colors.textFaint} strokeWidth={2.2} />
       </View>
     </PressableScale>
   );

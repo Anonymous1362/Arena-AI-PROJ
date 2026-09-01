@@ -1,11 +1,11 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { haptics } from '@/src/utils/haptics';
 import type { MessageAttachment } from '@/src/store/chats';
+import { ArrowUp, Paperclip, Stop, Close } from '@/src/components/Icons';
 
 export interface ComposerProps {
   streaming: boolean;
@@ -75,7 +75,7 @@ export function Composer({
               <Image source={{ uri: a.uri }} style={styles.thumb} />
               <PressableScale haptic="warning" scale={0.85} onPress={() => setAttachments((arr) => arr.filter((_, j) => j !== i))}>
                 <View style={[styles.thumbX, { backgroundColor: colors.termBg }]}>
-                  <Ionicons name="close" size={11} color="#FFFFFF" />
+                  <Close size={11} color="#FFFFFF" strokeWidth={2.6} />
                 </View>
               </PressableScale>
             </View>
@@ -86,7 +86,7 @@ export function Composer({
       <View style={styles.inputRow}>
         <PressableScale haptic="light" onPress={pick} scale={0.88} disabled={streaming}>
           <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
-            <Ionicons name="add" size={20} color={streaming ? colors.textFaint : colors.accent} />
+            <Paperclip size={19} color={streaming ? colors.textFaint : colors.accent} />
           </View>
         </PressableScale>
 
@@ -113,7 +113,7 @@ export function Composer({
           <View>
             {streaming ? (
               <View style={[styles.sendBtn, { backgroundColor: colors.surface3, borderRadius: 12 }]}>
-                <View style={{ width: 12, height: 12, borderRadius: 2.5, backgroundColor: colors.danger }} />
+                <Stop size={16} color={colors.danger} />
               </View>
             ) : (
               <View
@@ -126,7 +126,7 @@ export function Composer({
                   },
                 ]}
               >
-                <Ionicons name="arrow-up" size={20} color={colors.onAccent} />
+                <ArrowUp size={20} color={colors.onAccent} strokeWidth={2.2} />
               </View>
             )}
           </View>
