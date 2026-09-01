@@ -21,6 +21,7 @@ function Routes() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="chat/[id]" />
         <Stack.Screen name="settings/api" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="settings/agent" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings/generation" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings/appearance" options={{ presentation: 'modal' }} />
         <Stack.Screen name="settings/data" options={{ presentation: 'modal' }} />

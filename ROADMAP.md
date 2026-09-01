@@ -1,52 +1,39 @@
-# Aurora — Roadmap
+# Copper — Roadmap
 
-Phase-by-phase plan. Small improvements are executed autonomously; items marked **⚑ YOUR CALL** need approval (design/major features).
-
----
-
-## Phase 1 — Reliability & feel (in progress)
-- [x] Engine status store — show "Loading model…" while llama.cpp warms up (instead of silent dots)
-- [x] Time dividers between messages (>5 min gaps) — premium chat pattern
-- [x] Chat search (title + message content) on the Chats tab
-- [x] Friendly, actionable error mapping (401/402/404/429/5xx/timeout/LAN hints)
-- [x] iOS ATS exception for LAN endpoints (so `http://192.168.x.x` Ollama/LM Studio works in release builds)
-- [x] Free RAM on background: unload on-device model when app is backgrounded (mid-stream safe)
-
-## Phase 2 — On-device AI hardening
-- [ ] Download integrity: verify final size vs Content-Length; resume partial downloads
-- [ ] Context usage meter (tokens used / context window) in chat header
-- [ ] Model details sheet (file path, quant, params, source URL, load time, last tok/s)
-- [ ] Warm benchmark on first load → show expected tok/s on the model card
-- [ ] Auto-suggest context size based on device RAM
-- [ ] Optional: keep model warm for N minutes in background before unload
-
-## Phase 3 — PWA (the zero-friction iOS path)
-- [ ] "Add to Home Screen" coach banner on iOS Safari (detects browser, guides install)
-- [ ] PWA update toast ("New version — tap to reload") on service worker update
-- [ ] ⚑ YOUR CALL: **WebLLM (WebGPU) on-device models in the PWA** — experimental, behind a flag; big win but heavy work
-
-## Phase 4 — Distribution & release automation
-- [ ] Push CI workflows (blocked on GitHub connection with `workflows` permission — files are committed locally)
-- [ ] Release checklist: tag → APK + IPA artifacts + Pages deploy in one push
-- [ ] Landing page with QR codes for PWA + artifact links
-
-## Phase 5 — Delight (each is small-to-medium)
-- [ ] ⚑ YOUR CALL: **Voice input + read-aloud TTS** (expo-speech is free/offline on-device)
-- [ ] ⚑ YOUR CALL: **Image attachments for vision models** (API engines only)
-- [ ] ⚑ YOUR CALL: **Rebrand?** (name "Aurora", icon, accent colors are placeholders — say the word and I'll re-skin)
-- [ ] Prompt library (save/reuse prompts)
-- [ ] Per-chat system prompt override
-- [ ] Message-level token estimates before send
-
-## Continuous (no permission needed)
-- Strict typecheck stays at 0 errors; web+android bundle smoke tests before every push
-- Keep iOS/Android/PWA feature parity except where platforms physically differ
-- Dependency updates within SDK 57 line
+**Direction locked:** API-models only (no on-device LLMs). Claude-style agent inside the app: dynamic thinking plan, tool calling, terminal panel, file tools, auto-continue. Warm editorial design.
 
 ---
 
-## Decisions log (small things done without asking)
-- Bottom sheets are a purpose-built Reanimated component (smaller, smoother than the heavy popular lib)
-- Native HTTP streaming via `expo/fetch` with non-streaming fallback (older engines)
-- Titles auto-generated via the *active remote* model only; local models use truncation (saves RAM)
-- `Persist` versioning from day one (`aurora/settings/v1`, `aurora/chats/v1`) so future migrations are safe
+## Phase 0 — The pivot ✅ (this update)
+- [x] Removed the entire local-LLM stack (llama.rn, GGUF catalog, downloader, model files) — no RAM/GPU/storage use
+- [x] Rebrand: **Copper** — warm ivory/charcoal palette, terracotta accent, custom asterisk icon, zero "AI-slop" gradients
+- [x] **Agent core**: master prompt (Claude-style behavior), `[PLAN]` protocol with AI-named steps, tool-calling loop, auto-continue on token/tool limits
+- [x] **Tools**: read_file, write_file, list_dir, mkdir, delete_path, stat, run_command
+- [x] **Terminal panel**: real-time command cards with output, exit status, copy — honest labels for real vs sandboxed shell
+- [x] **Plan panel**: collapsible, per-step vector icons (pending/active/done), progress count, live step highlighting
+- [x] **Storage sandbox**: app-private by default; user-granted folder (Android SAF) with revoke; jail-checked paths
+- [x] **Image attachments** for vision models (Gemini/Claude/GPT/Grok) via + button
+- [x] Categorized model panel per provider with live model lists
+- [x] Provider presets: Anthropic, OpenAI, Gemini, Groq, OpenRouter, Together, Mistral, DeepSeek, xAI, Ollama/LM Studio (LAN), custom
+
+## Phase 1 — Agent hardening (next)
+- [ ] Tool-call confirmation toggle ("ask before delete / write outside project")
+- [ ] Streaming tool-event dedup + persisted replay hardening (long agent runs)
+- [ ] Android executor grant detection UI (real shell vs built-in shell status chip)
+- [ ] Agent run stats: tool calls, tokens, cost estimate per message
+- [ ] Retry-once-on-429 wrapper in the loop
+
+## Phase 2 — Distribution
+- [ ] Push CI workflows (local commit ready; needs GitHub reconnect with `workflows` permission)
+- [ ] v1.0 tags → APK + unsigned IPA artifacts + PWA deploy
+- [ ] iOS install guide stays PWA-first; SideStore path documented (no TrollStore)
+
+## Phase 3 — Delight (small, autonomous)
+- [ ] Voice input + read-aloud (approved)
+- [ ] Prompt library + per-chat system prompt override
+- [ ] Export agent transcripts as markdown run logs
+- [ ] Haptic refinement on plan-step completion
+
+## Your calls still open
+- Name "Copper" — keep or rename (one-line change + assets)
+- Light theme as default (currently system-adaptive, light is the signature look)

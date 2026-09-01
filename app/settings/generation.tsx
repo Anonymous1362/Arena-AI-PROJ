@@ -28,8 +28,8 @@ export default function GenerationSettingsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TextField
-          label="SYSTEM PROMPT"
-          hint="Sent as the first message to every model. Sets personality & rules."
+          label="PERSONAL INSTRUCTIONS"
+          hint="Extra instructions layered on top of the agent behavior."
           placeholder="You are a helpful assistant…"
           value={generation.systemPrompt}
           onChangeText={(t) => patch({ systemPrompt: t })}
@@ -83,16 +83,6 @@ export default function GenerationSettingsScreen() {
             max={8192}
             onChange={(v) => patch({ maxTokens: v })}
           />
-          <Stepper
-            label="Context window"
-            hint="Prompt + history budget for on-device models."
-            value={generation.contextSize}
-            step={512}
-            min={1024}
-            max={16384}
-            format={(v) => `${v} tok`}
-            onChange={(v) => patch({ contextSize: v })}
-          />
         </Card>
 
         <Button
@@ -104,10 +94,8 @@ export default function GenerationSettingsScreen() {
             patch({
               temperature: 0.7,
               topP: 0.95,
-              maxTokens: 1024,
-              contextSize: 3072,
-              systemPrompt:
-                'You are Aurora, a thoughtful, concise AI assistant. Format answers with markdown when helpful.',
+              maxTokens: 4096,
+              systemPrompt: '',
             })
           }
         />

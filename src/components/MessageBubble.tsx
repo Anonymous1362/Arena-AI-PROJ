@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
@@ -10,11 +10,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme, radius, spacing } from '@/src/theme';
-import { Spring } from '@/src/theme/motion';
 import type { ChatMessage } from '@/src/store/chats';
 import { Markdown } from '@/src/components/Markdown';
 import { TypingDots } from '@/src/components/TypingDots';
 import { PressableScale } from '@/src/components/PressableScale';
+import { PlanPanel, ToolEventCard } from '@/src/components/AgentPanels';
 import { formatDuration } from '@/src/utils/format';
 
 function Caret({ color }: { color: string }) {
@@ -139,6 +139,31 @@ export const MessageBubble = memo(function MessageBubble({
             <ReasoningBlock text={message.reasoning} live={!!streaming} spentMs={message.stats?.ms} />
           ) : null}
 
+          {message.planSteps?.length ? (
+            <PlanPanel steps={message.planSteps} running={!!streaming} />
+          ) : null}
+
+          {message.toolEvents?.length ? (
+            <View style={{ marginBottom: spacing(1) }}>
+              {message.toolEvents.map((ev) => (
+                <ToolEventCard key={ev.id} ev={ev} />
+              ))}
+            </View>
+          ) : null}
+
+          {message.attachments?.length ? (
+            <View style={styles.attachRow}>
+              {message.attachments.map((a, i) => (
+                <Image
+                  key={`${a.uri}-${i}`}
+                  source={{ uri: a.uri }}
+                  style={styles.attachImage}
+                  resizeMode="cover"
+                />
+              ))}
+            </View>
+          ) : null}
+
           {showTyping ? (
             <TypingDots label={pendingLabel} />
           ) : (
@@ -208,4 +233,6 @@ const styles = StyleSheet.create({
   },
   caret: { fontSize: 15, fontWeight: '400', marginTop: 2 },
   stats: { fontSize: 11.5, marginTop: spacing(1.5), fontVariant: ['tabular-nums'] as never },
+  attachRow: { flexDirection: 'row', gap: 8, marginBottom: spacing(2), flexWrap: 'wrap' },
+  attachImage: { width: 132, height: 132, borderRadius: radius.md, backgroundColor: 'rgba(128,128,128,0.12)' },
 });

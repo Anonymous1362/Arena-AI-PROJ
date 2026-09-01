@@ -7,12 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useChatsStore, type ChatMessage } from '@/src/store/chats';
 import { useSettingsStore } from '@/src/store/settings';
-import { useEngineStatus } from '@/src/ai/engineStatus';
 import {
   consumeNoModel,
   onNoModel,
   sendMessage,
-  setupLifecycle,
   stopGeneration,
   useStreamingStore,
 } from '@/src/ai/session';
@@ -26,6 +24,19 @@ import { Banner, Button, TextField } from '@/src/components/ui';
 import { EmptyState } from '@/src/components/EmptyState';
 import { haptics } from '@/src/utils/haptics';
 import { shareJson } from '@/src/utils/share';
+import type { MessageAttachment } from '@/src/store/chats';
+
+async function pickImageAttachment(): Promise<MessageAttachment[] | null> {
+  const DocumentPicker = await import('expo-document-picker');
+  const res = await DocumentPicker.getDocumentAsync({
+    type: ['image/jpeg', 'image/png', 'image/webp'],
+    multiple: false,
+    copyToCacheDirectory: true,
+  });
+  if (res.canceled || !res.assets?.[0]) return null;
+  const a = res.assets[0];
+  return [{ kind: 'image', uri: a.uri, mime: a.mimeType ?? 'image/jpeg', name: a.name }];
+}
 
 function SheetAction({
   icon,
@@ -75,7 +86,6 @@ export default function ChatScreen() {
   const sendOnEnter = useSettingsStore((s) => s.behavior.sendOnEnter);
   const msgFontSize = useTheme().msgFontSize;
   const streaming = useStreamingStore((s) => !!s.ids[id!]);
-  const engineStatus = useEngineStatus();
 
   const [modelSheet, setModelSheet] = useState(false);
   const [menuSheet, setMenuSheet] = useState(false);
@@ -96,24 +106,19 @@ export default function ChatScreen() {
     return onNoModel((convId) => {
       if (convId !== id) return;
       consumeNoModel(convId);
-      setBanner('Pick a model first — on-device or any API.');
+      setBanner('Connect a model first — pick one from the header.');
       setModelSheet(true);
     });
   }, [id]);
-
-  // native: free llama.cpp RAM when the app is backgrounded
-  useEffect(() => {
-    setupLifecycle();
-  }, []);
 
   useEffect(() => {
     if (!conv) router.replace('/');
   }, [conv, router]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachments: MessageAttachment[] = []) => {
       setBanner(null);
-      sendMessage(id!, { text }).catch((e: Error) => setBanner(e.message));
+      sendMessage(id!, { text, attachments }).catch((e: Error) => setBanner(e.message));
     },
     [id]
   );
@@ -233,11 +238,6 @@ export default function ChatScreen() {
                     message={m}
                     fontSize={msgFontSize}
                     streaming={streaming && m === lastMessage && m.role === 'assistant'}
-                    pendingLabel={
-                      streaming && m === lastMessage && engineStatus.status === 'loading'
-                        ? `Loading ${engineStatus.detail ?? 'model'}…`
-                        : undefined
-                    }
                     onLongPress={setActionsMsg}
                     onRetry={retry}
                   />
@@ -253,6 +253,7 @@ export default function ChatScreen() {
             sendOnEnter={sendOnEnter}
             onSend={send}
             onStop={() => stopGeneration(id!)}
+            onPickImage={pickImageAttachment}
             initialText={prefill}
           />
         </View>

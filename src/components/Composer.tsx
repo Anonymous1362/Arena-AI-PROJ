@@ -1,19 +1,20 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Platform, StyleSheet, TextInput, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTheme, radius, spacing } from '@/src/theme';
-import { Spring } from '@/src/theme/motion';
 import { PressableScale } from '@/src/components/PressableScale';
 import { haptics } from '@/src/utils/haptics';
+import type { MessageAttachment } from '@/src/store/chats';
 
 export interface ComposerProps {
   streaming: boolean;
   disabled?: boolean;
   sendOnEnter?: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments: MessageAttachment[]) => void;
   onStop: () => void;
+  /** Opens the image picker; resolves with picked attachments. */
+  onPickImage: () => Promise<MessageAttachment[] | null>;
   /** Initial text to prefill (e.g. from empty-state suggestions). */
   initialText?: string;
   placeholder?: string;
@@ -25,14 +26,15 @@ export function Composer({
   sendOnEnter,
   onSend,
   onStop,
+  onPickImage,
   initialText,
-  placeholder = 'Message Aurora…',
+  placeholder = 'Message Copper…',
 }: ComposerProps) {
   const { colors } = useTheme();
   const [text, setText] = useState(initialText ?? '');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [height, setHeight] = useState(0);
   const inputRef = useRef<TextInput>(null);
-  const iconSwap = useSharedValue(0);
 
   React.useEffect(() => {
     if (initialText) {
@@ -41,7 +43,7 @@ export function Composer({
     }
   }, [initialText]);
 
-  const canSend = text.trim().length > 0 && !disabled && !streaming;
+  const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled && !streaming;
 
   const submit = useCallback(() => {
     if (streaming) {
@@ -50,89 +52,126 @@ export function Composer({
       return;
     }
     const t = text.trim();
-    if (!t || disabled) return;
+    if ((!t && attachments.length === 0) || disabled) return;
     haptics.light();
-    onSend(t);
+    onSend(t, attachments);
     setText('');
+    setAttachments([]);
     setHeight(0);
-  }, [disabled, onSend, onStop, streaming, text]);
+  }, [attachments, disabled, onSend, onStop, streaming, text]);
 
-  const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: withSpring(iconSwap.get() ? 1 : 1, Spring.snappy) }],
-  }));
+  const pick = useCallback(async () => {
+    haptics.light();
+    const picked = await onPickImage();
+    if (picked?.length) setAttachments((a) => [...a, ...picked].slice(0, 4));
+  }, [onPickImage]);
 
   return (
-    <View
-      style={[
-        styles.wrap,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <TextInput
-        ref={inputRef}
-        value={text}
-        onChangeText={setText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textFaint}
-        multiline
-        onContentSizeChange={(e) =>
-          setHeight(Math.min(140, Math.max(0, e.nativeEvent.contentSize.height - 22)))
-        }
-        onSubmitEditing={() => {
-          if (Platform.OS === 'web' && sendOnEnter) submit();
-        }}
-        blurOnSubmit={false}
-        editable={!disabled}
-        style={[styles.input, { color: colors.text, height: 22 + height }]}
-        selectionColor={colors.accent}
-      />
-      <Animated.View style={iconStyle}>
-        <PressableScale
-          haptic="none"
-          scale={0.88}
-          onPress={submit}
-          disabled={!streaming && !canSend}
-        >
+    <View style={[styles.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {attachments.length ? (
+        <View style={styles.attachTray}>
+          {attachments.map((a, i) => (
+            <View key={`${a.uri}-${i}`} style={styles.thumbWrap}>
+              <Image source={{ uri: a.uri }} style={styles.thumb} />
+              <PressableScale haptic="warning" scale={0.85} onPress={() => setAttachments((arr) => arr.filter((_, j) => j !== i))}>
+                <View style={[styles.thumbX, { backgroundColor: colors.termBg }]}>
+                  <Ionicons name="close" size={11} color="#FFFFFF" />
+                </View>
+              </PressableScale>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <View style={styles.inputRow}>
+        <PressableScale haptic="light" onPress={pick} scale={0.88} disabled={streaming}>
+          <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
+            <Ionicons name="add" size={20} color={streaming ? colors.textFaint : colors.accent} />
+          </View>
+        </PressableScale>
+
+        <TextInput
+          ref={inputRef}
+          value={text}
+          onChangeText={setText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textFaint}
+          multiline
+          onContentSizeChange={(e) =>
+            setHeight(Math.min(140, Math.max(0, e.nativeEvent.contentSize.height - 22)))
+          }
+          onSubmitEditing={() => {
+            if (Platform.OS === 'web' && sendOnEnter) submit();
+          }}
+          blurOnSubmit={false}
+          editable={!disabled}
+          style={[styles.input, { color: colors.text, height: 22 + height }]}
+          selectionColor={colors.accent}
+        />
+
+        <PressableScale haptic="none" scale={0.88} onPress={submit} disabled={!streaming && !canSend}>
           <View>
             {streaming ? (
-              <View
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: colors.surface3, borderRadius: 10 },
-                ]}
-              >
+              <View style={[styles.sendBtn, { backgroundColor: colors.surface3, borderRadius: 12 }]}>
                 <View style={{ width: 12, height: 12, borderRadius: 2.5, backgroundColor: colors.danger }} />
               </View>
             ) : (
-              <LinearGradient
-                colors={[colors.userBubbleFrom, colors.userBubbleTo]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.sendBtn, { opacity: canSend ? 1 : 0.4 }]}
+              <View
+                style={[
+                  styles.sendBtn,
+                  {
+                    backgroundColor: colors.accent,
+                    borderRadius: 12,
+                    opacity: canSend ? 1 : 0.35,
+                  },
+                ]}
               >
-                <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
-              </LinearGradient>
+                <Ionicons name="arrow-up" size={20} color={colors.onAccent} />
+              </View>
             )}
           </View>
         </PressableScale>
-      </Animated.View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing(2),
     borderRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing(3.5),
-    paddingTop: spacing(1.2),
-    paddingBottom: spacing(1.2),
+    paddingHorizontal: spacing(3),
+    paddingTop: spacing(1.5),
+    paddingBottom: spacing(1.5),
+  },
+  attachTray: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: spacing(1),
+    paddingTop: spacing(1),
+    paddingBottom: spacing(2),
+    flexWrap: 'wrap',
+  },
+  thumbWrap: { position: 'relative' },
+  thumb: { width: 56, height: 56, borderRadius: radius.sm },
+  thumbX: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing(1.6) },
+  plusBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 1,
   },
   input: {
     flex: 1,
@@ -145,7 +184,6 @@ const styles = StyleSheet.create({
   sendBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 1,

@@ -1,14 +1,16 @@
-# Aurora — Private AI, on your terms.
+# Copper — The agent that finishes the job.
 
-A production-ready, offline-first AI chat app for **iOS, Android and Web/PWA**, built with React Native + Expo (SDK 57).
+A production-ready **AI agent app** for **iOS, Android and Web/PWA**, built with React Native + Expo (SDK 57). Any OpenAI-compatible model — wrapped in a Claude-style agent that plans, runs commands, reads & writes files, and verifies its own work.
 
-- 📴 **Fully on-device inference** — download compact GGUF models (Qwen, Llama, Gemma, Phi) and chat with **zero internet**, powered by llama.cpp (`llama.rn`).
-- ☁️ **Hybrid engine** — or connect **any OpenAI-compatible API** (OpenAI, Groq, OpenRouter, Together, Mistral, DeepSeek, Ollama, LM Studio, llama.cpp server, vLLM…). Your keys, your choice.
-- 🧠 **Reasoning-model aware** — `<think>…</think>` traces stream into a collapsible "Thinking…" block.
-- ✨ **Premium mobile UX** — springy pressables, haptic vocabulary, blur headers, gesture-driven bottom sheets, swipeable conversation rows, streaming markdown with copyable code blocks, dark/light/system themes.
-- 🔒 **Private by design** — no backend, no accounts, no telemetry. Chats, keys and model files live only on your device. One-tap JSON export/import.
+- 🧠 **Agent mode** — dynamic thinking plans with AI-named steps, tool calling, auto-continue on token/tool limits
+- 🖥️ **Terminal panel** — watch commands run live: command, output, exit status, one-tap copy
+- 📁 **File tools** — sandboxed read/write/list/delete inside the app sandbox or a user-granted folder (Android SAF), revocable
+- ☁️ **Any provider** — Anthropic, OpenAI, Gemini (free tier), Groq, OpenRouter, Together, Mistral, DeepSeek, xAI, Ollama/LM Studio on your LAN, or anything OpenAI-compatible
+- 👁️ **Vision** — attach images for multimodal models
+- ✨ **Premium feel** — springy haptics, gesture sheets, swipeable rows, streaming markdown, warm light/dark themes
+- 🔒 **Private by design** — no backend, no accounts, no telemetry. Keys and chats stay on-device.
 
-<p align="center"><img src="assets/icon.png" width="120" alt="Aurora icon" /></p>
+<p align="center"><img src="assets/icon.png" width="120" alt="Copper icon" /></p>
 
 ---
 
@@ -16,11 +18,10 @@ A production-ready, offline-first AI chat app for **iOS, Android and Web/PWA**, 
 
 | | iOS | Android | Web / PWA |
 |---|---|---|---|
-| Chat, streaming, markdown, history | ✅ | ✅ | ✅ |
-| On-device GGUF models | ✅ | ✅ | — (use APIs) |
-| OpenAI-compatible APIs | ✅ | ✅ | ✅ |
-| Installable app, offline shell | ✅ (native) | ✅ (native) | ✅ (service worker) |
-| Haptics | ✅ | ✅ | — |
+| Agent mode (plan + tools + terminal) | ✅ | ✅ | ✅ |
+| Vision (image input) | ✅ | ✅ | ✅ |
+| Storage file tools (granted folder) | ✅ sandbox | ✅ SAF grant | — |
+| Installable app | ✅ (PWA / SideStore) | ✅ (APK) | ✅ |
 
 ## Quick start (development)
 
@@ -34,17 +35,16 @@ npx expo start          # press i (iOS) / a (Android) with a device or simulator
 
 ## Getting a working brain (2 minutes)
 
-1. Open **Models** tab → either:
-   - **Download** an on-device model (e.g. *Qwen2.5 1.5B Instruct* ~1 GB) → works offline forever, **or**
-   - **API providers** → pick a preset (Groq has a generous free tier; Ollama/LM Studio run on your own computer) → paste key.
-2. Start a new chat → pick the model from the pill in the header → send.
+1. Open **Providers** tab → add a provider (Google Gemini and Groq have free API keys; OpenRouter covers everything else) → paste key.
+2. New chat → pick a model from the pill in the header → send.
+3. Toggle **Agent & storage** (Settings) to give it tools: terminal, file read/write, plans.
 
 ## Install & build (no paid Apple account needed)
 
 See **[docs/BUILD-AND-INSTALL.md](docs/BUILD-AND-INSTALL.md)** for the complete, honest, up-to-date matrix of free install paths:
 
 - **PWA** (zero Apple involvement) — install from the GitHub Pages build, works on every iOS/Android browser.
-- **Unsigned IPA CI pipeline** → sign on-device with **SideStore/AltStore** (free Apple ID, auto-refresh) or permanently with **TrollStore** (supported iOS versions).
+- **Unsigned IPA CI pipeline** → sign on-device with **SideStore/AltStore** (free Apple ID, auto-refresh). Works on current iOS versions.
 - **Android APK** built automatically by CI (debug-signed release build) — sideload in one tap.
 - **Termux** on-device build instructions for Android.
 
@@ -52,8 +52,8 @@ See **[docs/BUILD-AND-INSTALL.md](docs/BUILD-AND-INSTALL.md)** for the complete,
 
 | Workflow | Trigger | Output |
 |---|---|---|
-| `android-apk.yml` | tag `v*` or manual | `Aurora-android.apk` artifact |
-| `ios-ipa.yml` | tag `v*` or manual | `Aurora-unsigned.ipa` artifact |
+| `android-apk.yml` | tag `v*` or manual | `Copper-android.apk` artifact |
+| `ios-ipa.yml` | tag `v*` or manual | `Copper-unsigned.ipa` artifact |
 | `web.yml` | push to `main` | GitHub Pages PWA deployment |
 | `ci.yml` | every push/PR | typecheck + web & android bundle smoke-tests |
 
@@ -65,26 +65,32 @@ app/                     expo-router routes
   chat/[id]/             conversation screen
   settings/              api · generation · appearance · data · about
 src/
-  ai/                    engines
-    remote.ts            OpenAI-compatible SSE streaming client + presets
-    local/               llama.cpp (llama.rn) adapter, GGUF catalog, downloader
+  ai/                    engine layer
+    remote.ts            OpenAI-compatible SSE client, tool calls, presets
     session.ts           orchestrator: send/stop/retry/edit/regenerate/auto-title
+    engine.ts            target resolution + prompt packing
     assembler.ts         <think>-aware streaming assembler (throttled paints)
-  components/            design system (PressableScale, Sheet, Markdown, …)
+  agent/                 the agent
+    loop.ts              tool-calling loop, [PLAN] parsing, auto-continue
+    prompts.ts           master prompt (Claude-style behavior contract)
+    tools.ts             tool registry: files + run_command
+    fs.ts                jailed storage root (app sandbox / SAF grant)
+  components/            design system (PressableScale, Sheet, AgentPanels, …)
   store/                 zustand + AsyncStorage persistence (settings, chats)
-  theme/                 tokens, dark/light palettes, motion language
-  utils/                 haptics facade, share/export, formatting, ids
+  theme/                 tokens, warm light/dark palettes, motion language
+  utils/                 haptics facade, share/export, image, formatting, ids
 public/                  PWA: manifest + service worker + icons
 scripts/                 web dist patcher (PWA head tags)
 ```
 
-**Streaming:** remote engines use `expo/fetch` (WHATWG streams over native networking) with an automatic non-streaming fallback; on-device engines stream tokens from llama.cpp. Both feed the same `<think>`-aware assembler that batches UI updates to a steady throttle.
+**Streaming:** `expo/fetch` (WHATWG streams over native networking) with an automatic non-streaming fallback, feeding a `<think>`-aware assembler that batches UI updates to a steady throttle. The agent loop reuses the same pipe per turn, executing tool calls and feeding results back until the task is done.
 
 ## Privacy model
 
 - API keys are stored in AsyncStorage **on device only** and sent only to the endpoint you configure.
-- On-device models run in a local llama.cpp context — they make **no network requests**.
+- File tools are jailed to one storage root (app sandbox by default; a folder you explicitly grant). Every path is normalized and escape-checked.
 - The app ships **zero analytics**. Export/import is user-initiated only.
+- MIT licensed.
 
 ## License
 

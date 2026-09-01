@@ -24,8 +24,8 @@ export default function DataSettingsScreen() {
 
   const exportAll = async () => {
     try {
-      await shareJson(`aurora-backup-${new Date().toISOString().slice(0, 10)}.json`, {
-        app: 'aurora',
+      await shareJson(`copper-backup-${new Date().toISOString().slice(0, 10)}.json`, {
+        app: 'copper',
         kind: 'backup',
         exportedAt: new Date().toISOString(),
         conversations,
@@ -65,7 +65,7 @@ export default function DataSettingsScreen() {
             </View>
             <Text style={{ color: colors.text, fontSize: 14.5, lineHeight: 20, flex: 1 }}>
               <Text style={{ fontWeight: '800' }}>Private by design.{'\n'}</Text>
-              Chats, API keys and model files live only on this device. Aurora has no backend, no analytics,
+              Chats and keys live only on this device. Copper has no backend, no analytics,
               and no accounts.
             </Text>
           </View>

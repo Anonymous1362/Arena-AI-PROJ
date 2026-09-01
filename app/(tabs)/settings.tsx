@@ -12,14 +12,12 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const profiles = useSettingsStore((s) => s.profiles);
-  const localModels = useSettingsStore((s) => s.localModels);
   const activeModel = useSettingsStore((s) => s.activeModel);
 
   const activeSummary = () => {
     if (!activeModel) return 'Not set up yet';
-    if (activeModel.kind === 'local') return `Offline · ${localModels.find((m) => m.id === activeModel.modelId)?.name ?? 'model'}`;
     const p = profiles.find((x) => x.id === activeModel.profileId);
-    return `API · ${p?.name ?? 'provider'} · ${activeModel.model}`;
+    return `${p?.name ?? 'provider'} · ${activeModel.model}`;
   };
 
   return (
@@ -38,7 +36,7 @@ export default function SettingsScreen() {
             <Ionicons name="sparkles" size={21} color={colors.accent} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800' }}>Engine</Text>
+            <Text style={{ color: colors.text, fontSize: 16, fontWeight: '800' }}>Agent</Text>
             <Text style={{ color: colors.textSub, fontSize: 13, marginTop: 1 }}>{activeSummary()}</Text>
           </View>
         </View>
@@ -54,9 +52,15 @@ export default function SettingsScreen() {
 
       <Card style={{ marginTop: spacing(4), paddingVertical: spacing(1) }}>
         <ListNavItem
+          icon="hammer-outline"
+          label="Agent & storage"
+          sublabel="Tools, terminal, file access"
+          onPress={() => router.push('/settings/agent')}
+        />
+        <ListNavItem
           icon="key-outline"
-          label="API providers"
-          sublabel="OpenAI, Groq, OpenRouter, Ollama, LM Studio…"
+          label="Providers"
+          sublabel="Gemini, OpenAI, Claude, OpenRouter, Ollama…"
           badge={profiles.length}
           onPress={() => router.push('/settings/api')}
         />
@@ -84,7 +88,7 @@ export default function SettingsScreen() {
       <Card style={{ marginTop: spacing(4), paddingVertical: spacing(1) }}>
         <ListNavItem
           icon="information-circle-outline"
-          label="About Aurora"
+          label="About Copper"
           sublabel="Version, credits, licenses"
           onPress={() => router.push('/settings/about')}
           last
@@ -92,7 +96,7 @@ export default function SettingsScreen() {
       </Card>
 
       <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center', marginTop: spacing(5), lineHeight: 18 }}>
-        Everything — chats, API keys, model files — stays on this device.{'\n'}No accounts. No telemetry.
+        Everything — chats, keys, files — stays on this device.{'\n'}No accounts. No telemetry.
       </Text>
     </ScrollView>
   );

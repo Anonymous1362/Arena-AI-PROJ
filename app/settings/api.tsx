@@ -191,7 +191,7 @@ export default function ApiSettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <AppHeader title="API providers" subtitle="Your keys never leave this device" onBack={() => router.back()} />
+      <AppHeader title="Providers" subtitle="Your keys never leave this device" onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: spacing(4), paddingBottom: insets.bottom + spacing(8) }}>
         {profiles.length === 0 ? (
           <Card>

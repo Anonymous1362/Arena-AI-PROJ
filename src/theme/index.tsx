@@ -3,11 +3,12 @@ import { useColorScheme } from 'react-native';
 import { useSettingsStore } from '@/src/store/settings';
 
 export const BRAND = {
-  name: 'Aurora',
-  tagline: 'Private AI, on your terms.',
-  accent: '#7C6CFF',
-  accent2: '#2BD9FE',
-  gradient: ['#7C6CFF', '#5B8DEF', '#2BD9FE'] as const,
+  name: 'Copper',
+  tagline: 'The agent that finishes the job.',
+  accent: '#C15F3C',
+  accent2: '#9A8F80',
+  cream: '#F0EEE6',
+  ink: '#1F1E1B',
 };
 
 export type Scheme = 'light' | 'dark';
@@ -36,58 +37,65 @@ export interface ThemeColors {
   tabBar: string;
   backdrop: string;
   reasoningBg: string;
+  termBg: string;
+  termText: string;
 }
 
+/* Warm, editorial, professional. Light is the signature; dark is warm charcoal. */
 export const themes: Record<Scheme, ThemeColors> = {
-  dark: {
-    bg: '#09090C',
-    bgElevated: '#101014',
-    surface: '#15151B',
-    surface2: '#1C1C24',
-    surface3: '#24242E',
-    border: 'rgba(255,255,255,0.08)',
-    borderStrong: 'rgba(255,255,255,0.14)',
-    text: '#F4F4F6',
-    textSub: '#A2A2AE',
-    textFaint: '#64646E',
-    accent: '#8B7CFF',
-    accentSoft: 'rgba(124,108,255,0.16)',
-    accent2: '#2BD9FE',
-    onAccent: '#FFFFFF',
-    danger: '#FF5D6C',
-    dangerSoft: 'rgba(255,93,108,0.14)',
-    success: '#3ED598',
-    warning: '#FFB020',
-    userBubbleFrom: '#7C6CFF',
-    userBubbleTo: '#5B8DEF',
-    tabBar: 'rgba(12,12,16,0.85)',
-    backdrop: 'rgba(0,0,0,0.55)',
-    reasoningBg: 'rgba(124,108,255,0.07)',
-  },
   light: {
-    bg: '#F6F6F9',
-    bgElevated: '#FFFFFF',
+    bg: '#F0EEE6',
+    bgElevated: '#FAF9F5',
     surface: '#FFFFFF',
-    surface2: '#F0F0F5',
-    surface3: '#E7E7EF',
-    border: 'rgba(20,20,40,0.08)',
-    borderStrong: 'rgba(20,20,40,0.16)',
-    text: '#17171C',
-    textSub: '#5D5D6B',
-    textFaint: '#9B9BA8',
-    accent: '#6D5EF3',
-    accentSoft: 'rgba(109,94,243,0.10)',
-    accent2: '#0FB5D8',
+    surface2: '#F4F2EC',
+    surface3: '#E9E6DC',
+    border: 'rgba(31,30,27,0.10)',
+    borderStrong: 'rgba(31,30,27,0.18)',
+    text: '#1F1E1B',
+    textSub: '#5E5C55',
+    textFaint: '#9B988E',
+    accent: '#C15F3C',
+    accentSoft: 'rgba(193,95,60,0.10)',
+    accent2: '#8A857A',
     onAccent: '#FFFFFF',
-    danger: '#E5484D',
-    dangerSoft: 'rgba(229,72,77,0.10)',
-    success: '#30A46C',
-    warning: '#E6982E',
-    userBubbleFrom: '#6D5EF3',
-    userBubbleTo: '#4E7BEC',
-    tabBar: 'rgba(255,255,255,0.88)',
-    backdrop: 'rgba(20,20,40,0.35)',
-    reasoningBg: 'rgba(109,94,243,0.06)',
+    danger: '#B3261E',
+    dangerSoft: 'rgba(179,38,30,0.08)',
+    success: '#3D7A46',
+    warning: '#B07C22',
+    userBubbleFrom: '#C15F3C',
+    userBubbleTo: '#A94E2F',
+    tabBar: 'rgba(240,238,230,0.9)',
+    backdrop: 'rgba(31,30,27,0.32)',
+    reasoningBg: 'rgba(138,133,122,0.09)',
+    termBg: '#26241F',
+    termText: '#E8E4D8',
+  },
+  dark: {
+    bg: '#191817',
+    bgElevated: '#201F1D',
+    surface: '#242320',
+    surface2: '#2C2A26',
+    surface3: '#363430',
+    border: 'rgba(240,238,230,0.09)',
+    borderStrong: 'rgba(240,238,230,0.16)',
+    text: '#F2F0E9',
+    textSub: '#ABA79C',
+    textFaint: '#77746B',
+    accent: '#D97757',
+    accentSoft: 'rgba(217,119,87,0.13)',
+    accent2: '#9A958A',
+    onAccent: '#FFFFFF',
+    danger: '#E5664F',
+    dangerSoft: 'rgba(229,102,79,0.12)',
+    success: '#5BA367',
+    warning: '#D19A3D',
+    userBubbleFrom: '#C15F3C',
+    userBubbleTo: '#A94E2F',
+    tabBar: 'rgba(25,24,23,0.88)',
+    backdrop: 'rgba(0,0,0,0.5)',
+    reasoningBg: 'rgba(154,149,138,0.08)',
+    termBg: '#111110',
+    termText: '#E8E4D8',
   },
 };
 
@@ -111,10 +119,6 @@ export const typeScale = {
   display: { fontSize: 28, fontWeight: '800' as const },
 };
 
-export const monoFont = {
-  fontFamily: undefined,
-};
-
 export interface ResolvedTheme {
   scheme: Scheme;
   colors: ThemeColors;
@@ -125,8 +129,8 @@ export interface ResolvedTheme {
 interface ThemeContextValue extends ResolvedTheme {}
 
 const ThemeContext = createContext<ThemeContextValue>({
-  scheme: 'dark',
-  colors: themes.dark,
+  scheme: 'light',
+  colors: themes.light,
   msgFontSize: 15.5,
 });
 

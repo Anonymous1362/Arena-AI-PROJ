@@ -1,5 +1,5 @@
 import { streamFetch } from '@/src/ai/net/fetch';
-import type { RemoteTarget, EngineRequest, EngineResult } from '@/src/ai/types';
+import type { RemoteTarget, EngineRequest, EngineResult, AccumulatedToolCall } from '@/src/ai/types';
 import { StreamAssembler } from '@/src/ai/assembler';
 import type { RemoteProfile } from '@/src/store/settings';
 
@@ -9,22 +9,42 @@ export interface RemotePreset {
   id: string;
   name: string;
   baseUrl: string;
-  /** Where to get an API key, if applicable. */
   keyUrl?: string;
   note?: string;
   noKey?: boolean;
-  /** Local-network servers need no key and usually no app-store account. */
   localNetwork?: boolean;
+  /** Model ids shown as quick picks in the model panel. */
   suggestedModels?: string[];
+  /** Which capabilities this provider/preset family is known to support. */
+  caps?: ('tools' | 'vision' | 'reasoning')[];
 }
 
 export const PROVIDER_PRESETS: RemotePreset[] = [
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com/v1',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    note: 'Claude models via the native Messages-compatible gateway (OpenAI-compatible base).',
+    suggestedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+    caps: ['tools', 'vision', 'reasoning'],
+  },
   {
     id: 'openai',
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     keyUrl: 'https://platform.openai.com/api-keys',
-    suggestedModels: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'o4-mini'],
+    suggestedModels: ['gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o', 'o4-mini'],
+    caps: ['tools', 'vision', 'reasoning'],
+  },
+  {
+    id: 'google',
+    name: 'Google Gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/open',
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+    note: 'Gemini via the OpenAI-compatible endpoint. Generous free tier.',
+    suggestedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    caps: ['tools', 'vision'],
   },
   {
     id: 'groq',
@@ -32,20 +52,23 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     baseUrl: 'https://api.groq.com/openai/v1',
     keyUrl: 'https://console.groq.com/keys',
     note: 'Very fast inference, generous free tier.',
-    suggestedModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3-32b'],
+    suggestedModels: ['llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+    caps: ['tools'],
   },
   {
     id: 'openrouter',
     name: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
     keyUrl: 'https://openrouter.ai/keys',
-    note: 'Hundreds of models behind one key, incl. free tiers.',
+    note: 'Hundreds of models behind one key, incl. free tiers. Great for xAI/Grok & Claude too.',
     suggestedModels: [
-      'meta-llama/llama-3.3-70b-instruct',
+      'anthropic/claude-sonnet-4.5',
+      'openai/gpt-5-mini',
+      'google/gemini-2.5-flash',
+      'x-ai/grok-4',
       'deepseek/deepseek-chat-v3.1',
-      'qwen/qwen3-235b-a22b',
-      'google/gemini-2.0-flash-001',
     ],
+    caps: ['tools', 'vision', 'reasoning'],
   },
   {
     id: 'together',
@@ -53,13 +76,15 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     baseUrl: 'https://api.together.xyz/v1',
     keyUrl: 'https://api.together.ai/settings/api-keys',
     suggestedModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-7B-Instruct-Turbo'],
+    caps: ['tools'],
   },
   {
     id: 'mistral',
     name: 'Mistral',
     baseUrl: 'https://api.mistral.ai/v1',
     keyUrl: 'https://console.mistral.ai/api-keys',
-    suggestedModels: ['mistral-small-latest', 'open-mistral-nemo'],
+    suggestedModels: ['mistral-large-latest', 'mistral-small-latest'],
+    caps: ['tools'],
   },
   {
     id: 'deepseek',
@@ -67,37 +92,41 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     baseUrl: 'https://api.deepseek.com/v1',
     keyUrl: 'https://platform.deepseek.com/api_keys',
     suggestedModels: ['deepseek-chat', 'deepseek-reasoner'],
+    caps: ['tools', 'reasoning'],
+  },
+  {
+    id: 'xai',
+    name: 'xAI (Grok)',
+    baseUrl: 'https://api.x.ai/v1',
+    keyUrl: 'https://console.x.ai',
+    suggestedModels: ['grok-4', 'grok-3-mini'],
+    caps: ['tools', 'vision'],
   },
   {
     id: 'ollama',
-    name: 'Ollama',
+    name: 'Ollama (your computer)',
     baseUrl: 'http://localhost:11434/v1',
     noKey: true,
     localNetwork: true,
     note: 'Models running on your own computer. Enable OLLAMA_HOST=0.0.0.0 and use your PC’s LAN IP on mobile.',
-    suggestedModels: ['llama3.2', 'qwen2.5', 'mistral'],
+    suggestedModels: ['qwen3', 'llama3.2', 'mistral'],
+    caps: ['tools'],
   },
   {
     id: 'lmstudio',
-    name: 'LM Studio',
+    name: 'LM Studio (your computer)',
     baseUrl: 'http://192.168.1.10:1234/v1',
     noKey: true,
     localNetwork: true,
     note: 'Start the local server in LM Studio, then point this at your PC’s LAN IP.',
-  },
-  {
-    id: 'llamacpp',
-    name: 'llama.cpp server',
-    baseUrl: 'http://192.168.1.10:8080/v1',
-    noKey: true,
-    localNetwork: true,
-    note: 'llama-server --host 0.0.0.0 on any machine on your network.',
+    caps: ['tools'],
   },
   {
     id: 'custom',
     name: 'Custom / self-hosted',
     baseUrl: '',
-    note: 'Any OpenAI-compatible endpoint: vLLM, TGI, LiteLLM, Jan, Gin…',
+    note: 'Any OpenAI-compatible endpoint: vLLM, LiteLLM, TGI, Gin…',
+    caps: ['tools'],
   },
 ];
 
@@ -158,25 +187,42 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
   return new ApiError(res.status, detail);
 }
 
+/* ------------------------------ tool-call deltas ----------------------------- */
+
+interface ToolCallAccum {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+function mergeToolCallDelta(acc: Map<number, ToolCallAccum>, deltas: any[]): void {
+  for (const d of deltas) {
+    const idx = Number(d.index ?? 0);
+    const cur = acc.get(idx) ?? { id: '', name: '', arguments: '' };
+    if (d.id) cur.id = d.id;
+    if (d.function?.name) cur.name = d.function.name;
+    if (d.function?.arguments) cur.arguments += d.function.arguments;
+    acc.set(idx, cur);
+  }
+}
+
+function finalizeToolCalls(acc: Map<number, ToolCallAccum>): AccumulatedToolCall[] {
+  return [...acc.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, tc]) => ({
+      id: tc.id,
+      name: tc.name,
+      arguments: tc.arguments || '{}',
+      raw: { id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments || '{}' } },
+    }));
+}
+
 /* ---------------------------------- streaming -------------------------------- */
 
-interface SseDelta {
-  content?: string | null;
-  reasoning?: string | null;
-}
-
-function extractDelta(json: any): SseDelta {
-  const d = json?.choices?.[0]?.delta ?? {};
-  return {
-    content: d.content ?? null,
-    reasoning: d.reasoning_content ?? d.reasoning ?? null,
-  };
-}
-
 /**
- * Streams a chat completion from any OpenAI-compatible endpoint.
- * Falls back to a non-streaming request transparently if the runtime
- * cannot provide a response body stream.
+ * Streams a chat completion from any OpenAI-compatible endpoint, with tool
+ * calling. Falls back to a non-streaming request if the runtime cannot
+ * provide a response body stream.
  */
 export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest): Promise<EngineResult> {
   const started = Date.now();
@@ -188,19 +234,23 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     },
   });
 
-  const body = JSON.stringify({
+  const body: Record<string, unknown> = {
     model: target.model,
     messages: req.messages,
     stream: true,
     temperature: req.params.temperature,
     top_p: req.params.topP,
     max_tokens: req.params.maxTokens,
-  });
+  };
+  if (req.tools?.length) {
+    body.tools = req.tools;
+    body.tool_choice = 'auto';
+  }
 
   const res = await streamFetch(chatCompletionsUrl(target.baseUrl), {
     method: 'POST',
     headers: buildHeaders(target),
-    body,
+    body: JSON.stringify(body),
     signal: req.signal,
   });
 
@@ -208,22 +258,7 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
 
   const anyRes = res as any;
   if (!anyRes.body || typeof anyRes.body.getReader !== 'function') {
-    // ---- non-streaming fallback ----
-    const json: any = await res.json();
-    const msg = json?.choices?.[0]?.message ?? {};
-    const content: string = msg.content ?? '';
-    const reasoning: string = msg.reasoning_content ?? msg.reasoning ?? '';
-    req.handlers.onContent?.(content);
-    if (reasoning) req.handlers.onReasoning?.(reasoning);
-    const result: EngineResult = {
-      content,
-      reasoning: reasoning || undefined,
-      tokensIn: json?.usage?.prompt_tokens,
-      tokensOut: json?.usage?.completion_tokens,
-      ms: Date.now() - started,
-    };
-    req.handlers.onDone?.(result);
-    return result;
+    return nonStreamingResponse(req, await res.json(), started);
   }
 
   // ---- SSE streaming ----
@@ -232,6 +267,8 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
   let buf = '';
   let usage: any = null;
   let sawDone = false;
+  let finishReason: string | undefined;
+  const toolAcc = new Map<number, ToolCallAccum>();
 
   const handleLine = (raw: string) => {
     const line = raw.trim();
@@ -250,9 +287,15 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     }
     if (json?.error) throw new ApiError(0, json.error?.message ?? 'Stream error');
     if (json?.usage) usage = json.usage;
-    const delta = extractDelta(json);
-    if (delta.reasoning) assembler.feed(delta.reasoning);
+    const choice = json?.choices?.[0];
+    if (choice?.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice?.delta ?? {};
+    if (delta.reasoning_content) assembler.feed(delta.reasoning_content);
+    else if (delta.reasoning) assembler.feed(delta.reasoning);
     if (delta.content) assembler.feed(delta.content);
+    if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
+      mergeToolCallDelta(toolAcc, delta.tool_calls);
+    }
   };
 
   try {
@@ -277,13 +320,47 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
   }
 
   const final = assembler.flush();
-  const approxTokens = Math.ceil((final.content.length + final.reasoning.length) / 4);
+  const approxTokens = Math.ceil(final.content.length / 4);
+  const toolCalls = finalizeToolCalls(toolAcc);
+  const tokensOut = usage?.completion_tokens ?? (sawDone || final.content ? approxTokens : 0);
+
   const result: EngineResult = {
     content: final.content,
     reasoning: final.reasoning || undefined,
     tokensIn: usage?.prompt_tokens,
-    tokensOut: usage?.completion_tokens ?? (sawDone || final.content ? approxTokens : 0),
+    tokensOut,
     ms: Date.now() - started,
+    tps: tokensOut && Date.now() - started > 0 ? tokensOut / ((Date.now() - started) / 1000) : undefined,
+    toolCalls: toolCalls.length ? toolCalls : undefined,
+    finishReason,
+  };
+  req.handlers.onDone?.(result);
+  return result;
+}
+
+function nonStreamingResponse(req: EngineRequest, json: any, started: number): EngineResult {
+  const msg = json?.choices?.[0]?.message ?? {};
+  const content: string = msg.content ?? '';
+  const reasoning: string = msg.reasoning_content ?? msg.reasoning ?? '';
+  req.handlers.onContent?.(content);
+  if (reasoning) req.handlers.onReasoning?.(reasoning);
+  const rawToolCalls: any[] = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+  const toolCalls: AccumulatedToolCall[] = rawToolCalls.map((tc, i) => ({
+    id: tc.id ?? `call_${i}`,
+    name: tc.function?.name ?? '',
+    arguments: tc.function?.arguments ?? '{}',
+    raw: tc,
+  }));
+  const tokensOut = json?.usage?.completion_tokens;
+  const result: EngineResult = {
+    content,
+    reasoning: reasoning || undefined,
+    tokensIn: json?.usage?.prompt_tokens,
+    tokensOut,
+    ms: Date.now() - started,
+    tps: tokensOut ? tokensOut / ((Date.now() - started) / 1000) : undefined,
+    toolCalls: toolCalls.length ? toolCalls : undefined,
+    finishReason: json?.choices?.[0]?.finish_reason,
   };
   req.handlers.onDone?.(result);
   return result;

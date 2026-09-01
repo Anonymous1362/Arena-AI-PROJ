@@ -29,10 +29,10 @@ export default function AboutScreen() {
           >
             <Ionicons name="sparkles" size={34} color="#FFF" />
           </LinearGradient>
-          <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>{BRAND.name}</Text>
-          <Text style={{ color: colors.textSub, fontSize: 13.5, marginTop: spacing(1) }}>{BRAND.tagline}</Text>
+          <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4 }}>Copper</Text>
+          <Text style={{ color: colors.textSub, fontSize: 13.5, marginTop: spacing(1) }}>The agent that finishes the job.</Text>
           <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: spacing(2) }}>
-            Version {version} · React Native + Expo · llama.cpp
+            Version {version} · React Native + Expo
           </Text>
         </View>
 
@@ -41,9 +41,9 @@ export default function AboutScreen() {
             Inside the app
           </Text>
           {[
-            ['hardware-chip-outline', 'On-device GGUF inference (llama.cpp)'],
-            ['cloud-outline', 'Any OpenAI-compatible API, streaming'],
-            ['sparkles-outline', 'Reasoning-model support (<think>)'],
+            ['hammer-outline', 'Agent tools: terminal, files, multi-step plans'],
+            ['cloud-outline', 'Any OpenAI-compatible API with streaming'],
+            ['sparkles-outline', 'Reasoning models with visible thinking'],
             ['lock-closed', 'Zero telemetry, zero accounts'],
             ['document-outline', 'Markdown + copyable code blocks'],
           ].map(([icon, text]) => (

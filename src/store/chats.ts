@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uid } from '@/src/utils/id';
 import type { ActiveModel } from '@/src/store/settings';
+import type { PlanStep, ToolEvent, WireMessage } from '@/src/ai/types';
 
 /* ---------------------------------- types ---------------------------------- */
 
@@ -15,12 +16,28 @@ export interface GenStats {
   tps?: number;
 }
 
+export interface MessageAttachment {
+  kind: 'image';
+  /** local file:// uri or data: uri */
+  uri: string;
+  mime?: string;
+  name?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: Role;
   content: string;
   /** Model reasoning (e.g. <think> blocks from reasoning models). */
   reasoning?: string;
+  /** Agent plan steps extracted from the turn. */
+  planSteps?: PlanStep[];
+  /** Tool/command executions performed while producing this message. */
+  toolEvents?: ToolEvent[];
+  /** Image attachments (vision models, API engines). */
+  attachments?: MessageAttachment[];
+  /** Raw assistant/tool transcript tail, replayed on the next turn. */
+  transcriptTail?: WireMessage[];
   createdAt: number;
   done: boolean;
   stats?: GenStats;

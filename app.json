@@ -1,22 +1,22 @@
 {
   "expo": {
-    "name": "Aurora",
-    "slug": "aurora-ai",
+    "name": "Copper",
+    "slug": "copper",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "scheme": "aurora",
-    "backgroundColor": "#09090C",
+    "scheme": "copper",
+    "backgroundColor": "#F0EEE6",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#09090C"
+      "backgroundColor": "#F0EEE6"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.auroraai.chat",
+      "bundleIdentifier": "com.copper.chat",
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "package": "com.auroraai.chat",
+      "package": "com.copper.chat",
       "versionCode": 1,
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
@@ -41,10 +41,10 @@
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/favicon.png",
-      "name": "Aurora — AI Chat",
-      "shortName": "Aurora",
+      "name": "Copper \u2014 AI Agent",
+      "shortName": "Copper",
       "backgroundColor": "#09090C",
-      "themeColor": "#7C6CFF"
+      "themeColor": "#C15F3C"
     },
     "plugins": [
       "expo-router",
@@ -52,15 +52,21 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
-          "imageWidth": 180,
+          "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#09090C",
+          "backgroundColor": "#F0EEE6",
           "dark": {
             "image": "./assets/splash-icon.png",
-            "imageWidth": 180,
+            "imageWidth": 160,
             "resizeMode": "contain",
-            "backgroundColor": "#09090C"
+            "backgroundColor": "#191817"
           }
+        }
+      ],
+      [
+        "expo-file-system",
+        {
+          "permission": "full"
         }
       ]
     ],

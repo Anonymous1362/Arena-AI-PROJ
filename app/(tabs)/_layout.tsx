@@ -41,11 +41,11 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="models"
+        name="providers"
         options={{
-          title: 'Models',
+          title: 'Providers',
           tabBarIcon: ({ focused, color, size }) => (
-            <Ionicons name={focused ? 'cube' : 'cube-outline'} size={size - 2} color={color} />
+            <Ionicons name={focused ? 'layers' : 'layers-outline'} size={size - 2} color={color} />
           ),
         }}
       />

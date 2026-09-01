@@ -9,10 +9,6 @@ import { useSettingsStore } from '@/src/store/settings';
 function resolveLabel(model: ActiveModel): { label: string; icon: keyof typeof Ionicons.glyphMap } {
   const state = useSettingsStore.getState();
   if (!model) return { label: 'Pick a model', icon: 'help-circle-outline' };
-  if (model.kind === 'local') {
-    const rec = state.localModels.find((m) => m.id === model.modelId);
-    return { label: rec?.name ?? 'On-device', icon: 'phone-portrait-outline' };
-  }
   const profile = state.profiles.find((p) => p.id === model.profileId);
   return { label: model.model || profile?.name || 'API', icon: 'cloud-outline' };
 }

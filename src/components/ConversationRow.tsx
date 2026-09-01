@@ -21,7 +21,6 @@ const ACTIONS_WIDTH = 152;
 function labelFor(model: Conversation['model']): string {
   const state = useSettingsStore.getState();
   if (!model) return 'No model';
-  if (model.kind === 'local') return state.localModels.find((m) => m.id === model.modelId)?.name ?? 'On-device';
   return model.model || state.profiles.find((p) => p.id === model.profileId)?.name || 'API';
 }
 
@@ -143,11 +142,7 @@ export function ConversationRow({
               </View>
               <Text numberOfLines={1} style={{ color: colors.textSub, fontSize: 13.5 }}>{preview}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing(1.5) }}>
-                <Ionicons
-                  name={conversation.model?.kind === 'local' ? 'phone-portrait-outline' : 'cloud-outline'}
-                  size={12}
-                  color={colors.textFaint}
-                />
+                <Ionicons name="cloud-outline" size={12} color={colors.textFaint} />
                 <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 11.5 }}>
                   {labelFor(conversation.model)}
                 </Text>

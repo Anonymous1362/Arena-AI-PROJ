@@ -10,39 +10,32 @@ export interface RemoteProfile {
   /** Base URL, e.g. https://api.openai.com/v1 */
   baseUrl: string;
   apiKey: string;
-  /** Extra request headers (e.g. HTTP-Referer for OpenRouter). */
   headers?: Record<string, string>;
-  /** Curated suggestion list shown in the model picker. */
   suggestedModels?: string[];
 }
 
-/**
- * What produces the next assistant message.
- *  - remote: an OpenAI-compatible endpoint (cloud or LAN)
- *  - local:  a GGUF model running fully on-device via llama.cpp
- */
-export type ActiveModel =
-  | { kind: 'remote'; profileId: string; model: string }
-  | { kind: 'local'; modelId: string }
-  | null;
-
-export interface LocalModelRecord {
-  id: string;
-  name: string;
-  /** Absolute file:// URI of the .gguf file on device. */
-  fileUri: string;
-  /** Source URL (used for re-download / provenance display). */
-  url?: string;
-  sizeBytes: number;
-  downloadedAt: number;
-}
+/** The only engine kind: an OpenAI-compatible API (cloud or LAN). */
+export type ActiveModel = {
+  kind: 'remote';
+  profileId: string;
+  model: string;
+} | null;
 
 export interface GenerationSettings {
   temperature: number;
   topP: number;
   maxTokens: number;
-  contextSize: number;
+  /** Instructions appended after the agent master prompt. */
   systemPrompt: string;
+}
+
+export interface AgentScope {
+  /** Master switch: tools + terminal available to the model. */
+  enabled: boolean;
+  /** User granted a storage root (Android SAF tree / app sandbox). */
+  storageEnabled: boolean;
+  safTreeUri?: string;
+  safRootLabel?: string;
 }
 
 export interface AppearanceSettings {
@@ -54,16 +47,17 @@ export interface AppearanceSettings {
 export interface BehaviorSettings {
   autoTitle: boolean;
   sendOnEnter: boolean;
+  /** Auto-continue when a provider truncates mid-task. */
+  autoContinue: boolean;
 }
 
 export interface SettingsState {
   profiles: RemoteProfile[];
   activeProfileId: string | null;
   activeModel: ActiveModel;
-  /** Cached GET /v1/models results, keyed by profile id. */
   modelCache: Record<string, { models: string[]; fetchedAt: number }>;
-  localModels: LocalModelRecord[];
   generation: GenerationSettings;
+  agentScope: AgentScope;
   appearance: AppearanceSettings;
   behavior: BehaviorSettings;
   onboarded: boolean;
@@ -74,9 +68,8 @@ export interface SettingsState {
   setActiveProfile: (id: string | null) => void;
   setActiveModel: (m: ActiveModel) => void;
   cacheModels: (profileId: string, models: string[]) => void;
-  addLocalModel: (m: LocalModelRecord) => void;
-  removeLocalModel: (id: string) => void;
   patchGeneration: (patch: Partial<GenerationSettings>) => void;
+  patchAgentScope: (patch: Partial<AgentScope>) => void;
   patchAppearance: (patch: Partial<AppearanceSettings>) => void;
   patchBehavior: (patch: Partial<BehaviorSettings>) => void;
   setOnboarded: (v: boolean) => void;
@@ -85,15 +78,16 @@ export interface SettingsState {
 
 /* --------------------------------- defaults -------------------------------- */
 
-export const DEFAULT_SYSTEM_PROMPT =
-  'You are Aurora, a thoughtful, concise AI assistant. Format answers with markdown when helpful.';
-
 const defaultGeneration: GenerationSettings = {
   temperature: 0.7,
   topP: 0.95,
-  maxTokens: 1024,
-  contextSize: 3072,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  maxTokens: 4096,
+  systemPrompt: '',
+};
+
+const defaultAgentScope: AgentScope = {
+  enabled: true,
+  storageEnabled: false,
 };
 
 const defaultAppearance: AppearanceSettings = {
@@ -105,6 +99,7 @@ const defaultAppearance: AppearanceSettings = {
 const defaultBehavior: BehaviorSettings = {
   autoTitle: true,
   sendOnEnter: false,
+  autoContinue: true,
 };
 
 /* ---------------------------------- store ---------------------------------- */
@@ -116,8 +111,8 @@ export const useSettingsStore = create<SettingsState>()(
       activeProfileId: null,
       activeModel: null,
       modelCache: {},
-      localModels: [],
       generation: defaultGeneration,
+      agentScope: defaultAgentScope,
       appearance: defaultAppearance,
       behavior: defaultBehavior,
       onboarded: false,
@@ -140,7 +135,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((s) => {
           const profiles = s.profiles.filter((p) => p.id !== id);
           const activeModel =
-            s.activeModel?.kind === 'remote' && s.activeModel.profileId === id ? null : s.activeModel;
+            s.activeModel && s.activeModel.profileId === id ? null : s.activeModel;
           const activeProfileId =
             s.activeProfileId === id ? (profiles[0]?.id ?? null) : s.activeProfileId;
           return { profiles, activeModel, activeProfileId };
@@ -155,21 +150,8 @@ export const useSettingsStore = create<SettingsState>()(
           modelCache: { ...s.modelCache, [profileId]: { models, fetchedAt: Date.now() } },
         })),
 
-      addLocalModel: (m) =>
-        set((s) => ({
-          localModels: s.localModels.some((x) => x.id === m.id)
-            ? s.localModels
-            : [m, ...s.localModels],
-        })),
-
-      removeLocalModel: (id) =>
-        set((s) => ({
-          localModels: s.localModels.filter((m) => m.id !== id),
-          activeModel:
-            s.activeModel?.kind === 'local' && s.activeModel.modelId === id ? null : s.activeModel,
-        })),
-
       patchGeneration: (patch) => set((s) => ({ generation: { ...s.generation, ...patch } })),
+      patchAgentScope: (patch) => set((s) => ({ agentScope: { ...s.agentScope, ...patch } })),
       patchAppearance: (patch) => set((s) => ({ appearance: { ...s.appearance, ...patch } })),
       patchBehavior: (patch) => set((s) => ({ behavior: { ...s.behavior, ...patch } })),
 
@@ -181,17 +163,31 @@ export const useSettingsStore = create<SettingsState>()(
           activeProfileId: null,
           activeModel: null,
           modelCache: {},
-          localModels: [],
           generation: defaultGeneration,
+          agentScope: defaultAgentScope,
           appearance: defaultAppearance,
           behavior: defaultBehavior,
           onboarded: true,
         }),
     }),
     {
-      name: 'aurora/settings/v1',
+      name: 'aurora/settings/v2',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
+      version: 2,
+      // v1 → v2: drop local-model records, add agentScope defaults.
+      migrate: (persisted: any) => {
+        const s = { ...persisted };
+        delete s.localModels;
+        if (!s.agentScope) s.agentScope = defaultAgentScope;
+        if (s.generation && typeof (s.generation as any).contextSize === 'number') {
+          delete (s.generation as any).contextSize;
+        }
+        if (!s.behavior) s.behavior = defaultBehavior;
+        if (typeof (s.behavior as any).autoContinue !== 'boolean') {
+          (s.behavior as any).autoContinue = true;
+        }
+        return s as SettingsState;
+      },
     }
   )
 );
