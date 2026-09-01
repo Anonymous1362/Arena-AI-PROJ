@@ -11,10 +11,11 @@
  *  - Emits everything through callbacks so the UI stays pure.
  */
 import type { WireMessage, PlanStep, ToolEvent } from '@/src/ai/types';
-import { streamRemoteChat } from '@/src/ai/remote';
+import { streamRemoteChat, ApiError } from '@/src/ai/remote';
 import type { RemoteTarget } from '@/src/ai/types';
 import { dispatchTool, openAITools } from '@/src/agent/tools';
 import { CONTINUE_NUDGE } from '@/src/agent/prompts';
+import { useConfirmStore } from '@/src/agent/confirm';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -55,6 +56,8 @@ export interface LoopOptions {
   maxTurns?: number;
   /** Auto-continue when the provider truncates mid-answer (finish=length). */
   autoContinue?: boolean;
+  /** Ask the user before destructive tools (delete etc.). */
+  confirmDangerous?: boolean;
 }
 
 interface ParsedTurn {
@@ -132,38 +135,52 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     for (let turn = 0; turn < maxTurns; turn++) {
       const turnTextBefore = fullText;
 
-      const result = await streamRemoteChat(target, {
-        messages: working,
-        params: {
-          temperature,
-          topP,
-          maxTokens,
-          systemPrompt,
-        },
-        tools: openAITools(),
-        signal,
-        handlers: {
-          onContent: (content) => {
-            const fresh = content.slice(turnTextBefore.length);
-            if (fresh && fresh !== content) {
-              // assembler gives cumulative text; compute delta for plan parsing
-            }
-            fullText = content;
-            const parsed = extractPlan(content);
-            if (parsed.plan.length && JSON.stringify(parsed.plan) !== JSON.stringify(steps)) {
-              // preserve done states when re-emitting a revised plan
-              steps = parsed.plan.map((s, i) => ({
-                ...s,
-                state: steps[i]?.state === 'done' ? 'done' : s.state,
-              }));
-              callbacks.onPlan([...steps]);
-            }
-            markPlanProgress(content);
-            callbacks.onText(stripPlan(content));
-          },
-          onReasoning: (r) => callbacks.onReasoning?.(r),
-        },
-      });
+      // One automatic retry for transient provider errors (429/5xx) when
+      // nothing has streamed yet — keeps long agent runs alive.
+      let result: Awaited<ReturnType<typeof streamRemoteChat>> | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          result = await streamRemoteChat(target, {
+            messages: working,
+            params: {
+              temperature,
+              topP,
+              maxTokens,
+              systemPrompt,
+            },
+            tools: openAITools(),
+            signal,
+            handlers: {
+              onContent: (content) => {
+                fullText = content;
+                const parsed = extractPlan(content);
+                if (parsed.plan.length && JSON.stringify(parsed.plan) !== JSON.stringify(steps)) {
+                  // preserve done states when re-emitting a revised plan
+                  steps = parsed.plan.map((s, i) => ({
+                    ...s,
+                    state: steps[i]?.state === 'done' ? 'done' : s.state,
+                  }));
+                  callbacks.onPlan([...steps]);
+                }
+                markPlanProgress(content);
+                callbacks.onText(stripPlan(content));
+              },
+              onReasoning: (r) => callbacks.onReasoning?.(r),
+            },
+          });
+          break;
+        } catch (e) {
+          const transient =
+            e instanceof ApiError && (e.status === 429 || e.status === 502 || e.status === 503);
+          const nothingYet = fullText === turnTextBefore;
+          if (attempt === 0 && transient && nothingYet) {
+            await new Promise<void>((r) => setTimeout(r, (e as ApiError).status === 429 ? 4000 : 2500));
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (!result) break;
 
       tokensInTotal += result.tokensIn ?? 0;
       tokensOutTotal += result.tokensOut ?? 0;
@@ -211,6 +228,41 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
         } catch {
           /* keep empty */
         }
+
+        // Confirmation gate for destructive actions.
+        if (opts.confirmDangerous && (fnName === 'delete_path' || (isCommand && /\brm\s+-rf?\b/.test(String(parsedArgs.command ?? ''))))) {
+          const allowed = await new Promise<boolean>((resolve) => {
+            useConfirmStore.getState().push({
+              id: uid(),
+              toolName: fnName,
+              summary:
+                fnName === 'delete_path'
+                  ? `The agent wants to delete “${parsedArgs.path ?? '?'}”`
+                  : `The agent wants to run: ${parsedArgs.command ?? '?'}`,
+              argsPreview: args,
+              resolve,
+            });
+          });
+          if (!allowed) {
+            working.push({
+              role: 'tool',
+              content: 'The user declined this action. Choose a different approach and continue the task.',
+              ...({ tool_call_id: call.id ?? fnName } as any),
+            } as WireMessage);
+            pushEvent({
+              id: uid(),
+              kind: isCommand ? 'command' : 'tool',
+              title: isCommand ? String(parsedArgs.command ?? 'command') : fnName,
+              detail: '',
+              output: 'Denied by user.',
+              ok: false,
+              running: false,
+              ts: Date.now(),
+            });
+            continue;
+          }
+        }
+
         const ev: ToolEvent = {
           id: uid(),
           kind: isCommand ? 'command' : 'tool',

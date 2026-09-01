@@ -22,6 +22,8 @@ import { Sheet } from '@/src/components/Sheet';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Banner, Button, TextField } from '@/src/components/ui';
 import { EmptyState } from '@/src/components/EmptyState';
+import { ConfirmSheet } from '@/src/components/ConfirmSheet';
+import { speakAloud, stopSpeaking } from '@/src/utils/speech';
 import { haptics } from '@/src/utils/haptics';
 import { shareJson } from '@/src/utils/share';
 import type { MessageAttachment } from '@/src/store/chats';
@@ -114,6 +116,23 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!conv) router.replace('/');
   }, [conv, router]);
+
+  // auto read-aloud when the agent finishes a reply
+  const autoRead = useSettingsStore((s) => s.agentScope.autoReadAloud);
+  const lastSpokenRef = useRef<string | null>(null);
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (!autoRead) return;
+    if (streaming) {
+      wasStreamingRef.current = true;
+      return;
+    }
+    if (wasStreamingRef.current && lastMessage?.role === 'assistant' && lastMessage.done && lastMessage.content && lastSpokenRef.current !== lastMessage.id) {
+      lastSpokenRef.current = lastMessage.id;
+      speakAloud(lastMessage.content, lastMessage.id);
+    }
+    wasStreamingRef.current = false;
+  }, [streaming, autoRead, lastMessage]);
 
   const send = useCallback(
     (text: string, attachments: MessageAttachment[] = []) => {
@@ -294,6 +313,23 @@ export default function ChatScreen() {
       <Sheet visible={!!actionsMsg} onClose={() => setActionsMsg(null)} title="Message">
         <View style={{ paddingHorizontal: spacing(4) }}>
           <SheetAction
+            icon="volume-high-outline"
+            label="Read aloud"
+            onPress={() => {
+              if (actionsMsg) speakAloud(actionsMsg.content, actionsMsg.id);
+              haptics.light();
+              setActionsMsg(null);
+            }}
+          />
+          <SheetAction
+            icon="stop-outline"
+            label="Stop reading"
+            onPress={() => {
+              stopSpeaking();
+              setActionsMsg(null);
+            }}
+          />
+          <SheetAction
             icon="copy-outline"
             label="Copy"
             onPress={async () => {
@@ -337,6 +373,9 @@ export default function ChatScreen() {
           />
         </View>
       </Sheet>
+
+      {/* dangerous-tool confirmation */}
+      <ConfirmSheet />
 
       {/* edit user message */}
       <Sheet visible={editSheet} onClose={() => { setEditSheet(false); setEditingMsg(null); }} title="Edit message">

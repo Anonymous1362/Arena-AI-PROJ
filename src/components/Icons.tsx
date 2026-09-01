@@ -277,6 +277,14 @@ export const Trash = (p: IconProps) => (
   </Base>
 );
 
+export const Mic = (p: IconProps) => (
+  <Base {...p}>
+    <Rect x={9} y={2.5} width={6} height={11.5} rx={3} />
+    <Path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+    <Path d="M12 18v3.5" />
+  </Base>
+);
+
 export const Pencil = (p: IconProps) => (
   <Base {...p}>
     <Path d="M17 3.2a2.6 2.6 0 0 1 3.7 3.7L7.6 20 2.5 21.5 4 16.4z" />

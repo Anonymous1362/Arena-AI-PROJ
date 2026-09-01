@@ -22,12 +22,13 @@
 - [x] Provider pricing categories: Free tier (Gemini, Groq, Cerebras) / Free+paid (OpenRouter, Mistral) / Pay-as-you-go / Your-machine (Ollama, LM Studio) — badges in the picker
 - [x] Live usage tracking: rolling 1h/24h request windows, tokens today/7d, per-provider breakdown, editable soft limits, SVG bar charts, lifetime totals (Usage & limits screen + Providers summary card)
 
-## Phase 1 — Agent hardening (next)
-- [ ] Tool-call confirmation toggle ("ask before delete / write outside project")
-- [ ] Streaming tool-event dedup + persisted replay hardening (long agent runs)
-- [ ] Android executor grant detection UI (real shell vs built-in shell status chip)
-- [ ] Agent run stats: tool calls, tokens, cost estimate per message
-- [ ] Retry-once-on-429 wrapper in the loop
+## Phase 1 — Agent hardening & voice ✅
+- [x] **Confirm-before-danger**: sheet asks permission for `delete_path` / `rm -rf` (toggle in Agent settings); denial is fed back to the agent so it adapts
+- [x] **Transient-error auto-retry**: one silent retry on 429 / 502 / 503 (4s for rate limits) when nothing streamed yet — long agent runs survive rate limits
+- [x] **Run stats per message**: tool-run count chip + duration + tokens in the bubble footer
+- [x] **Shell status chip**: Agent & storage screen shows `native · full access` vs `sandboxed built-ins` with a status LED
+- [x] **Voice input (approved)**: on-device dictation via expo-speech-recognition (mic button with pulsing state; Web Speech fallback on PWA; feature-detected — button hides if unsupported)
+- [x] **Read-aloud (approved)**: on-device TTS (expo-speech) — "Read aloud" / "Stop reading" in message actions + auto-read-every-reply toggle; markdown stripped before speaking
 
 ## Phase 2 — Distribution
 - [ ] Push CI workflows (local commit ready; needs GitHub reconnect with `workflows` permission)
@@ -35,7 +36,7 @@
 - [ ] iOS install guide stays PWA-first; SideStore path documented (no TrollStore)
 
 ## Phase 3 — Delight (small, autonomous)
-- [ ] Voice input + read-aloud (approved)
+- [x] Voice input + read-aloud (shipped in Phase 1)
 - [ ] Prompt library + per-chat system prompt override
 - [ ] Export agent transcripts as markdown run logs
 - [ ] Haptic refinement on plan-step completion

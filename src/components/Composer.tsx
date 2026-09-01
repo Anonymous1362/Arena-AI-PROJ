@@ -1,11 +1,18 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Image, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Image, Platform, StyleSheet, TextInput, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { haptics } from '@/src/utils/haptics';
 import type { MessageAttachment } from '@/src/store/chats';
-import { ArrowUp, Paperclip, Stop, Close } from '@/src/components/Icons';
+import { ArrowUp, Paperclip, Stop, Close, Mic } from '@/src/components/Icons';
+import { startDictation, sttSupported, type SttHandle } from '@/src/utils/stt';
 
 export interface ComposerProps {
   streaming: boolean;
@@ -18,6 +25,20 @@ export interface ComposerProps {
   /** Initial text to prefill (e.g. from empty-state suggestions). */
   initialText?: string;
   placeholder?: string;
+}
+
+function MicPulse({ color }: { color: string }) {
+  const opacity = useSharedValue(1);
+  const scale = useSharedValue(1);
+  opacity.set(withRepeat(withTiming(0.35, { duration: 620, easing: Easing.inOut(Easing.quad) }), -1, true));
+  const style = useAnimatedStyle(() => ({ opacity: opacity.get(), transform: [{ scale: scale.get() }] }));
+  return (
+    <Animated.View style={style}>
+      <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+        <Mic size={19} color="#FFFFFF" />
+      </View>
+    </Animated.View>
+  );
 }
 
 export function Composer({
@@ -34,7 +55,10 @@ export function Composer({
   const [text, setText] = useState(initialText ?? '');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [height, setHeight] = useState(0);
+  const [listening, setListening] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const sttRef = useRef<SttHandle | null>(null);
+  const micAvailable = sttSupported();
 
   React.useEffect(() => {
     if (initialText) {
@@ -42,6 +66,12 @@ export function Composer({
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [initialText]);
+
+  React.useEffect(() => {
+    return () => {
+      sttRef.current?.stop();
+    };
+  }, []);
 
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled && !streaming;
 
@@ -65,6 +95,30 @@ export function Composer({
     const picked = await onPickImage();
     if (picked?.length) setAttachments((a) => [...a, ...picked].slice(0, 4));
   }, [onPickImage]);
+
+  const toggleMic = useCallback(() => {
+    if (listening) {
+      sttRef.current?.stop();
+      setListening(false);
+      return;
+    }
+    haptics.medium();
+    setListening(true);
+    startDictation({
+      onPartial: (t) => setText(t),
+      onFinal: (t) => {
+        if (t) setText(t);
+        setListening(false);
+        sttRef.current = null;
+      },
+      onError: () => setListening(false),
+    })
+      .then((h) => {
+        sttRef.current = h;
+        if (!h) setListening(false);
+      })
+      .catch(() => setListening(false));
+  }, [listening]);
 
   return (
     <View style={[styles.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -94,8 +148,8 @@ export function Composer({
           ref={inputRef}
           value={text}
           onChangeText={setText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textFaint}
+          placeholder={listening ? 'Listening…' : placeholder}
+          placeholderTextColor={listening ? colors.accent : colors.textFaint}
           multiline
           onContentSizeChange={(e) =>
             setHeight(Math.min(140, Math.max(0, e.nativeEvent.contentSize.height - 22)))
@@ -109,28 +163,43 @@ export function Composer({
           selectionColor={colors.accent}
         />
 
-        <PressableScale haptic="none" scale={0.88} onPress={submit} disabled={!streaming && !canSend}>
-          <View>
-            {streaming ? (
-              <View style={[styles.sendBtn, { backgroundColor: colors.surface3, borderRadius: 12 }]}>
-                <Stop size={16} color={colors.danger} />
-              </View>
+        {streaming ? (
+          <PressableScale haptic="none" scale={0.88} onPress={submit}>
+            <View style={[styles.sendBtn, { backgroundColor: colors.surface3, borderRadius: 12 }]}>
+              <Stop size={16} color={colors.danger} />
+            </View>
+          </PressableScale>
+        ) : canSend ? (
+          <PressableScale haptic="none" scale={0.88} onPress={submit}>
+            <View
+              style={[
+                styles.sendBtn,
+                {
+                  backgroundColor: colors.accent,
+                  borderRadius: 12,
+                },
+              ]}
+            >
+              <ArrowUp size={20} color={colors.onAccent} strokeWidth={2.2} />
+            </View>
+          </PressableScale>
+        ) : micAvailable ? (
+          <PressableScale haptic="none" scale={0.88} onPress={toggleMic}>
+            {listening ? (
+              <MicPulse color={colors.accent} />
             ) : (
-              <View
-                style={[
-                  styles.sendBtn,
-                  {
-                    backgroundColor: colors.accent,
-                    borderRadius: 12,
-                    opacity: canSend ? 1 : 0.35,
-                  },
-                ]}
-              >
-                <ArrowUp size={20} color={colors.onAccent} strokeWidth={2.2} />
+              <View style={[styles.sendBtn, { backgroundColor: colors.surface2, borderRadius: 12 }]}>
+                <Mic size={19} color={colors.text} />
               </View>
             )}
-          </View>
-        </PressableScale>
+          </PressableScale>
+        ) : (
+          <PressableScale haptic="none" scale={0.88} onPress={submit} disabled>
+            <View style={[styles.sendBtn, { backgroundColor: colors.surface2, borderRadius: 12, opacity: 0.4 }]}>
+              <ArrowUp size={20} color={colors.textSub} strokeWidth={2.2} />
+            </View>
+          </PressableScale>
+        )}
       </View>
     </View>
   );

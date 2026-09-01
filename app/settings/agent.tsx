@@ -12,7 +12,7 @@ import {
   revokeStorageAccess,
   setGrantedTree,
 } from '@/src/agent/fs';
-import { TOOL_SPECS } from '@/src/agent/tools';
+import { TOOL_SPECS, executorStatus } from '@/src/agent/tools';
 import { haptics } from '@/src/utils/haptics';
 import { Platform } from 'react-native';
 
@@ -85,6 +85,21 @@ export default function AgentSettingsScreen() {
         </Card>
 
         <Card style={{ marginTop: spacing(4) }}>
+          <SwitchRow
+            label="Confirm before deleting"
+            hint="Ask permission for delete / rm -rf actions."
+            value={agentScope.confirmDangerous}
+            onChange={(v) => patch({ confirmDangerous: v })}
+          />
+          <SwitchRow
+            label="Read replies aloud"
+            hint="Speak each finished answer (on-device voices)."
+            value={agentScope.autoReadAloud}
+            onChange={(v) => patch({ autoReadAloud: v })}
+          />
+        </Card>
+
+        <Card style={{ marginTop: spacing(4) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3), marginBottom: spacing(3) }}>
             <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="folder-open" size={19} color={colors.accent} />
@@ -139,9 +154,34 @@ export default function AgentSettingsScreen() {
               </View>
             </View>
           ))}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: spacing(2),
+              backgroundColor: colors.termBg,
+              borderRadius: radius.md,
+              paddingHorizontal: spacing(3),
+              paddingVertical: spacing(2),
+            }}
+          >
+            <Ionicons name="terminal" size={14} color={colors.termText} />
+            <Text style={{ color: colors.termText, fontSize: 12.5, fontWeight: '700', flex: 1 }}>
+              Shell: {executorStatus() === 'native' ? 'native · full access' : 'sandboxed built-ins (ls, cat, grep, find…)'}
+            </Text>
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: executorStatus() === 'native' ? colors.success : colors.warning,
+              }}
+            />
+          </View>
           <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginTop: spacing(2) }}>
-            Terminal runs inside the sandboxed built-in shell (ls, cat, grep, find, and more). Android
-            devices with an executor grant unlock full native shell execution automatically.
+            Android devices with an executor grant unlock full native shell execution automatically —
+            no setup in this app.
           </Text>
         </Card>
 

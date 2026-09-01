@@ -168,6 +168,12 @@ export async function dispatchTool(
  * SUMKeep/EXTIRPERSS pattern) expose a native executor module in the JS
  * context; we probe for it lazily and never assume.
  */
+export type ExecutorMode = 'native' | 'builtin';
+
+export function executorStatus(): ExecutorMode {
+  return nativeExecutor() ? 'native' : 'builtin';
+}
+
 function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout: string; exit: number }>) | null {
   if (Platform.OS !== 'android') return null;
   const g = globalThis as any;

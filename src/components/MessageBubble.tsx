@@ -200,12 +200,21 @@ export const MessageBubble = memo(function MessageBubble({
                 </View>
               ) : null}
 
-              {!streaming && !message.error && message.stats ? (
-                <Text style={[styles.stats, { color: colors.textFaint }]}>
-                  {message.stats.ms ? formatDuration(message.stats.ms) : ''}
-                  {message.stats.tps ? ` · ${message.stats.tps.toFixed(1)} tok/s` : ''}
-                  {message.stats.tokensOut ? ` · ${Math.round(message.stats.tokensOut)} tok` : ''}
-                </Text>
+              {!streaming && !message.error && (message.stats || message.toolEvents?.length) ? (
+                <View style={styles.statsRow}>
+                  {message.toolEvents?.length ? (
+                    <View style={[styles.toolChip, { backgroundColor: colors.termBg }]}>
+                      <Text style={{ color: colors.termText, fontSize: 10.5, fontWeight: '700' }}>
+                        {message.toolEvents.length} run{message.toolEvents.length === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                  ) : null}
+                  <Text style={[styles.stats, { color: colors.textFaint }]}>
+                    {message.stats?.ms ? formatDuration(message.stats.ms) : ''}
+                    {message.stats?.tokensOut ? ` · ~${Math.round(message.stats.tokensOut).toLocaleString()} tok` : ''}
+                    {message.stats?.tps ? ` · ${message.stats.tps.toFixed(1)} tok/s` : ''}
+                  </Text>
+                </View>
               ) : null}
             </>
           )}
@@ -232,7 +241,9 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   caret: { fontSize: 15, fontWeight: '400', marginTop: 2 },
-  stats: { fontSize: 11.5, marginTop: spacing(1.5), fontVariant: ['tabular-nums'] as never },
+  stats: { fontSize: 11.5, fontVariant: ['tabular-nums'] as never },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(1.5) },
+  toolChip: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   attachRow: { flexDirection: 'row', gap: 8, marginBottom: spacing(2), flexWrap: 'wrap' },
   attachImage: { width: 132, height: 132, borderRadius: radius.md, backgroundColor: 'rgba(128,128,128,0.12)' },
 });

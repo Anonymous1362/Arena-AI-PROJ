@@ -195,6 +195,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         topP: settings.generation.topP,
         maxTokens: settings.generation.maxTokens,
         autoContinue: settings.behavior.autoContinue,
+        confirmDangerous: settings.agentScope.confirmDangerous,
         signal: abort.signal,
         callbacks: {
           onText: paintContent,

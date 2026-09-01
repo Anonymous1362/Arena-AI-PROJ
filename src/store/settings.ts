@@ -36,6 +36,10 @@ export interface AgentScope {
   storageEnabled: boolean;
   safTreeUri?: string;
   safRootLabel?: string;
+  /** Ask before destructive tool calls (delete, rm -rf). */
+  confirmDangerous: boolean;
+  /** Read assistant replies aloud automatically. */
+  autoReadAloud: boolean;
 }
 
 export interface AppearanceSettings {
@@ -88,6 +92,8 @@ const defaultGeneration: GenerationSettings = {
 const defaultAgentScope: AgentScope = {
   enabled: true,
   storageEnabled: false,
+  confirmDangerous: true,
+  autoReadAloud: false,
 };
 
 const defaultAppearance: AppearanceSettings = {

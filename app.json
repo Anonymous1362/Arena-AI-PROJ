@@ -23,7 +23,9 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true,
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "NSMicrophoneUsageDescription": "Voice input for chat.",
+        "NSSpeechRecognitionUsageDescription": "On-device dictation for voice input."
       }
     },
     "android": {
@@ -35,7 +37,10 @@
         "monochromeImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#09090C"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -67,6 +72,13 @@
         "expo-file-system",
         {
           "permission": "full"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Copper to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow Copper to use speech recognition (on-device) for dictation."
         }
       ]
     ],
