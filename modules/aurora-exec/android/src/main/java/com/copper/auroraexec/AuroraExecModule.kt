@@ -35,8 +35,11 @@ class AuroraExecModule : Module() {
     }
 
     // Kept as explicit bridge methods so JS callers can ask for either path.
+    // This one intentionally mirrors Context.getExternalFilesDir(null), i.e.
+    // Android's primary external app folder. getStorageInfo() can prefer a
+    // mounted removable volume for Copper's automatic workspace.
     AsyncFunction("getExternalFilesDir") {
-      storageInfo(preferredExternalFilesDir())
+      storageInfo(primaryExternalFilesDir())
     }
 
     AsyncFunction("getExternalSdCard") {
@@ -98,7 +101,16 @@ class AuroraExecModule : Module() {
   /** Prefer a real removable SD card; otherwise use primary external storage. */
   private fun preferredExternalFilesDir(): File? {
     val dirs = writableExternalFilesDirs()
-    return dirs.firstOrNull(::isRemovable) ?: dirs.firstOrNull()
+    return dirs.firstOrNull(::isRemovable) ?: primaryExternalFilesDir() ?: dirs.firstOrNull()
+  }
+
+  /** Mirrors Context.getExternalFilesDir(null): primary external app storage. */
+  private fun primaryExternalFilesDir(): File? {
+    val primary = context.getExternalFilesDir(null) ?: return null
+    return primary.takeIf { dir ->
+      Environment.getExternalStorageState(dir) == Environment.MEDIA_MOUNTED &&
+        (dir.isDirectory || dir.mkdirs())
+    }
   }
 
   private fun removableExternalFilesDir(): File? =
@@ -120,7 +132,7 @@ class AuroraExecModule : Module() {
     val selectedInfo = mutableMapOf<String, Any?>(
       "available" to true,
       "kind" to if (removable) "removable" else "primary",
-      "label" to if (removable) "SD card ($volumeId)" else "External storage",
+      "label" to if (removable) "SD card ($volumeId)" else "External storage (Android/data/${context.packageName}/files)",
       "rootUri" to fileUri(selected),
       "rootPath" to selected.absolutePath,
       "volumeRootUri" to fileUri(volumeRoot),
