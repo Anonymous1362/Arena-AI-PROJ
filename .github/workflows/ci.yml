@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -52,23 +52,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Metro bundle (Android)
-        run: |
-          npx react-native bundle \
-            --platform android \
-            --dev false \
-            --entry-file node_modules/expo-router/entry.js \
-            --bundle-output /tmp/android-bundle.js \
-            --assets-dest /tmp/android-assets
+      - name: Expo export (Android JS bundle)
+        run: npx expo export --platform android --output-dir dist-android-ci
         env:
           CI: true
-          NODE_ENV: production
 
       - name: Verify bundle exists
-        run: test -f /tmp/android-bundle.js
+        run: |
+          ls dist-android-ci/
+          find dist-android-ci -name '*.js' | head -5
