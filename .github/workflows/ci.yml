@@ -46,7 +46,46 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
-  # ── 3. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 3. On-demand real Copper Runtime bootstrap build ───────────────────────
+  # This is deliberately opt-in by commit message. The standalone manual
+  # workflow becomes dispatchable once its file reaches the default branch;
+  # this job lets the implementation branch validate a real bootstrap first.
+  copper-runtime-bootstrap:
+    name: Copper Runtime arm64 bootstrap
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-bootstrap]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Copper tooling
+        run: npm ci --ignore-scripts
+
+      - name: Fetch and patch pinned GPL upstream sources
+        run: |
+          npm run runtime:upstream -- --dir "$RUNNER_TEMP/copper-runtime-source"
+          npm run runtime:patch -- --workspace "$RUNNER_TEMP/copper-runtime-source"
+
+      - name: Build and verify Copper-prefix arm64 bootstrap
+        run: |
+          npm run runtime:bootstrap -- \
+            --workspace "$RUNNER_TEMP/copper-runtime-source" \
+            --out "$RUNNER_TEMP/copper-runtime-output"
+
+      - name: Upload verified bootstrap input
+        uses: actions/upload-artifact@v4
+        with:
+          name: copper-runtime-bootstrap-aarch64
+          path: ${{ runner.temp }}/copper-runtime-output/
+          if-no-files-found: error
+          retention-days: 14
+
+  # ── 4. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest
