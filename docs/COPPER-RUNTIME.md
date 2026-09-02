@@ -1,6 +1,6 @@
 # Copper Runtime — Android terminal implementation plan
 
-**Status:** design and source inputs are pinned. Copper does **not** yet include the Termux-derived runtime, bootstrap archive, PTY bridge, or a Copper package repository. The existing Terminal tab still runs Android's small system shell and must not be described as a full Linux/package environment.
+**Status:** design/source inputs are pinned, and Copper now has an Android-compiled native PTY/session bridge plus an atomic bootstrap installer. Copper does **not** yet bundle a verified Termux-derived Copper Runtime archive or operate a Copper package repository. The existing visible Terminal tab still runs Android's small system shell and must not be described as a full Linux/package environment until it is connected to a successfully installed verified runtime.
 
 ## Product decision
 
@@ -114,7 +114,7 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 
 ### R2 — Actual terminal sessions
 
-- [ ] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. It awaits an Android Gradle build and a verified bundled bootstrap before it can be called a working terminal.
+- [x] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. `:copper-exec:assembleDebug` passed in Android CI at `ff8edc8`; it still requires a verified bundled bootstrap and device validation before it can be called a working terminal.
 - [ ] Add managed 2 GiB package-operation preflight/monitoring, Ctrl-C, foreground/background session behavior, and scrollback limits.
 - [ ] Connect the React Native Terminal UI to sessions without putting raw terminal output into normal chat messages.
 - [ ] Expose a visible runtime status: missing, installing, ready, repairing, low storage, or error.
