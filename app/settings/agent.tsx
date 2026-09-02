@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,13 +8,16 @@ import { useSettingsStore } from '@/src/store/settings';
 import { AppHeader } from '@/src/components/AppHeader';
 import { Banner, Button, Card, SwitchRow } from '@/src/components/ui';
 import {
+  getStorageStatus,
+  initExternalStorage,
   requestStorageAccess,
   revokeStorageAccess,
   setGrantedTree,
+  useDefaultExternalStorage,
+  type FsPermissionInfo,
 } from '@/src/agent/fs';
 import { TOOL_SPECS, executorStatus } from '@/src/agent/tools';
 import { haptics } from '@/src/utils/haptics';
-import { Platform } from 'react-native';
 
 export default function AgentSettingsScreen() {
   const { colors } = useTheme();
@@ -27,43 +30,76 @@ export default function AgentSettingsScreen() {
 
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [storage, setStorage] = useState<FsPermissionInfo>(() => getStorageStatus());
 
-  // re-arm the FS layer from persisted state
+  // Re-arm persisted SAF access after hydration, while always discovering the
+  // automatic removable/primary external root in the background.
   useEffect(() => {
+    let mounted = true;
     setGrantedTree(agentScope.storageEnabled && Platform.OS === 'android' ? agentScope.safTreeUri ?? null : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void initExternalStorage().then(() => {
+      if (mounted) setStorage(getStorageStatus());
+    });
+    return () => { mounted = false; };
+  }, [agentScope.safTreeUri, agentScope.storageEnabled]);
 
-  const grant = async () => {
+  const pickFolder = async () => {
     setBusy(true);
     setNote(null);
     try {
       const res = await requestStorageAccess();
-      haptics.success();
+      const granted = res.tier === 'granted';
       patch({
-        storageEnabled: true,
-        safTreeUri: res.treeUri,
-        safRootLabel: res.rootLabel,
+        storageEnabled: granted,
+        safTreeUri: granted ? res.treeUri : undefined,
+        safRootLabel: granted ? res.rootLabel : undefined,
       });
-      setGrantedTree(res.treeUri ?? null);
+      setGrantedTree(granted ? res.treeUri ?? null : null);
+      setStorage(getStorageStatus());
+      haptics.success();
       setNote(
-        res.tier === 'granted'
-          ? `Storage root granted: “${res.rootLabel}”. The agent can now read/write files there.`
-          : 'Using the private app sandbox as the storage root.'
+        granted
+          ? `Custom storage root selected: “${res.rootLabel}”. Agent files and exports now use that folder.`
+          : `Folder picker closed. Copper is still using ${res.rootLabel.toLowerCase()} automatically.`
       );
     } catch (e) {
-      setNote(`Could not get access: ${(e as Error).message}`);
+      haptics.error();
+      setNote(`Could not open the folder picker: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
   };
 
-  const revoke = () => {
-    haptics.warning();
-    revokeStorageAccess();
-    patch({ storageEnabled: false, safTreeUri: undefined, safRootLabel: undefined });
-    setNote('Storage access revoked. The agent now uses the private app sandbox only.');
+  const useAutomaticExternal = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      revokeStorageAccess();
+      patch({ storageEnabled: false, safTreeUri: undefined, safRootLabel: undefined });
+      const res = await useDefaultExternalStorage();
+      setStorage(getStorageStatus());
+      haptics.success();
+      setNote(
+        res.tier === 'external'
+          ? `Using ${res.rootLabel.toLowerCase()} automatically. No broad storage permission is needed.`
+          : res.rootLabel
+      );
+    } catch (e) {
+      haptics.error();
+      setNote(`Could not switch storage: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const isAndroid = Platform.OS === 'android';
+  const usingCustomFolder = storage.tier === 'granted';
+  const automaticExternal = storage.tier === 'external';
+  const rootSummary = usingCustomFolder
+    ? `Custom: “${storage.rootLabel}”`
+    : automaticExternal
+      ? `Auto: ${storage.rootLabel}`
+      : storage.rootLabel;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -102,33 +138,72 @@ export default function AgentSettingsScreen() {
         <Card style={{ marginTop: spacing(4) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3), marginBottom: spacing(3) }}>
             <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="folder-open" size={19} color={colors.accent} />
+              <Ionicons name={automaticExternal ? 'hardware-chip-outline' : 'folder-open'} size={19} color={colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Storage access</Text>
-              <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>
-                {agentScope.storageEnabled && agentScope.safRootLabel
-                  ? `Granted: “${agentScope.safRootLabel}”`
-                  : 'Private app sandbox (no system permission needed)'}
-              </Text>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Storage root</Text>
+              <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>{rootSummary}</Text>
             </View>
           </View>
-          <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(3) }}>
-            The agent’s file tools are jailed to one storage root. Grant a folder (Android) to let it
-            organize real files — documents, downloads, projects. It can only touch what’s inside that
-            root, and only while agent mode is on.
-          </Text>
-          <View style={{ gap: spacing(2) }}>
-            <Button
-              label={agentScope.storageEnabled ? 'Change granted folder' : 'Grant a folder'}
-              icon="key-outline"
-              loading={busy}
-              onPress={grant}
-            />
-            {agentScope.storageEnabled ? (
-              <Button label="Revoke access" variant="ghost" icon="lock-closed" onPress={revoke} />
-            ) : null}
-          </View>
+
+          {storage.rootPath ? (
+            <View style={{ backgroundColor: colors.termBg, borderRadius: radius.md, paddingHorizontal: spacing(3), paddingVertical: spacing(2), marginBottom: spacing(3) }}>
+              <Text selectable style={{ color: colors.termText, fontSize: 11.5, lineHeight: 17 }}>
+                {storage.rootPath}
+              </Text>
+            </View>
+          ) : null}
+
+          {isAndroid ? (
+            <>
+              <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800', marginBottom: spacing(1) }}>
+                Always uses external / SD card storage
+              </Text>
+              <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(3) }}>
+                Agent file tools, the native terminal, and Copper exports use the app’s external files folder.
+                A removable SD card is preferred when it is mounted; otherwise Android’s primary external storage is used.
+                Copper does not silently fall back to internal app storage for these files.
+              </Text>
+              {storage.tier === 'unavailable' ? (
+                <Text style={{ color: colors.warning, fontSize: 12.5, lineHeight: 18, marginBottom: spacing(3) }}>
+                  No writable external volume is available right now. Insert/remount the card and tap “Use default external”.
+                </Text>
+              ) : null}
+              <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginBottom: spacing(3) }}>
+                The automatic folder needs no Termux-style setup or broad “all files” permission. To use a different folder
+                (SD card, Downloads, Documents), choose it explicitly below.
+              </Text>
+              <View style={{ gap: spacing(2) }}>
+                <Button
+                  label="Pick a folder (SD card, Downloads… )"
+                  icon="folder-open-outline"
+                  loading={busy}
+                  onPress={pickFolder}
+                />
+                {usingCustomFolder ? (
+                  <Button
+                    label="Use default external (auto)"
+                    variant="secondary"
+                    icon="refresh-outline"
+                    loading={busy}
+                    onPress={useAutomaticExternal}
+                  />
+                ) : (
+                  <Button
+                    label="Refresh external / SD card"
+                    variant="ghost"
+                    icon="refresh-outline"
+                    loading={busy}
+                    onPress={useAutomaticExternal}
+                  />
+                )}
+              </View>
+            </>
+          ) : (
+            <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19 }}>
+              This platform has no Android-style removable storage volume. Agent files remain jailed to the app sandbox.
+            </Text>
+          )}
         </Card>
 
         {note ? <Banner kind="info" text={note} onClose={() => setNote(null)} /> : null}
@@ -168,7 +243,7 @@ export default function AgentSettingsScreen() {
           >
             <Ionicons name="terminal" size={14} color={colors.termText} />
             <Text style={{ color: colors.termText, fontSize: 12.5, fontWeight: '700', flex: 1 }}>
-              Shell: {executorStatus() === 'native' ? 'native · full access' : 'sandboxed built-ins (ls, cat, grep, find…)'}
+              Shell: {executorStatus() === 'native' ? 'native · external storage cwd' : 'sandboxed built-ins (ls, cat, grep, find…)'}
             </Text>
             <View
               style={{
@@ -180,8 +255,8 @@ export default function AgentSettingsScreen() {
             />
           </View>
           <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginTop: spacing(2) }}>
-            Android devices with an executor grant unlock full native shell execution automatically —
-            no setup in this app.
+            Native Android commands start in the automatic external root. When you choose a custom SAF folder,
+            the safe built-in commands stay inside that folder instead.
           </Text>
         </Card>
 

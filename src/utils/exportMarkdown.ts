@@ -23,8 +23,8 @@
  *   _Tokens in: X  |  out: Y  |  TPS: Z  |  Time: Xs_
  */
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { writeAgentExport } from '@/src/agent/fs';
+import { shareExportedFile } from '@/src/utils/share';
 import type { Conversation } from '@/src/store/chats';
 
 function modelLabel(conv: Conversation): string {
@@ -139,13 +139,10 @@ export async function exportConversationMarkdown(conv: Conversation): Promise<vo
     return;
   }
 
-  const fileUri = `${FileSystem.cacheDirectory ?? ''}${filename}`;
-  await FileSystem.writeAsStringAsync(fileUri, md, { encoding: FileSystem.EncodingType.UTF8 });
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(fileUri, {
-      mimeType: 'text/markdown',
-      dialogTitle: 'Export run log',
-      UTI: 'public.text',
-    });
-  }
+  const fileUri = await writeAgentExport(filename, md);
+  await shareExportedFile(fileUri, {
+    mimeType: 'text/markdown',
+    dialogTitle: 'Export run log',
+    UTI: 'public.text',
+  });
 }

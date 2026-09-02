@@ -8,6 +8,7 @@ import type { WireMessage } from '@/src/ai/types';
 import { runAgentTurn } from '@/src/agent/loop';
 import { buildSystemPrompt } from '@/src/agent/prompts';
 import { currentRoot } from '@/src/agent/fs';
+import { executorStatus } from '@/src/agent/tools';
 import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
 import { useUsageStore } from '@/src/store/usage';
@@ -109,15 +110,18 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
       ? conv.systemPromptOverride
       : settings.generation.systemPrompt;
 
+  const storageRoot = currentRoot();
   const system = buildSystemPrompt({
     userSystemPrompt: effectiveUserSystemPrompt,
     scopeLabel:
-      settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
-        ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
-        : currentRoot().tier === 'granted'
-          ? 'user-granted storage root'
-          : 'app sandbox',
-    executorReal: false,
+      storageRoot.tier === 'granted'
+        ? `user-granted storage root “${settings.agentScope.safRootLabel ?? storageRoot.rootLabel}”`
+        : storageRoot.tier === 'external'
+          ? `automatic external storage “${storageRoot.rootLabel}”`
+          : storageRoot.tier === 'unavailable'
+            ? storageRoot.rootLabel
+            : 'app sandbox',
+    executorReal: executorStatus() === 'native',
   });
 
   let wire: WireMessage[] = buildWireMessages(

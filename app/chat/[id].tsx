@@ -35,7 +35,9 @@ async function pickImageAttachment(): Promise<MessageAttachment[] | null> {
   const res = await DocumentPicker.getDocumentAsync({
     type: ['image/jpeg', 'image/png', 'image/webp'],
     multiple: false,
-    copyToCacheDirectory: true,
+    // Android reads the provider URI directly so attaching an SD-card image
+    // does not first duplicate it into Copper's internal cache.
+    copyToCacheDirectory: Platform.OS !== 'android',
   });
   if (res.canceled || !res.assets?.[0]) return null;
   const a = res.assets[0];

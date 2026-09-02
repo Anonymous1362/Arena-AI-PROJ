@@ -2,13 +2,11 @@
  * Agent tool registry.
  *
  * The model calls these through the OpenAI `tools` protocol. Every call runs
- * inside the sandbox configured by the user (see fs.ts + settings.agentScope):
+ * inside the storage root configured by the user (see fs.ts + settings.agentScope):
  *  - `read_file` / `write_file` / `list_dir` / `delete_path` / `mkdir` / `stat`
- *    operate on the jailed storage root (app sandbox or user-granted tree).
- *  - `run_command` executes a shell command when a real executor is available
- *    (Android + SUMKeep-style exec grant); otherwise it runs a pure-JS
- *    simulated shell (ls / cat / echo / head / tail / wc / grep / touch /
- *    mkdir / rm / pwd) that still produces honest, useful transcript output.
+ *    operate on the automatic external root or a user-granted SAF tree.
+ *  - `run_command` runs Android's system shell with the automatic external
+ *    root as cwd. A custom SAF tree uses the honest pure-JS shell fallback.
  */
 import { Platform } from 'react-native';
 import {
@@ -19,8 +17,10 @@ import {
   mkdirAgent,
   statAgentPath,
   currentRoot,
+  initExternalStorage,
   safeRelPath,
 } from '@/src/agent/fs';
+import { AuroraExec } from '@/modules/aurora-exec';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -95,7 +95,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: 'run_command',
     description:
-      'Run a shell command inside the app sandbox (cwd = storage root). Real shell when an executor is available; otherwise a built-in shell emulation for common commands (ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd). Timeout applies.',
+      'Run a shell command with the active storage root as cwd. Android uses its external-storage shell; a custom folder or unsupported platform uses built-in commands (ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd). Timeout applies.',
     params: {
       command: { type: 'string', description: 'The shell command to run' },
       timeout_seconds: { type: 'number', description: 'Timeout in seconds (default 20, max 60)' },
@@ -164,45 +164,38 @@ export async function dispatchTool(
 /* ------------------------------ run_command ------------------------------- */
 
 /**
- * Real executor detection. Devices with an exec-capable grant (e.g. the
- * SUMKeep/EXTIRPERSS pattern) expose a native executor module in the JS
- * context; we probe for it lazily and never assume.
+ * The native executor is usable only for Copper's physical external root.
+ * A SAF URI is not a POSIX working directory, so custom-folder commands use
+ * the built-in file-shell instead of pretending a native shell can access it.
  */
 export type ExecutorMode = 'native' | 'builtin';
 
 export function executorStatus(): ExecutorMode {
-  return nativeExecutor() ? 'native' : 'builtin';
-}
-
-function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout: string; exit: number }>) | null {
-  if (Platform.OS !== 'android') return null;
-  const g = globalThis as any;
-  const exec =
-    g.AuroraExec?.exec ??
-    g.expo?.modules?.AuroraExec?.exec ??
-    g.expo?.modules?.ExpoFileSystem?.exec ??
-    null;
-  if (typeof exec !== 'function') return null;
-  return (cmd: string, timeoutMs: number) =>
-    exec(cmd, timeoutMs).then((r: any) => ({ stdout: String(r?.stdout ?? r ?? ''), exit: Number(r?.exit ?? r?.code ?? 0) }));
+  const root = currentRoot();
+  return Platform.OS === 'android' && root.tier === 'external' && !!root.path && AuroraExec.isAvailable()
+    ? 'native'
+    : 'builtin';
 }
 
 async function runCommand(command: string, timeoutMs: number, _cap?: number): Promise<ToolResult> {
-  const cwdLabel = currentRoot().tier === 'granted' ? 'granted storage root' : 'app sandbox';
+  if (Platform.OS === 'android' && currentRoot().tier !== 'granted') await initExternalStorage(true);
+  const root = currentRoot();
+  const cwdLabel = root.rootLabel;
 
-  const real = nativeExecutor();
-  if (real) {
+  if (executorStatus() === 'native' && root.path) {
     try {
-      const withCd = `cd "$(getcwd 2>/dev/null || echo .)" 2>/dev/null; ${command}; echo "__EXIT:$?"`;
-      const r = await Promise.race([
-        real(withCd, timeoutMs),
-        new Promise<{ stdout: string; exit: number }>((_, rej) =>
-          setTimeout(() => rej(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs + 1500)
+      const result = await Promise.race([
+        AuroraExec.exec(command, root.path, timeoutMs),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs + 1_500)
         ),
       ]);
+      const output = result.stdout.length > 32_000
+        ? `${result.stdout.slice(0, 16_000)}\n…[truncated]…\n${result.stdout.slice(-16_000)}`
+        : result.stdout;
       return {
-        ok: r.exit === 0,
-        output: r.stdout.length > 32_000 ? `${r.stdout.slice(0, 16_000)}\n…[truncated]…\n${r.stdout.slice(-16_000)}` : r.stdout,
+        ok: result.exit === 0 && !result.timedOut,
+        output: result.timedOut ? `${output}\nCommand timed out after ${Math.round(timeoutMs / 1000)}s.` : output,
       };
     } catch (e) {
       return { ok: false, output: `Command failed: ${(e as Error).message}` };

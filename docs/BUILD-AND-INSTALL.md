@@ -36,6 +36,9 @@ npx expo prebuild -p android
 cd android && ./gradlew assembleRelease
 # APK: android/app/build/outputs/apk/release/app-release.apk
 ```
+
+> `termux-setup-storage` only grants **Termux** access to Android storage. Copper does not depend on that grant: its Android build automatically uses its own app-specific folder on a removable SD card when one is mounted, otherwise primary external storage. See [the Android external / SD-card storage notes](../README.md#android-external--sd-card-storage) for the exact paths and optional folder picker.
+
 Tip: phones need lots of RAM for Gradle — close other apps or add swap. CI (Option A) is usually faster.
 
 ---

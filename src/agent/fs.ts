@@ -1,75 +1,238 @@
 /**
  * Agent file-system layer.
  *
- * Two tiers, both explicit:
- *  1. App sandbox (documents/) — always available, no permissions.
- *  2. User-granted tree (Android SAF via the legacy FileSystem module; iOS:
- *     app sandbox only) — granted with the system picker when the user first
- *     enables "Storage access". Grant URI is persisted; revocable anytime.
+ * Android always starts in Copper's app-specific external directory. When a
+ * removable SD card is mounted, Android selects that volume before emulated
+ * primary storage. There is deliberately no Android-internal-storage fallback:
+ * a missing/ejected card is reported instead of silently writing under
+ * /data/data.
  *
- * All agent paths are relative and jailed to the active root.
+ * A user can optionally grant a different folder with Android's Storage Access
+ * Framework (SAF). All agent paths remain relative and jailed to that root.
+ * iOS and web retain their platform sandbox because Android external volumes do
+ * not exist there.
  */
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import type * as FSTypes from 'expo-file-system';
+import { AuroraExec, type ExternalStorageInfo } from '@/modules/aurora-exec';
 
-export type FsTier = 'sandbox' | 'granted';
+export type FsTier = 'external' | 'granted' | 'sandbox' | 'unavailable';
 
 export interface FsPermissionInfo {
   tier: FsTier;
-  /** Display label for the granted root (short). */
+  /** Short, user-facing storage location. */
   rootLabel: string;
-  /** SAF tree URI when granted on Android. */
+  /** A SAF tree URI when the user selected a custom Android folder. */
   treeUri?: string;
+  /** Physical file URI for the automatic app-specific external root. */
+  rootUri?: string;
+  /** Physical path used as the native terminal's working directory. */
+  rootPath?: string;
+}
+
+interface FsRoot extends FsPermissionInfo {
+  uri: string;
+  path?: string;
 }
 
 const SAF = (FileSystem as unknown as {
   StorageAccessFramework?: {
-    requestDirectoryPermissionsAsync: (initialFileUrl?: string) => Promise<{ granted: boolean; directoryUri?: string }>;
+    requestDirectoryPermissionsAsync: (initialFileUrl?: string | null) => Promise<{ granted: boolean; directoryUri?: string }>;
     readDirectoryAsync: (directoryUri: string) => Promise<string[]>;
     makeDirectoryAsync: (parentUri: string, dirName: string) => Promise<string>;
-    writeFileAsync: (parentUri: string, fileName: string, content: string, encoding?: string) => Promise<string>;
+    createFileAsync: (parentUri: string, fileName: string, mimeType: string) => Promise<string>;
   };
 }).StorageAccessFramework;
 
 /* ------------------------------- root state -------------------------------- */
 
 let grantedTreeUri: string | null = null;
+let automaticExternal: ExternalStorageInfo | null = null;
+let automaticStorageChecked = false;
+let automaticStorageTask: Promise<FsPermissionInfo> | null = null;
 
+const sandboxUri = (): string => `${FileSystem.documentDirectory ?? ''}files/`;
+
+function withTrailingSlash(uri: string): string {
+  return uri.endsWith('/') ? uri : `${uri}/`;
+}
+
+function externalInfo(): FsPermissionInfo {
+  if (automaticExternal?.available && automaticExternal.rootUri && automaticExternal.rootPath) {
+    return {
+      tier: 'external',
+      rootLabel: automaticExternal.label ?? (automaticExternal.kind === 'removable' ? 'SD card' : 'External storage'),
+      rootUri: withTrailingSlash(automaticExternal.rootUri),
+      rootPath: automaticExternal.rootPath,
+    };
+  }
+  return {
+    tier: 'unavailable',
+    rootLabel: AuroraExec.isAvailable()
+      ? 'No writable external storage is mounted'
+      : 'External storage needs a Copper Android build',
+  };
+}
+
+function grantedLabel(uri: string): string {
+  const encodedTree = uri.match(/\/tree\/([^/]+)/)?.[1];
+  const decoded = encodedTree ? decodeURIComponent(encodedTree) : '';
+  const [volume, ...path] = decoded.split(':');
+  if (volume && volume !== 'primary') {
+    return `Custom folder on SD card (${volume})${path.length ? `/${path.join('/')}` : ''}`;
+  }
+  return path.length ? `Custom external folder (${path.join('/')})` : 'Custom external folder';
+}
+
+/** Re-arm or clear the persisted custom SAF tree. */
 export function setGrantedTree(uri: string | null): void {
   grantedTreeUri = uri;
+  uriCache.clear();
 }
 
 export function getGrantedTree(): string | null {
   return grantedTreeUri;
 }
 
-export function currentRoot(): { tier: FsTier; uri: string } {
-  if (grantedTreeUri && Platform.OS !== 'web') return { tier: 'granted', uri: grantedTreeUri };
-  return { tier: 'sandbox', uri: `${FileSystem.documentDirectory ?? ''}files/` };
+/**
+ * Discover the automatic Android root. Safe to call more than once; `force`
+ * is useful after inserting/ejecting a card. It never falls back to internal
+ * storage on Android.
+ */
+export async function initExternalStorage(force = false): Promise<FsPermissionInfo> {
+  if (Platform.OS !== 'android') {
+    const uri = sandboxUri();
+    if (uri) {
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) await FileSystem.makeDirectoryAsync(uri, { intermediates: true });
+    }
+    return currentRoot();
+  }
+
+  if (automaticStorageTask && !force) return automaticStorageTask;
+  if (automaticStorageChecked && !force) return externalInfo();
+
+  automaticStorageTask = (async () => {
+    try {
+      const info = await AuroraExec.getStorageInfo();
+      automaticExternal = info?.available && info.rootUri && info.rootPath ? info : null;
+      automaticStorageChecked = true;
+
+      // Android normally creates getExternalFilesDir() for us. Verify it once
+      // so failures (e.g. a just-ejected card) surface before a tool writes.
+      if (automaticExternal?.rootUri) {
+        const uri = withTrailingSlash(automaticExternal.rootUri);
+        const root = await FileSystem.getInfoAsync(uri);
+        if (!root.exists) await FileSystem.makeDirectoryAsync(uri, { intermediates: true });
+      }
+    } catch {
+      automaticExternal = null;
+      automaticStorageChecked = true;
+    } finally {
+      automaticStorageTask = null;
+    }
+    return externalInfo();
+  })();
+
+  return automaticStorageTask;
 }
 
+/** Switch back from a custom SAF folder to the removable/primary auto root. */
+export async function useDefaultExternalStorage(): Promise<FsPermissionInfo> {
+  revokeStorageAccess();
+  return initExternalStorage(true);
+}
+
+/** Returns the active root synchronously for labels and shell status. */
+export function currentRoot(): FsRoot {
+  if (grantedTreeUri && Platform.OS === 'android') {
+    return {
+      tier: 'granted',
+      uri: grantedTreeUri,
+      treeUri: grantedTreeUri,
+      rootLabel: grantedLabel(grantedTreeUri),
+    };
+  }
+
+  if (Platform.OS === 'android') {
+    const info = externalInfo();
+    return {
+      ...info,
+      uri: info.rootUri ?? '',
+      path: info.rootPath,
+    };
+  }
+
+  const uri = sandboxUri();
+  return { tier: 'sandbox', uri, rootUri: uri, rootLabel: 'App sandbox' };
+}
+
+/** A label/path snapshot suitable for the Settings screen. */
+export function getStorageStatus(): FsPermissionInfo {
+  const root = currentRoot();
+  return {
+    tier: root.tier,
+    rootLabel: root.rootLabel,
+    treeUri: root.treeUri,
+    rootUri: root.rootUri,
+    rootPath: root.rootPath,
+  };
+}
+
+/**
+ * Opens the Android system folder picker, initially focused on a removable SD
+ * volume when one is mounted. This is optional: the default app-specific SD
+ * folder requires no broad-storage permission or Termux-style setup.
+ */
 export async function requestStorageAccess(): Promise<FsPermissionInfo> {
   if (Platform.OS === 'web') {
-    throw new Error('Storage access requires the native app.');
+    throw new Error('Picking a device folder requires the native app.');
   }
-  if (Platform.OS === 'android' && SAF) {
-    const res = await SAF.requestDirectoryPermissionsAsync();
+
+  if (Platform.OS === 'android') {
+    await initExternalStorage();
+    if (!SAF) throw new Error('The Android folder picker is unavailable in this build.');
+
+    const initialUri = automaticExternal?.removableSafRootUri ?? automaticExternal?.safRootUri ?? null;
+    const res = await SAF.requestDirectoryPermissionsAsync(initialUri);
     if (res.granted && res.directoryUri) {
       grantedTreeUri = res.directoryUri;
-      const label = decodeURIComponent(res.directoryUri.split('/').pop() ?? 'storage');
-      return { tier: 'granted', rootLabel: label || 'storage', treeUri: res.directoryUri };
+      uriCache.clear();
+      return {
+        tier: 'granted',
+        rootLabel: grantedLabel(res.directoryUri),
+        treeUri: res.directoryUri,
+      };
     }
-    // user dismissed the picker — fall back to sandbox
+    // The user closed the picker. Keep the automatic external root active.
+    return getStorageStatus();
   }
-  const dir = `${FileSystem.documentDirectory ?? ''}files/`;
-  (await FileSystem.getInfoAsync(dir)).exists || (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
-  grantedTreeUri = null;
-  return { tier: 'sandbox', rootLabel: 'App sandbox', treeUri: undefined };
+
+  return currentRoot();
 }
 
 export function revokeStorageAccess(): void {
   grantedTreeUri = null;
+  uriCache.clear();
+}
+
+/** Resolve the current Android volume before an actual file operation. */
+async function activeRoot(): Promise<FsRoot> {
+  // Refresh the automatic root for each operation so ejecting/inserting a card
+  // while Copper stays open never redirects work to internal storage (and can
+  // immediately select the newly mounted removable volume).
+  if (Platform.OS === 'android' && !grantedTreeUri) {
+    await initExternalStorage(true);
+  }
+  const root = currentRoot();
+  if (root.tier === 'unavailable' || !root.uri) {
+    throw new Error(
+      AuroraExec.isAvailable()
+        ? 'No writable external storage is mounted. Insert or remount the SD card, then tap “Use default external” in Agent & storage.'
+        : 'External storage is available only in a Copper Android build. Expo Go cannot load the external-storage module.'
+    );
+  }
+  return root;
 }
 
 /* ------------------------------ path helpers ------------------------------- */
@@ -81,13 +244,23 @@ export function safeRelPath(input: string): string {
   for (const seg of p.split('/')) {
     if (!seg || seg === '.') continue;
     if (seg === '..') {
-      if (parts.length === 0) throw new Error(`Path escapes the sandbox root: ${input}`);
+      if (parts.length === 0) throw new Error(`Path escapes the storage root: ${input}`);
       parts.pop();
       continue;
     }
     parts.push(seg);
   }
   return parts.join('/');
+}
+
+function requiredPath(input: string, operation: string): string {
+  const path = safeRelPath(input);
+  if (!path) throw new Error(`${operation} requires a path inside the storage root.`);
+  return path;
+}
+
+function joinUri(rootUri: string, rel: string): string {
+  return `${withTrailingSlash(rootUri)}${rel}`;
 }
 
 function nameOf(uri: string): string {
@@ -107,31 +280,53 @@ async function safChild(dirUri: string, name: string): Promise<string | null> {
   return null;
 }
 
-/** Resolve a relative path inside the granted tree to a document/directory URI. */
-async function safResolve(rel: string, createDirs = false): Promise<string> {
-  const root = grantedTreeUri!;
-  const segments = rel ? rel.split('/') : [];
-  let dirUri = root;
-  let consumed = 0;
+/** Resolve an existing document or directory inside the SAF tree. */
+async function safResolveExisting(rel: string): Promise<string> {
+  let current = grantedTreeUri!;
+  if (!rel) return current;
 
-  // Walk existing directories (cached).
-  for (; consumed < segments.length - (createDirs ? 1 : 0); consumed++) {
-    const want = segments[consumed];
-    const cachedKey = `${dirUri}::${want}`;
-    let child = uriCache.get(cachedKey) ?? (await safChild(dirUri, want));
-    if (!child) {
-      if (!createDirs) throw new Error(`Not found: ${rel}`);
-      child = await SAF!.makeDirectoryAsync(dirUri, want);
-    }
-    uriCache.set(cachedKey, child);
-    dirUri = child;
+  for (const segment of rel.split('/')) {
+    const cacheKey = `${current}::${segment}`;
+    let child = uriCache.get(cacheKey) ?? (await safChild(current, segment));
+    if (!child) throw new Error(`Not found: ${rel}`);
+    uriCache.set(cacheKey, child);
+    current = child;
   }
-  if (!createDirs && consumed < segments.length) {
-    const last = await safChild(dirUri, segments[segments.length - 1]);
-    if (!last) throw new Error(`Not found: ${rel}`);
-    return last;
+  return current;
+}
+
+/** Resolve/create a directory path inside the SAF tree. */
+async function safEnsureDirectory(rel: string): Promise<string> {
+  let current = grantedTreeUri!;
+  if (!rel) return current;
+
+  for (const segment of rel.split('/')) {
+    const cacheKey = `${current}::${segment}`;
+    let child = uriCache.get(cacheKey) ?? (await safChild(current, segment));
+    if (!child) child = await SAF!.makeDirectoryAsync(current, segment);
+    uriCache.set(cacheKey, child);
+    current = child;
   }
-  return dirUri;
+  return current;
+}
+
+function mimeFor(filename: string): string {
+  if (/\.(md|markdown)$/i.test(filename)) return 'text/markdown';
+  if (/\.json$/i.test(filename)) return 'application/json';
+  if (/\.csv$/i.test(filename)) return 'text/csv';
+  if (/\.(html?|xml)$/i.test(filename)) return 'text/html';
+  return 'text/plain';
+}
+
+async function writeToSaf(path: string, content: string): Promise<string> {
+  const segments = path.split('/');
+  const filename = segments.pop()!;
+  const parent = await safEnsureDirectory(segments.join('/'));
+  const existing = await safChild(parent, filename);
+  const fileUri = existing ?? (await SAF!.createFileAsync(parent, filename, mimeFor(filename)));
+  await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.UTF8 });
+  uriCache.clear();
+  return fileUri;
 }
 
 /* --------------------------------- operations ------------------------------ */
@@ -139,63 +334,66 @@ async function safResolve(rel: string, createDirs = false): Promise<string> {
 const TEXT_EXT = /\.(txt|md|markdown|json|jsonc|js|jsx|ts|tsx|mjs|cjs|css|scss|html|htm|xml|yaml|yml|toml|ini|cfg|conf|env|sh|bash|zsh|py|rb|go|rs|java|kt|kts|c|h|cpp|hpp|cs|php|sql|csv|tsv|log|gitignore|properties|gradle|plist|swift|lock)$/i;
 
 export async function readAgentFile(rel: string, maxSize = 2 * 1024 * 1024): Promise<string> {
-  const path = safeRelPath(rel);
-  const root = currentRoot();
+  const path = requiredPath(rel, 'Reading');
+  const root = await activeRoot();
   if (root.tier === 'granted' && SAF) {
-    const uri = await safResolve(path);
+    const uri = await safResolveExisting(path);
     const size = await fileSizeOf(uri).catch(() => 0);
     if (size > maxSize) {
       return `File too large to read fully (${formatKB(size)}; limit ${formatKB(maxSize)}). Read it in ranges or delete sections first.`;
     }
-    return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+    return FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
   }
-  const uri = `${root.uri}${path}`;
+
+  const uri = joinUri(root.uri, path);
   const info = await FileSystem.getInfoAsync(uri);
   if (!info.exists) throw new Error(`File not found: ${path}`);
   if ((info as { size?: number }).size && (info as { size?: number }).size! > maxSize) {
     return `File too large to read fully (${formatKB((info as { size?: number }).size!)}; limit ${formatKB(maxSize)}).`;
   }
-  return await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+  return FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+}
+
+async function writeRootFile(rel: string, content: string): Promise<string> {
+  const path = requiredPath(rel, 'Writing');
+  const root = await activeRoot();
+  if (root.tier === 'granted' && SAF) return writeToSaf(path, content);
+
+  const uri = joinUri(root.uri, path);
+  const dir = uri.slice(0, uri.lastIndexOf('/'));
+  const info = await FileSystem.getInfoAsync(dir);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+  return uri;
 }
 
 export async function writeAgentFile(rel: string, content: string, maxSize = 1024 * 1024): Promise<string> {
-  const path = safeRelPath(rel);
+  const path = requiredPath(rel, 'Writing');
   if (content.length > maxSize) {
     throw new Error(`Content too large (${formatKB(content.length)}; limit ${formatKB(maxSize)}). Write in chunks or reduce size.`);
   }
-  const root = currentRoot();
-  if (root.tier === 'granted' && SAF) {
-    const segs = path.split('/');
-    const name = segs.pop()!;
-    const dirRel = segs.join('/');
-    const dirUri = await safResolve(dirRel, true);
-    await SAF.writeFileAsync(dirUri, name, content, FileSystem.EncodingType.UTF8);
-    uriCache.clear();
-    return `Wrote ${formatKB(content.length)} to ${path}`;
-  }
-  const uri = `${root.uri}${path}`;
-  const dir = uri.slice(0, uri.lastIndexOf('/'));
-  (await FileSystem.getInfoAsync(dir)).exists ||
-    (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
-  await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+  await writeRootFile(path, content);
   return `Wrote ${formatKB(content.length)} to ${path}`;
+}
+
+/** Write a user-visible export into the active external/custom root. */
+export async function writeAgentExport(filename: string, content: string): Promise<string> {
+  const cleanName = requiredPath(filename.replace(/[\\/]+/g, '_'), 'Exporting');
+  return writeRootFile(`exports/${cleanName}`, content);
 }
 
 export async function listAgentDir(rel: string): Promise<string> {
   const path = safeRelPath(rel);
-  const root = currentRoot();
+  const root = await activeRoot();
   if (root.tier === 'granted' && SAF) {
-    const uri = path ? await safResolve(path) : root.uri;
+    const uri = path ? await safResolveExisting(path) : root.uri;
     const entries = await SAF.readDirectoryAsync(uri);
     if (entries.length === 0) return `(empty) ${path || '.'}`;
-    const lines = entries.map((e) => {
-      const n = nameOf(e);
-      const isDir = looksLikeDir(e);
-      return `${isDir ? 'd' : '-'} ${n}`;
-    });
+    const lines = entries.map((e) => `${looksLikeDir(e) ? 'd' : '-'} ${nameOf(e)}`);
     return `${path || '.'}\n${lines.join('\n')}`;
   }
-  const uri = `${root.uri}${path}`;
+
+  const uri = joinUri(root.uri, path);
   const info = await FileSystem.getInfoAsync(uri);
   if (!info.exists) throw new Error(`Directory not found: ${path || '.'}`);
   if (!(info as { isDirectory?: boolean }).isDirectory) throw new Error(`Not a directory: ${path}`);
@@ -205,14 +403,15 @@ export async function listAgentDir(rel: string): Promise<string> {
 }
 
 export async function statAgentPath(rel: string): Promise<string> {
-  const path = safeRelPath(rel);
-  const root = currentRoot();
+  const path = requiredPath(rel, 'Stat');
+  const root = await activeRoot();
   if (root.tier === 'granted' && SAF) {
-    const uri = await safResolve(path);
+    const uri = await safResolveExisting(path);
     const size = await fileSizeOf(uri).catch(() => 0);
     return `${path}\n  type: ${looksLikeDir(uri) ? 'directory' : 'file'}\n  size: ${formatKB(size)}`;
   }
-  const uri = `${root.uri}${path}`;
+
+  const uri = joinUri(root.uri, path);
   const info = await FileSystem.getInfoAsync(uri);
   if (!info.exists) throw new Error(`Not found: ${path}`);
   const s = info as { size?: number; isDirectory?: boolean; modificationTime?: number };
@@ -227,28 +426,26 @@ export async function statAgentPath(rel: string): Promise<string> {
 }
 
 export async function mkdirAgent(rel: string): Promise<string> {
-  const path = safeRelPath(rel);
-  const root = currentRoot();
+  const path = requiredPath(rel, 'Creating a directory');
+  const root = await activeRoot();
   if (root.tier === 'granted' && SAF) {
-    await safResolve(path, true);
+    await safEnsureDirectory(path);
     uriCache.clear();
-    return `Created directory ${path}`;
+  } else {
+    await FileSystem.makeDirectoryAsync(joinUri(root.uri, path), { intermediates: true });
   }
-  await FileSystem.makeDirectoryAsync(`${root.uri}${path}`, { intermediates: true });
   return `Created directory ${path}`;
 }
 
 export async function deleteAgentPath(rel: string): Promise<string> {
-  const path = safeRelPath(rel);
-  if (!path) throw new Error('Refusing to delete the sandbox root.');
-  const root = currentRoot();
+  const path = requiredPath(rel, 'Deleting');
+  const root = await activeRoot();
   if (root.tier === 'granted' && SAF) {
-    const uri = await safResolve(path);
-    await FileSystem.deleteAsync(uri, { idempotent: true });
+    await FileSystem.deleteAsync(await safResolveExisting(path), { idempotent: true });
     uriCache.clear();
-    return `Deleted ${path}`;
+  } else {
+    await FileSystem.deleteAsync(joinUri(root.uri, path), { idempotent: true });
   }
-  await FileSystem.deleteAsync(`${root.uri}${path}`, { idempotent: true });
   return `Deleted ${path}`;
 }
 
@@ -264,10 +461,10 @@ async function fileSizeOf(uri: string): Promise<number> {
 }
 
 function looksLikeDir(uri: string): boolean {
-  // SAF document ids for directories carry the mimeType in the tree; heuristics:
-  // directory entries typically do not have an extension.
-  const n = nameOf(uri);
-  return !/\.[A-Za-z0-9]{1,8}$/.test(n);
+  // The legacy SAF API does not expose a reliable directory stat. This keeps
+  // command listings useful while accepting that uncommon dotted folder names
+  // are displayed as files.
+  return !/\.[A-Za-z0-9]{1,8}$/.test(nameOf(uri));
 }
 
 function formatKB(bytes: number): string {

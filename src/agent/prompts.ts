@@ -51,7 +51,7 @@ export function buildSystemPrompt(opts: {
 }): string {
   const parts: string[] = [MASTER_SYSTEM_PROMPT];
   parts.push(
-    `## Environment\nStorage sandbox: ${opts.scopeLabel}. run_command mode: ${
+    `## Environment\nStorage root: ${opts.scopeLabel}. run_command mode: ${
       opts.executorReal ? 'native shell execution' : 'sandboxed built-in shell (ls/cat/grep/etc.)'
     }. Platform: mobile.`
   );

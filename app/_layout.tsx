@@ -5,6 +5,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import * as SystemUI from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@/src/theme';
+import { initExternalStorage, setGrantedTree } from '@/src/agent/fs';
+import { useSettingsStore } from '@/src/store/settings';
 
 function Routes() {
   const { colors, scheme } = useTheme();
@@ -34,6 +36,23 @@ function Routes() {
   );
 }
 
+/**
+ * Arms the persisted custom SAF folder and discovers the automatic external
+ * Android root as soon as the app starts. Android never falls back to the
+ * internal app files directory for agent/terminal work.
+ */
+function StorageRootInitializer() {
+  const storageEnabled = useSettingsStore((s) => s.agentScope.storageEnabled);
+  const safTreeUri = useSettingsStore((s) => s.agentScope.safTreeUri);
+
+  useEffect(() => {
+    setGrantedTree(Platform.OS === 'android' && storageEnabled ? safTreeUri ?? null : null);
+    void initExternalStorage();
+  }, [safTreeUri, storageEnabled]);
+
+  return null;
+}
+
 /** Registers the offline service worker on web (PWA install support). */
 function ServiceWorkerRegistrar() {
   useEffect(() => {
@@ -52,6 +71,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.fill}>
       <SafeAreaProvider>
         <ThemeProvider>
+          <StorageRootInitializer />
           <ServiceWorkerRegistrar />
           <Routes />
         </ThemeProvider>
