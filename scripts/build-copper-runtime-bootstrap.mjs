@@ -12,6 +12,7 @@
  * Usage:
  *   node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path
  *   node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path --add git,curl
+ *   node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path --preflight-only
  *   node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path --print-command
  */
 
@@ -39,7 +40,7 @@ function takeFlag(name, required = true) {
 
 function hasOnlyKnownFlags() {
   const valueFlags = new Set(['--workspace', '--out', '--add']);
-  const booleanFlags = new Set(['--print-command']);
+  const booleanFlags = new Set(['--print-command', '--preflight-only']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (booleanFlags.has(arg)) continue;
@@ -55,7 +56,7 @@ function hasOnlyKnownFlags() {
 
 function usage(message) {
   if (message) console.error(message);
-  console.error('Usage: node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path [--add pkg1,pkg2] [--print-command]');
+  console.error('Usage: node scripts/build-copper-runtime-bootstrap.mjs --workspace /path --out /path [--add pkg1,pkg2] [--preflight-only] [--print-command]');
   process.exit(1);
 }
 
@@ -73,6 +74,7 @@ try {
   const outputDirectory = resolve(takeFlag('--out'));
   const extraPackages = takeFlag('--add', false);
   const printCommand = args.includes('--print-command');
+  const preflightOnly = args.includes('--preflight-only');
   const packagesRoot = resolve(workspace, 'termux-packages');
   const receiptPath = resolve(workspace, 'copper-runtime-patch-receipt.json');
 
@@ -87,6 +89,11 @@ try {
     throw new Error('Copper patch receipt does not match runtime/copper-runtime.config.json. Re-run the patch step.');
   }
 
+  // termux-am is the Android Gradle sub-build required by termux-tools. Build
+  // it first, while the runner is still empty, so an SDK/package failure stops
+  // in minutes rather than after a full bootstrap dependency graph has built.
+  // Its emitted .deb and built-package marker are reused by build-bootstraps.
+  const preflightCommand = ['./scripts/run-docker.sh', './build-package.sh', '-a', config.architecture, 'termux-am'];
   const command = ['./scripts/run-docker.sh', './scripts/build-bootstraps.sh', '--architectures', config.architecture];
   if (extraPackages) {
     if (!/^[a-z0-9][a-z0-9+_.-]*(,[a-z0-9][a-z0-9+_.-]*)*$/i.test(extraPackages)) {
@@ -99,10 +106,11 @@ try {
   console.log(`Runtime prefix: ${config.runtimePrefix}`);
   console.log(`Architecture: ${config.architecture}`);
   console.log('Completed package build-tree pruning: enabled (output .debs and shared toolchain cache are retained).');
-  console.log(`Build command: (cd ${packagesRoot} && ${command.join(' ')})`);
+  console.log(`Fast Android package preflight: (cd ${packagesRoot} && ${preflightCommand.join(' ')})`);
+  console.log(`Bootstrap command: (cd ${packagesRoot} && ${command.join(' ')})`);
 
   if (printCommand) {
-    console.log('Command validated; --print-command does not build a bootstrap.');
+    console.log('Commands validated; --print-command does not build a bootstrap.');
     process.exit(0);
   }
 
@@ -111,19 +119,33 @@ try {
     throw new Error('Docker is required for a reproducible bootstrap build. Install/enable Docker, then rerun this command.');
   }
 
+  const buildEnvironment = {
+    ...process.env,
+    CI: 'true',
+    // The Copper patch makes this safe: completed per-package work trees are
+    // reclaimed after their .debs are emitted, while output/, the installed
+    // prefix, and the shared cross-toolchain cache remain available.
+    COPPER_BOOTSTRAP_PRUNE_BUILD_TREES: 'true',
+  };
+  const preflight = spawnSync(preflightCommand[0], preflightCommand.slice(1), {
+    cwd: packagesRoot,
+    stdio: 'inherit',
+    env: buildEnvironment,
+  });
+  if (preflight.status !== 0) {
+    throw new Error(`Copper Android package preflight failed with exit code ${preflight.status ?? 'unknown'}. The full bootstrap was not started.`);
+  }
+  if (preflightOnly) {
+    console.log('Copper Android package preflight passed; --preflight-only did not start the full bootstrap.');
+    process.exit(0);
+  }
+
   const expectedArchive = resolve(packagesRoot, `bootstrap-${config.architecture}.zip`);
   rmSync(expectedArchive, { force: true });
   const run = spawnSync(command[0], command.slice(1), {
     cwd: packagesRoot,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      CI: 'true',
-      // The Copper patch makes this safe: completed per-package work trees
-      // are reclaimed after their .debs are emitted, while output/ and the
-      // shared cross-toolchain cache remain available to later packages.
-      COPPER_BOOTSTRAP_PRUNE_BUILD_TREES: 'true',
-    },
+    env: buildEnvironment,
   });
   if (run.status !== 0) throw new Error(`Upstream bootstrap build failed with exit code ${run.status ?? 'unknown'}.`);
   if (!existsSync(expectedArchive)) throw new Error(`Build reported success but did not create ${expectedArchive}.`);

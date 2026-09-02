@@ -41,12 +41,18 @@ jobs:
             "$TOOLCACHE"
           sudo apt-get clean
           docker system prune --all --force || true
+          AVAILABLE_BYTES="$(df -B1 --output=avail / | tail -1 | tr -d '[:space:]')"
+          REQUIRED_BYTES=$((40 * 1024 * 1024 * 1024))
           df -h /
           docker system df || true
+          if [ "$AVAILABLE_BYTES" -lt "$REQUIRED_BYTES" ]; then
+            echo "::error title=Copper bootstrap capacity::Only $AVAILABLE_BYTES bytes are free after cleanup; at least $REQUIRED_BYTES bytes are required before the source build starts."
+            exit 1
+          fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -92,10 +98,11 @@ jobs:
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -Ei 'no space left|out of (disk|memory)|error:|failure:|failed to|could not|exception|build failed' "$LOG" | tail -20 || true
+            grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to install|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" | tail -20 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            mapfile -t diagnostics < <(tail -20 "$LOG")
+            echo "::error title=Copper bootstrap::Bootstrap failed without a recognizable diagnostic. Open the retained build log artifact; no ordinary build-output lines were relabeled as errors."
+            exit 0
           fi
           for line in "${diagnostics[@]}"; do
             line="${line//'%'/'%25'}"
@@ -106,7 +113,7 @@ jobs:
 
       - name: Upload bootstrap build log on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bootstrap-build-log
           path: ${{ runner.temp }}/copper-runtime-bootstrap-build.log
@@ -120,7 +127,7 @@ jobs:
           cat "$RUNNER_TEMP/copper-runtime-output/copper-runtime-bootstrap-aarch64.zip.json"
 
       - name: Upload unpublishable bootstrap input
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bootstrap-aarch64
           path: ${{ runner.temp }}/copper-runtime-output/

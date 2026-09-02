@@ -10,9 +10,9 @@ jobs:
     name: TypeScript typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -28,9 +28,9 @@ jobs:
     name: Web bundle smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -52,7 +52,10 @@ jobs:
   # this job lets the implementation branch validate a real bootstrap first.
   copper-runtime-bootstrap:
     name: Copper Runtime arm64 bootstrap
-    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-bootstrap]') }}
+    # A source bootstrap is expensive. Do not start it until the independently
+    # compiled-and-executed Android PTY transport gate has passed.
+    needs: copper-native-runtime-compile
+    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-bootstrap]') && needs.copper-native-runtime-compile.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -76,12 +79,18 @@ jobs:
             "$TOOLCACHE"
           sudo apt-get clean
           docker system prune --all --force || true
+          AVAILABLE_BYTES="$(df -B1 --output=avail / | tail -1 | tr -d '[:space:]')"
+          REQUIRED_BYTES=$((40 * 1024 * 1024 * 1024))
           df -h /
           docker system df || true
+          if [ "$AVAILABLE_BYTES" -lt "$REQUIRED_BYTES" ]; then
+            echo "::error title=Copper bootstrap capacity::Only $AVAILABLE_BYTES bytes are free after cleanup; at least $REQUIRED_BYTES bytes are required before the source build starts."
+            exit 1
+          fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -114,10 +123,11 @@ jobs:
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -Ei 'no space left|out of (disk|memory)|error:|failure:|failed to|could not|exception|build failed' "$LOG" | tail -20 || true
+            grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to install|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" | tail -20 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            mapfile -t diagnostics < <(tail -20 "$LOG")
+            echo "::error title=Copper bootstrap::Bootstrap failed without a recognizable diagnostic. Open the retained build log artifact; no ordinary build-output lines were relabeled as errors."
+            exit 0
           fi
           for line in "${diagnostics[@]}"; do
             line="${line//'%'/'%25'}"
@@ -128,7 +138,7 @@ jobs:
 
       - name: Upload bootstrap build log on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bootstrap-build-log
           path: ${{ runner.temp }}/copper-runtime-bootstrap-build.log
@@ -136,7 +146,7 @@ jobs:
           retention-days: 14
 
       - name: Upload verified bootstrap input
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bootstrap-aarch64
           path: ${{ runner.temp }}/copper-runtime-output/
@@ -147,19 +157,21 @@ jobs:
   # Uses a marker because NDK/Gradle compilation is much slower than the normal
   # Android JS-bundle smoke test below.
   copper-native-runtime-compile:
-    name: Copper Runtime native PTY compile
-    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[native-compile]') }}
+    name: Copper Runtime native PTY validation
+    # Run independently on direct native changes and as a required, fast gate
+    # before every expensive source bootstrap build.
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-bootstrap]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -178,6 +190,29 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Copper PTY transport on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            cd android
+            set -o pipefail
+            chmod +x gradlew
+            ./gradlew :copper-exec:connectedDebugAndroidTest --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-native-pty-test.log"
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
       - name: Surface native compiler diagnostics on failure
         # The retained log is authoritative. These concise annotations also
         # make compiler failures visible when an environment cannot download
@@ -186,30 +221,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          LOG="$RUNNER_TEMP/copper-native-build.log"
-          if [ ! -f "$LOG" ]; then
-            echo "::error title=Copper native compilation::Gradle failed before its build log was created."
+          LOGS=(
+            "$RUNNER_TEMP/copper-native-build.log"
+            "$RUNNER_TEMP/copper-native-pty-test.log"
+          )
+          if [ ! -f "${LOGS[0]}" ] && [ ! -f "${LOGS[1]}" ]; then
+            echo "::error title=Copper native PTY validation::Gradle or emulator failed before a diagnostic log was created."
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -E '(^|[[:space:]])(e:|error:|FAILURE:|Execution failed|What went wrong|BUILD FAILED)' "$LOG" | tail -20 || true
+            grep -Eh '(^|[[:space:]])(e:|error:|FAILURE:|Execution failed|What went wrong|BUILD FAILED|Tests? [0-9]+ failed)' "${LOGS[@]}" 2>/dev/null | tail -20 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            mapfile -t diagnostics < <(tail -20 "$LOG")
+            mapfile -t diagnostics < <(cat "${LOGS[@]}" 2>/dev/null | tail -20)
           fi
           for line in "${diagnostics[@]}"; do
             line="${line//'%'/'%25'}"
             line="${line//$'\r'/'%0D'}"
             line="${line//$'\n'/'%0A'}"
-            echo "::error title=Copper native compilation::$line"
+            echo "::error title=Copper native PTY validation::$line"
           done
 
       - name: Upload native build log on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: copper-runtime-native-build-log
-          path: ${{ runner.temp }}/copper-native-build.log
+          name: copper-runtime-native-pty-validation-logs
+          path: |
+            ${{ runner.temp }}/copper-native-build.log
+            ${{ runner.temp }}/copper-native-pty-test.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -218,9 +258,9 @@ jobs:
     name: Android bundle smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
