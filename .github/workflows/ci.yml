@@ -5,6 +5,7 @@ on:
   pull_request:
 
 jobs:
+  # ── 1. TypeScript type-check ──────────────────────────────────────────────
   typecheck:
     name: TypeScript typecheck
     runs-on: ubuntu-latest
@@ -13,15 +14,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: npx tsc --noEmit
+        run: npx tsc --noEmit
 
+  # ── 2. Web bundle smoke test ──────────────────────────────────────────────
   web-bundle-smoke:
     name: Web bundle smoke test
     runs-on: ubuntu-latest
@@ -30,13 +32,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Expo export (web)
+      - name: expo export --platform web
         run: npx expo export --platform web --output-dir dist-ci
         env:
           CI: true
@@ -44,6 +46,7 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
+  # ── 3. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest
@@ -52,18 +55,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Expo export (Android JS bundle)
+      - name: expo export --platform android
         run: npx expo export --platform android --output-dir dist-android-ci
         env:
           CI: true
 
-      - name: Verify bundle exists
+      - name: Verify JS bundle exists
         run: |
           ls dist-android-ci/
           find dist-android-ci -name '*.js' | head -5
+          find dist-android-ci -name '*.js' | grep -q . || { echo "No JS bundle found"; exit 1; }

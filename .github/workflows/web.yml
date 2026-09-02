@@ -17,6 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── 1. Build ──────────────────────────────────────────────────────────────
   build:
     name: Export & patch web dist
     runs-on: ubuntu-latest
@@ -25,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -34,14 +35,18 @@ jobs:
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # Auto-enables Pages the first time if not already enabled
+          enablement: true
 
-      - name: Expo export (web)
+      - name: expo export --platform web
         run: npx expo export --platform web --output-dir dist
         env:
           CI: true
-          WEB_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # Injects the repo base path (e.g. /Arena-AI-PROJ) into app.config.js
+          WEB_BASE_PATH: /Arena-AI-PROJ
 
-      - name: Patch web dist (PWA tags)
+      - name: node scripts/patch-web-dist.mjs dist
         run: node scripts/patch-web-dist.mjs dist
 
       - name: Upload Pages artifact
@@ -49,6 +54,7 @@ jobs:
         with:
           path: dist
 
+  # ── 2. Deploy ─────────────────────────────────────────────────────────────
   deploy:
     name: Deploy to GitHub Pages
     needs: build
