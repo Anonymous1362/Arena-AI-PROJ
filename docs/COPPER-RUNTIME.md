@@ -114,7 +114,8 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 
 ### R2 — Actual terminal sessions
 
-- [x] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. `:copper-exec:assembleDebug` passed in Android CI at `ff8edc8`; it still requires a verified bundled bootstrap and device validation before it can be called a working terminal.
+- [x] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. `:copper-exec:assembleDebug` passed in Android CI at `ff8edc8`. The required Android emulator gate also ran successfully at `a52c28f`: it creates a real PTY, resizes it, sends stdin, receives stdout, observes process exit, and closes the descriptor against Android's `/system/bin/sh`. This validates the JNI PTY transport only—not Copper Bash or a package environment—because no verified Copper bootstrap asset exists yet.
+  - The workflow reruns that emulator gate before any arm64 source-bootstrap job. It preserves test logs and stops the expensive package build if the native/device gate fails.
 - [ ] Add managed 2 GiB package-operation preflight/monitoring, Ctrl-C, foreground/background session behavior, and scrollback limits.
 - [ ] Connect the React Native Terminal UI to sessions without putting raw terminal output into normal chat messages.
 - [ ] Expose a visible runtime status: missing, installing, ready, repairing, low storage, or error.
