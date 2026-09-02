@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -25,6 +26,8 @@ export interface ComposerProps {
   /** Initial text to prefill (e.g. from empty-state suggestions). */
   initialText?: string;
   placeholder?: string;
+  /** Opens the prompt-library sheet so a saved prompt can be inserted. */
+  onOpenPromptLib?: () => void;
 }
 
 function MicPulse({ color }: { color: string }) {
@@ -50,6 +53,7 @@ export function Composer({
   onPickImage,
   initialText,
   placeholder = 'Message Copper…',
+  onOpenPromptLib,
 }: ComposerProps) {
   const { colors } = useTheme();
   const [text, setText] = useState(initialText ?? '');
@@ -143,6 +147,14 @@ export function Composer({
             <Paperclip size={19} color={streaming ? colors.textFaint : colors.accent} />
           </View>
         </PressableScale>
+
+        {onOpenPromptLib ? (
+          <PressableScale haptic="light" onPress={onOpenPromptLib} scale={0.88} disabled={streaming}>
+            <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
+              <Ionicons name="library-outline" size={18} color={streaming ? colors.textFaint : colors.textSub} />
+            </View>
+          </PressableScale>
+        ) : null}
 
         <TextInput
           ref={inputRef}

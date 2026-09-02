@@ -19,6 +19,7 @@ import { Composer } from '@/src/components/Composer';
 import { ModelSheet } from '@/src/components/ModelSheet';
 import { ModelPill } from '@/src/components/ModelPill';
 import { Sheet } from '@/src/components/Sheet';
+import { PromptLibrarySheet } from '@/src/components/PromptLibrarySheet';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Banner, Button, TextField } from '@/src/components/ui';
 import { EmptyState } from '@/src/components/EmptyState';
@@ -26,6 +27,7 @@ import { ConfirmSheet } from '@/src/components/ConfirmSheet';
 import { speakAloud, stopSpeaking } from '@/src/utils/speech';
 import { haptics } from '@/src/utils/haptics';
 import { shareJson } from '@/src/utils/share';
+import { exportConversationMarkdown } from '@/src/utils/exportMarkdown';
 import type { MessageAttachment } from '@/src/store/chats';
 
 async function pickImageAttachment(): Promise<MessageAttachment[] | null> {
@@ -43,11 +45,13 @@ async function pickImageAttachment(): Promise<MessageAttachment[] | null> {
 function SheetAction({
   icon,
   label,
+  sublabel,
   danger,
   onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
+  sublabel?: string;
   danger?: boolean;
   onPress: () => void;
 }) {
@@ -66,9 +70,16 @@ function SheetAction({
         }}
       >
         <Ionicons name={icon} size={19} color={danger ? colors.danger : colors.text} />
-        <Text style={{ color: danger ? colors.danger : colors.text, fontSize: 15, fontWeight: '600' }}>
-          {label}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: danger ? colors.danger : colors.text, fontSize: 15, fontWeight: '600' }}>
+            {label}
+          </Text>
+          {sublabel ? (
+            <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>
+              {sublabel}
+            </Text>
+          ) : null}
+        </View>
       </View>
     </PressableScale>
   );
@@ -85,7 +96,9 @@ export default function ChatScreen() {
   const renameConversation = useChatsStore((s) => s.renameConversation);
   const togglePin = useChatsStore((s) => s.togglePin);
   const setConversationModel = useChatsStore((s) => s.setConversationModel);
+  const setConversationSystemPrompt = useChatsStore((s) => s.setConversationSystemPrompt);
   const sendOnEnter = useSettingsStore((s) => s.behavior.sendOnEnter);
+  const globalSystemPrompt = useSettingsStore((s) => s.generation.systemPrompt);
   const msgFontSize = useTheme().msgFontSize;
   const streaming = useStreamingStore((s) => !!s.ids[id!]);
 
@@ -98,6 +111,17 @@ export default function ChatScreen() {
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null);
   const [actionsMsg, setActionsMsg] = useState<ChatMessage | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+
+  // Per-chat system prompt override UI
+  const [sysPromptSheet, setSysPromptSheet] = useState(false);
+  const [sysPromptText, setSysPromptText] = useState('');
+  // Prompt library (for inserting into the override field or directly into Composer)
+  const [promptLibSheet, setPromptLibSheet] = useState(false);
+  // Where to route a prompt-library selection: 'override' | 'composer'
+  const [promptLibTarget, setPromptLibTarget] = useState<'override' | 'composer'>('composer');
+  // For routing prompt-library selection into Composer, we use a ref callback
+  const composerPrefillRef = useRef<((text: string) => void) | null>(null);
+
   const listRef = useRef<ScrollView>(null);
 
   const messages = conv?.messages ?? [];
@@ -165,20 +189,65 @@ export default function ChatScreen() {
     if (!conv) return;
     try {
       await shareJson(
-        `aurora-chat-${conv.title.replace(/[^\w-]+/g, '_').slice(0, 32) || 'chat'}.json`,
-        { app: 'aurora', kind: 'conversation', exportedAt: new Date().toISOString(), conversation: conv }
+        `copper-chat-${conv.title.replace(/[^\w-]+/g, '_').slice(0, 32) || 'chat'}.json`,
+        { app: 'copper', kind: 'conversation', exportedAt: new Date().toISOString(), conversation: conv }
       );
     } catch (e) {
       setBanner(`Export failed: ${(e as Error).message}`);
     }
   }, [conv]);
 
+  const exportMarkdown = useCallback(async () => {
+    if (!conv) return;
+    try {
+      await exportConversationMarkdown(conv);
+    } catch (e) {
+      setBanner(`Export failed: ${(e as Error).message}`);
+    }
+  }, [conv]);
+
+  // Per-chat system prompt sheet helpers
+  const openSysPromptSheet = useCallback(() => {
+    setSysPromptText(conv?.systemPromptOverride ?? globalSystemPrompt ?? '');
+    setMenuSheet(false);
+    setTimeout(() => setSysPromptSheet(true), 240);
+  }, [conv, globalSystemPrompt]);
+
+  const saveSysPrompt = useCallback(() => {
+    const val = sysPromptText.trim();
+    // Empty → clear override (fall back to global)
+    setConversationSystemPrompt(id!, val || undefined);
+    haptics.success();
+    setSysPromptSheet(false);
+  }, [id, setConversationSystemPrompt, sysPromptText]);
+
+  // Prompt library: insert selected prompt into the override field or Composer
+  const handlePromptLibrarySelect = useCallback(
+    (body: string) => {
+      if (promptLibTarget === 'override') {
+        setSysPromptText(body);
+      } else {
+        composerPrefillRef.current?.(body);
+      }
+    },
+    [promptLibTarget]
+  );
+
+  const hasOverride = !!conv?.systemPromptOverride;
+
   const menuActions = useMemo(
     () => (
       <>
         <SheetAction icon="pencil-outline" label="Rename" onPress={() => { setRenameText(conv?.title ?? ''); setMenuSheet(false); setTimeout(() => setRenameSheet(true), 240); }} />
         <SheetAction icon={conv?.pinned ? 'pin' : 'pin-outline'} label={conv?.pinned ? 'Unpin' : 'Pin to top'} onPress={() => { togglePin(id!); setMenuSheet(false); }} />
+        <SheetAction
+          icon="text-outline"
+          label="System prompt"
+          sublabel={hasOverride ? 'Override set for this chat' : 'Using global setting'}
+          onPress={openSysPromptSheet}
+        />
         <SheetAction icon="share-outline" label="Export chat (.json)" onPress={() => { setMenuSheet(false); exportChat(); }} />
+        <SheetAction icon="document-text-outline" label="Export run log (.md)" onPress={() => { setMenuSheet(false); exportMarkdown(); }} />
         <SheetAction icon="cube-outline" label="Change model" onPress={() => { setMenuSheet(false); setModelSheet(true); }} />
         <SheetAction
           icon="refresh-outline"
@@ -192,7 +261,7 @@ export default function ChatScreen() {
         />
       </>
     ),
-    [conv, exportChat, id, togglePin, deleteMessage]
+    [conv, exportChat, exportMarkdown, hasOverride, id, openSysPromptSheet, togglePin, deleteMessage]
   );
 
   if (!conv) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
@@ -268,12 +337,16 @@ export default function ChatScreen() {
         )}
 
         <View style={{ paddingHorizontal: spacing(3), paddingBottom: Math.max(spacing(3), insets.bottom + 8), paddingTop: spacing(2) }}>
-          <Composer
+          <ComposerWithPromptLib
             streaming={streaming}
             sendOnEnter={sendOnEnter}
             onSend={send}
             onStop={() => stopGeneration(id!)}
-            onPickImage={pickImageAttachment}
+            prefillRef={composerPrefillRef}
+            onOpenPromptLib={() => {
+              setPromptLibTarget('composer');
+              setPromptLibSheet(true);
+            }}
             initialText={prefill}
           />
         </View>
@@ -308,6 +381,80 @@ export default function ChatScreen() {
           <Button label="Save" onPress={() => { if (renameText.trim()) renameConversation(id!, renameText.trim()); setRenameSheet(false); }} />
         </View>
       </Sheet>
+
+      {/* per-chat system prompt override */}
+      <Sheet visible={sysPromptSheet} onClose={() => setSysPromptSheet(false)} title="System prompt" maxHeight="88%">
+        <View style={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2), gap: spacing(3) }}>
+          {hasOverride ? (
+            <View style={{ backgroundColor: colors.accentSoft, borderRadius: radius.md, padding: spacing(3) }}>
+              <Text style={{ color: colors.accent, fontSize: 12.5, fontWeight: '700' }}>
+                Override active for this chat
+              </Text>
+              <Text style={{ color: colors.accent, fontSize: 12, marginTop: 3, opacity: 0.8 }}>
+                This overrides the global system prompt only for this conversation. Clear to revert to global.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ backgroundColor: colors.surface2, borderRadius: radius.md, padding: spacing(3) }}>
+              <Text style={{ color: colors.textSub, fontSize: 12.5, fontWeight: '600' }}>
+                Using global system prompt
+              </Text>
+              <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 3 }}>
+                Set text below to override just for this chat.
+              </Text>
+            </View>
+          )}
+          <TextField
+            label="System prompt (this chat)"
+            value={sysPromptText}
+            onChangeText={setSysPromptText}
+            placeholder="You are a concise assistant…"
+            multiline
+            style={{ minHeight: 120 }}
+          />
+          <Button
+            label="From prompt library"
+            variant="ghost"
+            icon="library-outline"
+            onPress={() => {
+              setPromptLibTarget('override');
+              setSysPromptSheet(false);
+              setTimeout(() => setPromptLibSheet(true), 240);
+            }}
+          />
+          <View style={{ flexDirection: 'row', gap: spacing(2) }}>
+            {hasOverride ? (
+              <Button
+                label="Clear override"
+                variant="ghost"
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setConversationSystemPrompt(id!, undefined);
+                  haptics.light();
+                  setSysPromptSheet(false);
+                }}
+              />
+            ) : (
+              <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setSysPromptSheet(false)} />
+            )}
+            <Button label="Save" style={{ flex: 1 }} onPress={saveSysPrompt} />
+          </View>
+        </View>
+      </Sheet>
+
+      {/* prompt library */}
+      <PromptLibrarySheet
+        visible={promptLibSheet}
+        onClose={() => {
+          setPromptLibSheet(false);
+          // If we came from the sys prompt sheet, re-open it
+          if (promptLibTarget === 'override') {
+            setTimeout(() => setSysPromptSheet(true), 240);
+          }
+        }}
+        onSelect={handlePromptLibrarySelect}
+        selectLabel={promptLibTarget === 'override' ? 'Use as system prompt' : 'Insert into message'}
+      />
 
       {/* message actions */}
       <Sheet visible={!!actionsMsg} onClose={() => setActionsMsg(null)} title="Message">
@@ -385,6 +532,47 @@ export default function ChatScreen() {
         </View>
       </Sheet>
     </View>
+  );
+}
+
+/* ──────────────────────────── Composer wrapper ─────────────────────────────
+ * Thin wrapper that keeps a "prefill callback" ref so the parent can push
+ * a prompt-library selection into the text input without re-mounting it.
+ */
+interface ComposerWithPromptLibProps {
+  streaming: boolean;
+  sendOnEnter?: boolean;
+  onSend: (text: string, attachments: MessageAttachment[]) => void;
+  onStop: () => void;
+  prefillRef: React.MutableRefObject<((text: string) => void) | null>;
+  onOpenPromptLib: () => void;
+  initialText?: string;
+}
+
+function ComposerWithPromptLib({
+  streaming,
+  sendOnEnter,
+  onSend,
+  onStop,
+  prefillRef,
+  onOpenPromptLib,
+  initialText,
+}: ComposerWithPromptLibProps) {
+  const [prefill, setPrefill] = useState(initialText ?? '');
+
+  // expose the setter so the parent can inject prompt-library text
+  prefillRef.current = (text: string) => setPrefill(text);
+
+  return (
+    <Composer
+      streaming={streaming}
+      sendOnEnter={sendOnEnter}
+      onSend={onSend}
+      onStop={onStop}
+      onPickImage={pickImageAttachment}
+      initialText={prefill}
+      onOpenPromptLib={onOpenPromptLib}
+    />
   );
 }
 

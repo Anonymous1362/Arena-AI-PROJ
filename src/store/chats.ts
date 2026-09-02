@@ -53,6 +53,11 @@ export interface Conversation {
   /** Engine snapshot used for this conversation; new messages default to it. */
   model: ActiveModel;
   messages: ChatMessage[];
+  /**
+   * Per-chat system prompt override. When set, this replaces the global
+   * generation.systemPrompt for this conversation only.
+   */
+  systemPromptOverride?: string;
 }
 
 export interface ChatsState {
@@ -63,6 +68,7 @@ export interface ChatsState {
   renameConversation: (id: string, title: string) => void;
   togglePin: (id: string) => void;
   setConversationModel: (id: string, model: ActiveModel) => void;
+  setConversationSystemPrompt: (id: string, prompt: string | undefined) => void;
   touchConversation: (id: string) => void;
 
   appendMessage: (convId: string, msg: Omit<ChatMessage, 'id' | 'createdAt'>) => ChatMessage;
@@ -112,6 +118,13 @@ export const useChatsStore = create<ChatsState>()(
       setConversationModel: (id, model) =>
         set((s) => ({
           conversations: s.conversations.map((c) => (c.id === id ? { ...c, model } : c)),
+        })),
+
+      setConversationSystemPrompt: (id, prompt) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === id ? { ...c, systemPromptOverride: prompt } : c
+          ),
         })),
 
       touchConversation: (id) =>

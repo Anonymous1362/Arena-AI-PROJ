@@ -103,8 +103,14 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   const msgs = fresh?.messages ?? [];
   const history = msgs.filter((m) => m.id !== assistant.id && m.done && !m.error && m.content);
 
+  // Per-chat system prompt override wins over the global setting when set.
+  const effectiveUserSystemPrompt =
+    conv.systemPromptOverride !== undefined
+      ? conv.systemPromptOverride
+      : settings.generation.systemPrompt;
+
   const system = buildSystemPrompt({
-    userSystemPrompt: settings.generation.systemPrompt,
+    userSystemPrompt: effectiveUserSystemPrompt,
     scopeLabel:
       settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
         ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
