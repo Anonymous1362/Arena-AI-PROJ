@@ -1,0 +1,89 @@
+{
+  "expo": {
+    "name": "Copper",
+    "slug": "copper",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "copper",
+    "backgroundColor": "#F0EEE6",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F0EEE6"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.copper.chat",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        },
+        "NSMicrophoneUsageDescription": "Voice input for chat.",
+        "NSSpeechRecognitionUsageDescription": "On-device dictation for voice input."
+      }
+    },
+    "android": {
+      "package": "com.copper.chat",
+      "versionCode": 1,
+      "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#09090C"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Copper \u2014 AI Agent",
+      "shortName": "Copper",
+      "backgroundColor": "#09090C",
+      "themeColor": "#C15F3C"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#F0EEE6",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "imageWidth": 160,
+            "resizeMode": "contain",
+            "backgroundColor": "#191817"
+          }
+        }
+      ],
+      [
+        "expo-file-system",
+        {
+          "permission": "full"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Copper to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow Copper to use speech recognition (on-device) for dictation."
+        }
+      ]
+    ],
+    "experiments": {
+      "tsconfigPaths": true
+    }
+  }
+}

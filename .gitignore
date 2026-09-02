@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.expo-bundles/
+
+# Native projects (generated via `npx expo prebuild` — Continuous Native Generation)
+android/
+ios/
+
+# @generated expo-cli sync-2c9bc7bd18a2f9e8f69f4b6a40e6e0a17a8f5f3b
+.tailwind-rn.backup.*
+
+# macOS
+.DS_Store
+*.pem
+*.p8*.p12
+*.key
+*.mobileprovision
+
+# misc
+*.log
+npm-debug.*
+*.orig.*
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# build artifacts
+build/
+*.apk
+*.aab
+*.ipa
+Payload/
