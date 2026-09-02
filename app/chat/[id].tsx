@@ -296,8 +296,8 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.bottom}
       >
         {banner ? (
           <View style={{ paddingHorizontal: spacing(4), paddingTop: spacing(2) }}>

@@ -14,7 +14,7 @@ import type { ChatMessage } from '@/src/store/chats';
 import { Markdown } from '@/src/components/Markdown';
 import { TypingDots } from '@/src/components/TypingDots';
 import { PressableScale } from '@/src/components/PressableScale';
-import { PlanPanel, ToolEventCard } from '@/src/components/AgentPanels';
+import { ArtifactPanel, PlanPanel, ToolEventCard } from '@/src/components/AgentPanels';
 import { formatDuration } from '@/src/utils/format';
 
 function Caret({ color }: { color: string }) {
@@ -142,6 +142,8 @@ export const MessageBubble = memo(function MessageBubble({
           {message.planSteps?.length ? (
             <PlanPanel steps={message.planSteps} running={!!streaming} />
           ) : null}
+
+          {message.toolEvents?.length ? <ArtifactPanel events={message.toolEvents} /> : null}
 
           {message.toolEvents?.length ? (
             <View style={{ marginBottom: spacing(1) }}>

@@ -35,11 +35,20 @@
 - [ ] v1.0 tags → APK + unsigned IPA artifacts + PWA deploy
 - [ ] iOS install guide stays PWA-first; SideStore path documented (no TrollStore)
 
-## Phase 3 — Delight (small, autonomous)
+## Phase 3 — Delight ✅
 - [x] Voice input + read-aloud (shipped in Phase 1)
-- [ ] Prompt library + per-chat system prompt override
-- [ ] Export agent transcripts as markdown run logs
-- [ ] Haptic refinement on plan-step completion
+- [x] Prompt library + per-chat system prompt override
+- [x] Export agent transcripts as markdown run logs
+- [x] Haptic refinement on plan-step completion
+
+## Phase 4 — Workspace UX ✅
+- [x] copper-exec native bridge detection with safe built-in fallback
+- [x] Dedicated terminal history tab
+- [x] Project folders for grouping conversations
+- [x] Generated artifact panel in agent replies
+- [x] Animated plan timeline and responsive interaction motion
+- [x] Android/iOS keyboard-safe chat composer
+- [x] Correct Gemini OpenAI-compatible endpoint
 
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)
