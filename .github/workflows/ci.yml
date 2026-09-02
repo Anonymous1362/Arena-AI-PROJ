@@ -176,6 +176,29 @@ jobs:
           java-version: '17'
           distribution: temurin
 
+      # Preserve the Android SDK, Node, and JDK used by this job, but remove
+      # unrelated toolchains before downloading an AVD. The prior API-35 image
+      # left only 89 MB free, so the emulator could not reach ADB.
+      - name: Reclaim runner disk for Android PTY validation
+        run: |
+          set -euo pipefail
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell
+          sudo apt-get clean
+          AVAILABLE_BYTES="$(df -B1 --output=avail / | tail -1 | tr -d '[:space:]')"
+          REQUIRED_BYTES=$((12 * 1024 * 1024 * 1024))
+          df -h /
+          if [ "$AVAILABLE_BYTES" -lt "$REQUIRED_BYTES" ]; then
+            echo "::error title=Copper Android PTY capacity::Only $AVAILABLE_BYTES bytes are free after safe cleanup; at least $REQUIRED_BYTES bytes are required before downloading and booting the Android test image."
+            exit 1
+          fi
+
       - name: Install dependencies and generate Android project
         run: |
           npm ci --ignore-scripts
@@ -233,7 +256,8 @@ jobs:
             grep -Eh '(^|[[:space:]])(e:|error:|FAILURE:|Execution failed|What went wrong|BUILD FAILED|Tests? [0-9]+ failed)' "${LOGS[@]}" 2>/dev/null | tail -20 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            mapfile -t diagnostics < <(cat "${LOGS[@]}" 2>/dev/null | tail -20)
+            echo "::error title=Copper native PTY validation::Validation failed without a recognizable compiler or test diagnostic. Inspect the retained logs and emulator-action output; ordinary successful Gradle output was not relabeled as an error."
+            exit 0
           fi
           for line in "${diagnostics[@]}"; do
             line="${line//'%'/'%25'}"
