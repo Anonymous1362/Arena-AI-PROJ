@@ -11,7 +11,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/src/theme';
-import { Spring } from '@/src/theme/motion';
+import { Spring, Timing } from '@/src/theme/motion';
 import { radius } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,11 +46,11 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   useEffect(() => {
     if (visible) {
       drag.set(0);
-      y.set(withSpring(0, Spring.snappy));
-      backdrop.set(withTiming(1, { duration: 200 }));
+      y.set(withSpring(0, Spring.overlay));
+      backdrop.set(Timing.normal(1));
     } else {
-      y.set(withTiming(COLLAPSED, { duration: 200 }));
-      backdrop.set(withTiming(0, { duration: 180 }));
+      y.set(Timing.normal(COLLAPSED));
+      backdrop.set(Timing.fast(0));
     }
   }, [visible, y, backdrop, drag]);
 
@@ -69,8 +69,8 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
           const shouldClose = e.translationY > 110 || e.velocityY > 900;
           if (shouldClose) {
             drag.set(0);
-            y.set(withTiming(COLLAPSED, { duration: 180 }));
-            backdrop.set(withTiming(0, { duration: 160 }));
+            y.set(Timing.normal(COLLAPSED));
+            backdrop.set(Timing.fast(0));
             runOnJS(close)();
           } else {
             drag.set(withSpring(0, Spring.gentle));
@@ -103,7 +103,10 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
           haptic="none"
           scale={1}
           opacityOnPress={1}
-          onPress={onClose}
+          onPress={() => {
+            haptics.light();
+            onClose();
+          }}
           style={StyleSheet.absoluteFill}
         >
           <View style={StyleSheet.absoluteFill} />

@@ -38,6 +38,10 @@ export default function TabsLayout() {
         tabBarBackground: () => <TabBarBackground />,
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         sceneStyle: { backgroundColor: colors.bg },
+        // Cross-fade between tabs and hide the bar while typing — feels like
+        // the polished native apps instead of a hard cut.
+        animation: 'fade',
+        tabBarHideOnKeyboard: true,
       }}
     >
       <Tabs.Screen

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { Sheet } from '@/src/components/Sheet';
 import { PressableScale } from '@/src/components/PressableScale';
+import { Button, TextField } from '@/src/components/ui';
 import { useSettingsStore, selectActiveProfile, type ActiveModel } from '@/src/store/settings';
 import { listRemoteModels, PROVIDER_PRESETS } from '@/src/ai/remote';
 import { haptics } from '@/src/utils/haptics';
@@ -41,6 +42,8 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
   const cacheModels = useSettingsStore((s) => s.cacheModels);
 
   const [loadingProfile, setLoadingProfile] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customText, setCustomText] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -63,15 +66,28 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, profiles.length]);
 
+  // Single source of haptic truth: rows fire their own on press-in, so no
+  // second haptic here — otherwise Android delivers a double buzz.
   const pick = useCallback(
     (m: ActiveModel) => {
-      haptics.success();
       setActiveModel(m);
       onPicked?.(m);
       onClose();
     },
     [onClose, onPicked, setActiveModel]
   );
+
+  const active = selectActiveProfile(useSettingsStore.getState());
+  const customProfile = active ?? profiles[0];
+
+  const pickCustom = useCallback(() => {
+    const m = customText.trim();
+    if (!m || !customProfile) return;
+    haptics.success();
+    setCustomText('');
+    setCustomOpen(false);
+    pick({ kind: 'remote', profileId: customProfile.id, model: m });
+  }, [customProfile, customText, pick]);
 
   const capsIcon = (profileId: string): keyof typeof Ionicons.glyphMap => {
     const preset = PROVIDER_PRESETS.find((x) => x.baseUrl === profiles.find((p) => p.id === profileId)?.baseUrl);
@@ -100,9 +116,9 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
   const isCurrent = (profileId: string, model: string) =>
     current?.kind === 'remote' && current.profileId === profileId && current.model === model;
 
-  const active = selectActiveProfile(useSettingsStore.getState());
 
   return (
+    <>
     <Sheet visible={visible} onClose={onClose} title="Models" maxHeight="82%">
       <ScrollView keyboardShouldPersistTaps="handled" style={{ paddingHorizontal: spacing(4) }}>
         {profiles.length === 0 ? (
@@ -192,6 +208,36 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
           </PressableScale>
         </View>
 
+        {customProfile ? (
+          <PressableScale
+            haptic="light"
+            scale={0.99}
+            opacityOnPress={0.8}
+            onPress={() => setCustomOpen(true)}
+            style={{ marginBottom: spacing(1) }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                backgroundColor: colors.surface2,
+                borderRadius: radius.md,
+                padding: spacing(3),
+              }}
+            >
+              <Ionicons name="terminal-outline" size={17} color={colors.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>Enter a model id</Text>
+                <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>
+                  Use an exact name (preview / thinking variants) · provider: {customProfile.name}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
+            </View>
+          </PressableScale>
+        ) : null}
+
         {Platform.OS === 'web' || !active ? null : (
           <Text style={{ color: colors.textFaint, fontSize: 11.5, textAlign: 'center', marginBottom: spacing(3), paddingHorizontal: spacing(2) }}>
             Tool calling requires a tool-capable model (Claude, GPT, Gemini, Grok, DeepSeek…).
@@ -199,6 +245,27 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
         )}
       </ScrollView>
     </Sheet>
+
+    {/* manual model id entry */}
+    <Sheet visible={customOpen} onClose={() => setCustomOpen(false)} title="Enter a model id">
+      <View style={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2), gap: spacing(3) }}>
+        <TextField
+          value={customText}
+          onChangeText={setCustomText}
+          placeholder="e.g. gemini-2.5-flash-lite"
+          autoFocus
+          autoCapitalize="none"
+          autoCorrect={false}
+          onSubmitEditing={pickCustom}
+          hint="Types straight through to your provider — useful for preview or thinking variants that aren’t listed yet."
+        />
+        <View style={{ flexDirection: 'row', gap: spacing(2) }}>
+          <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setCustomOpen(false)} />
+          <Button label="Select model" haptic="none" style={{ flex: 1 }} onPress={pickCustom} />
+        </View>
+      </View>
+    </Sheet>
+    </>
   );
 }
 

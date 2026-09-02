@@ -50,6 +50,20 @@
 - [x] Android/iOS keyboard-safe chat composer
 - [x] Correct Gemini OpenAI-compatible endpoint
 
+## Phase 5 — Feel & connection fixes ✅
+- [x] Fix Gemini “not found”: Google’s OpenAI-compat base is `…/v1beta/openai` — the client no longer appends a second `/v1` to chat/models paths; live model listing now works and feeds the picker with the newest official ids
+- [x] Refresh suggested models across providers (Gemini 2.5 Pro/Flash/Flash-Lite + 3.x previews, Claude Opus 4.5, Grok-4 family) — picker still live-syncs from `/models`
+- [x] Manual model-id entry in the model sheet (preview / thinking variants not yet listed)
+- [x] Animated splash (spring pop + ripple + wordmark, buttery dissolve) in `app/_layout.tsx`
+- [x] Haptics reworked: single vibration per gesture, press-in dedupe window on Android, “every click” buzz removed (defaults to no haptic, opt-in per control)
+- [x] Keyboard no longer overlaps the composer or follows you around: Android `adjustResize`, blur-dismiss on back/tab leave, KAV height behaviour + inset
+- [x] Live context/token bar under the chat header (green → amber 70% → red 90%)
+- [x] New-message entry animation (FadeInDown), smoother springs/easing presets, sheet + overlay polish
+- [x] Settings regrouped into color-coded sections (Agent & models / Chat / App / About) with gradient active-engine card
+- [x] Chats tab: prominent gradient “New chat”, empty-state CTA, tab cross-fade, keyboard-aware tab bar
+- [ ] Built-in real Linux terminal (Termux-class) — not feasible inside a sandboxed APK without bundling a Linux userspace or a remote shell; see notes
+- [ ] GitHub connector (clone/repo-aware coding from a repo) — design + OAuth/PAT flow documented, pending implementation
+
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)
 - Light theme as default (currently system-adaptive, light is the signature look)

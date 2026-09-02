@@ -305,6 +305,7 @@ export function Button({
   icon,
   loading,
   disabled,
+  haptic = 'light',
   style,
 }: {
   label: string;
@@ -313,6 +314,8 @@ export function Button({
   icon?: keyof typeof Ionicons.glyphMap;
   loading?: boolean;
   disabled?: boolean;
+  /** Vibrate on press-in; pass "none" when onPress fires its own semantic haptic. */
+  haptic?: 'none' | 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'warning';
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -327,7 +330,7 @@ export function Button({
     : variant === 'secondary' ? colors.text
     : colors.accent;
   return (
-    <PressableScale haptic="light" onPress={onPress} disabled={disabled || loading} style={style}>
+    <PressableScale haptic={haptic} onPress={onPress} disabled={disabled || loading} style={style}>
       <View
         style={{
           flexDirection: 'row',

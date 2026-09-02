@@ -12,7 +12,16 @@ const SUGGESTIONS = [
   { icon: 'bulb-outline' as const, text: 'Brainstorm names for a coffee shop' },
 ];
 
-export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => void; engineReady: boolean }) {
+export function EmptyState({
+  onPick,
+  engineReady,
+  footer,
+}: {
+  onPick: (text: string) => void;
+  engineReady: boolean;
+  /** Extra content below the suggestion chips (e.g. a prominent New-chat CTA). */
+  footer?: React.ReactNode;
+}) {
   const { colors } = useTheme();
   return (
     <View style={styles.wrap}>
@@ -22,8 +31,8 @@ export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => 
       <Text style={[styles.headline, { color: colors.text }]}>How can I help?</Text>
       <Text style={[styles.sub, { color: colors.textSub }]}>
         {engineReady
-          ? 'Pick a suggestion or just start typing.'
-          : 'Choose an on-device model or connect an API to begin.'}
+          ? 'Pick a suggestion or start a fresh chat.'
+          : 'Connect an API (Gemini free tier, Claude, GPT…) to begin.'}
       </Text>
       <View style={{ alignSelf: 'stretch', gap: spacing(2), marginTop: spacing(6) }}>
         {SUGGESTIONS.map((s) => (
@@ -45,6 +54,7 @@ export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => 
           </PressableScale>
         ))}
       </View>
+      {footer}
     </View>
   );
 }
