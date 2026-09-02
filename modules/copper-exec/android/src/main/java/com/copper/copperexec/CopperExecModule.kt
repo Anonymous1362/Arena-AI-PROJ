@@ -33,6 +33,7 @@ class CopperExecModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("CopperExec")
+    Events("runtimeOutput", "runtimeExit", "runtimeError")
 
     AsyncFunction("getStorageInfo") {
       storageInfo(preferredExternalFilesDir())
@@ -116,6 +117,38 @@ class CopperExecModule : Module() {
     /** Remove the runtime; callers explicitly choose whether $HOME is retained. */
     AsyncFunction("removeCopperRuntime") { preserveHome: Boolean ->
       CopperRuntimeInstaller.remove(context, preserveHome)
+    }
+
+    /**
+     * Starts a persistent manual Copper Runtime PTY. This endpoint is never
+     * registered with the agent tools; its cwd remains on Android shared
+     * storage and requires the explicit All files grant.
+     */
+    AsyncFunction("startRuntimeSession") { workingDirectory: String?, rows: Double, columns: Double ->
+      if (!hasAllFilesAccess()) {
+        throw SecurityException("Enable All files access for Copper in Android Settings before starting the manual package terminal.")
+      }
+      val cwd = resolveSharedTerminalDirectory(workingDirectory, null)
+      CopperRuntimeSessions.start(context, cwd, rows.toInt(), columns.toInt()) { event, body ->
+        sendEvent(event, body)
+      }
+    }
+
+    AsyncFunction("writeRuntimeSession") { sessionId: String, input: String ->
+      CopperRuntimeSessions.write(sessionId, input)
+    }
+
+    AsyncFunction("resizeRuntimeSession") { sessionId: String, rows: Double, columns: Double ->
+      CopperRuntimeSessions.resize(sessionId, rows.toInt(), columns.toInt())
+      true
+    }
+
+    AsyncFunction("closeRuntimeSession") { sessionId: String ->
+      CopperRuntimeSessions.close(sessionId)
+    }
+
+    AsyncFunction("listRuntimeSessions") {
+      CopperRuntimeSessions.list()
     }
 
     /**

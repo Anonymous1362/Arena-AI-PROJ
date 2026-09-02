@@ -85,7 +85,41 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # ── 4. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 4. On-demand Android native module compilation ────────────────────────
+  # Uses a marker because NDK/Gradle compilation is much slower than the normal
+  # Android JS-bundle smoke test below.
+  copper-native-runtime-compile:
+    name: Copper Runtime native PTY compile
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[native-compile]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Install dependencies and generate Android project
+        run: |
+          npm ci --ignore-scripts
+          npx expo prebuild --platform android --clean
+
+      - name: Compile Copper native module and PTY library
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :copper-exec:assembleDebug --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+  # ── 5. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest

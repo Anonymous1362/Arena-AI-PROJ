@@ -1,4 +1,4 @@
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import { type EventSubscription, requireOptionalNativeModule } from 'expo-modules-core';
 
 export type ExternalStorageKind = 'removable' | 'primary';
 
@@ -56,7 +56,25 @@ export interface CopperRuntimeStatus {
   expectedPackageName: string;
 }
 
+export interface CopperRuntimeSession {
+  id: string;
+  pid: number;
+  /** Shared-storage cwd selected by the manual Terminal user. */
+  cwd: string;
+  startedAtEpochMs: number;
+}
+
+type CopperRuntimeEvents = {
+  runtimeOutput: (event: { sessionId: string; data: string }) => void;
+  runtimeExit: (event: { sessionId: string; exit: number; closedByUser: boolean }) => void;
+  runtimeError: (event: { sessionId: string; message: string }) => void;
+};
+
 type NativeCopperExec = {
+  addListener<EventName extends keyof CopperRuntimeEvents>(
+    eventName: EventName,
+    listener: CopperRuntimeEvents[EventName]
+  ): EventSubscription;
   getStorageInfo(): Promise<ExternalStorageInfo>;
   getExternalFilesDir(): Promise<ExternalStorageInfo>;
   getExternalSdCard(): Promise<ExternalStorageInfo | null>;
@@ -68,6 +86,11 @@ type NativeCopperExec = {
   installCopperRuntime(replaceExisting: boolean): Promise<CopperRuntimeStatus>;
   repairCopperRuntime(): Promise<CopperRuntimeStatus>;
   removeCopperRuntime(preserveHome: boolean): Promise<CopperRuntimeStatus>;
+  startRuntimeSession(workingDirectory: string | null, rows: number, columns: number): Promise<CopperRuntimeSession>;
+  writeRuntimeSession(sessionId: string, input: string): Promise<number>;
+  resizeRuntimeSession(sessionId: string, rows: number, columns: number): Promise<boolean>;
+  closeRuntimeSession(sessionId: string): Promise<boolean>;
+  listRuntimeSessions(): Promise<CopperRuntimeSession[]>;
   /** Shares an external file or user-granted SAF URI without a cache copy. */
   shareUri(uri: string, mimeType: string, title: string | null): Promise<boolean>;
   /** Runs an agent command in Copper's automatic external workspace. */
@@ -126,6 +149,38 @@ export const CopperExec = {
     if (!native) throw new Error('Copper Runtime removal is available only in a Copper Android build.');
     return native.removeCopperRuntime(preserveHome);
   },
+
+  startRuntimeSession: async (workingDirectory: string | null, rows: number, columns: number): Promise<CopperRuntimeSession> => {
+    if (!native) throw new Error('Copper Runtime sessions are available only in a Copper Android build.');
+    return native.startRuntimeSession(workingDirectory, rows, columns);
+  },
+
+  writeRuntimeSession: async (sessionId: string, input: string): Promise<number> => {
+    if (!native) throw new Error('Copper Runtime sessions are available only in a Copper Android build.');
+    return native.writeRuntimeSession(sessionId, input);
+  },
+
+  resizeRuntimeSession: async (sessionId: string, rows: number, columns: number): Promise<boolean> => {
+    if (!native) throw new Error('Copper Runtime sessions are available only in a Copper Android build.');
+    return native.resizeRuntimeSession(sessionId, rows, columns);
+  },
+
+  closeRuntimeSession: async (sessionId: string): Promise<boolean> => {
+    if (!native) return false;
+    return native.closeRuntimeSession(sessionId);
+  },
+
+  listRuntimeSessions: async (): Promise<CopperRuntimeSession[]> =>
+    native ? native.listRuntimeSessions() : [],
+
+  addRuntimeOutputListener: (listener: CopperRuntimeEvents['runtimeOutput']): EventSubscription | null =>
+    native?.addListener('runtimeOutput', listener) ?? null,
+
+  addRuntimeExitListener: (listener: CopperRuntimeEvents['runtimeExit']): EventSubscription | null =>
+    native?.addListener('runtimeExit', listener) ?? null,
+
+  addRuntimeErrorListener: (listener: CopperRuntimeEvents['runtimeError']): EventSubscription | null =>
+    native?.addListener('runtimeError', listener) ?? null,
 
   shareUri: async (uri: string, mimeType: string, title: string | null): Promise<boolean> => {
     if (!native) throw new Error('Native sharing for an external/custom folder is unavailable in this build.');

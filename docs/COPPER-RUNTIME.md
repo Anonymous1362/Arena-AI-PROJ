@@ -114,8 +114,8 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 
 ### R2 — Actual terminal sessions
 
-- [ ] Replace the one-shot `/system/bin/sh` API with a PTY session manager.
-- [ ] Stream bidirectional terminal data; support terminal resize, Ctrl-C, foreground/background sessions, exit status, and scrollback limits.
+- [ ] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. It awaits an Android Gradle build and a verified bundled bootstrap before it can be called a working terminal.
+- [ ] Add managed 2 GiB package-operation preflight/monitoring, Ctrl-C, foreground/background session behavior, and scrollback limits.
 - [ ] Connect the React Native Terminal UI to sessions without putting raw terminal output into normal chat messages.
 - [ ] Expose a visible runtime status: missing, installing, ready, repairing, low storage, or error.
 
