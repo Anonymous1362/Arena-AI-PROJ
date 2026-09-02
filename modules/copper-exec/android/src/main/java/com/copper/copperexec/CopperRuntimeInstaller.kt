@@ -5,6 +5,8 @@ import android.os.Build
 import android.system.Os
 import android.system.OsConstants
 import java.io.BufferedReader
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -27,6 +29,7 @@ import java.util.zip.ZipInputStream
 internal object CopperRuntimeInstaller {
   private const val COPPER_PACKAGE_ID = "com.copper.chat"
   private const val BOOTSTRAP_ASSET_AARCH64 = "copper-runtime/copper-runtime-bootstrap-aarch64.zip"
+  private const val BOOTSTRAP_MANIFEST_AARCH64 = "$BOOTSTRAP_ASSET_AARCH64.json"
   private const val QUOTA_BYTES = 2L * 1024L * 1024L * 1024L
   private const val MIN_FREE_HEADROOM_BYTES = 64L * 1024L * 1024L
   private const val METADATA_DIRECTORY = "copper-runtime"
@@ -38,6 +41,7 @@ internal object CopperRuntimeInstaller {
   private val installLock = Any()
 
   private data class Symlink(val target: String, val path: File)
+  private data class BootstrapAsset(val archivePath: String, val expectedSha256: String)
 
   fun status(context: Context): Map<String, Any?> {
     val layout = layout(context)
@@ -74,7 +78,7 @@ internal object CopperRuntimeInstaller {
     requireCopperPackage(context)
     val layout = layout(context)
     val asset = bootstrapAssetForCurrentAbi(context)
-      ?: throw IllegalStateException("Copper Runtime bootstrap is not bundled for this device ABI. Install a Copper build containing the verified arm64 runtime bundle.")
+      ?: throw IllegalStateException("Copper Runtime bootstrap and signed build manifest are not bundled for this device ABI. Install a Copper build containing the verified arm64 runtime bundle.")
 
     if (isRuntimeReady(layout.prefix) && !replaceExisting) return status(context)
     if (runtimeBytes(layout) > QUOTA_BYTES) {
@@ -91,7 +95,8 @@ internal object CopperRuntimeInstaller {
     }
 
     try {
-      val extracted = extractBootstrap(context, asset, layout.staging, layout.home)
+      verifyBootstrapAssetDigest(context, asset)
+      val extracted = extractBootstrap(context, asset.archivePath, layout.staging, layout.home)
       if (runtimeBytes(layout, includePrefix = false) > QUOTA_BYTES) {
         throw IllegalStateException("Copper Runtime bootstrap exceeds the configured 2 GiB runtime storage limit.")
       }
@@ -152,14 +157,37 @@ internal object CopperRuntimeInstaller {
     }
   }
 
-  private fun bootstrapAssetForCurrentAbi(context: Context): String? {
+  private fun bootstrapAssetForCurrentAbi(context: Context): BootstrapAsset? {
     val isArm64 = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
     if (!isArm64) return null
     return try {
       context.assets.open(BOOTSTRAP_ASSET_AARCH64).close()
-      BOOTSTRAP_ASSET_AARCH64
+      val manifest = context.assets.open(BOOTSTRAP_MANIFEST_AARCH64)
+        .bufferedReader(StandardCharsets.UTF_8)
+        .use { it.readText() }
+      val hash = Regex("\\\"sha256\\\"\\s*:\\s*\\\"([a-fA-F0-9]{64})\\\"")
+        .find(manifest)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.lowercase()
+        ?: return null
+      BootstrapAsset(BOOTSTRAP_ASSET_AARCH64, hash)
     } catch (_: Exception) {
       null
+    }
+  }
+
+  private fun verifyBootstrapAssetDigest(context: Context, asset: BootstrapAsset) {
+    val digest = MessageDigest.getInstance("SHA-256")
+    DigestInputStream(context.assets.open(asset.archivePath), digest).use { input ->
+      val buffer = ByteArray(32 * 1024)
+      while (input.read(buffer) >= 0) {
+        // DigestInputStream updates the digest during reads.
+      }
+    }
+    val actual = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    if (!actual.equals(asset.expectedSha256, ignoreCase = true)) {
+      throw SecurityException("Copper Runtime bootstrap integrity check failed. The bundled archive does not match its verified build manifest.")
     }
   }
 
@@ -278,13 +306,14 @@ internal object CopperRuntimeInstaller {
     Os.chmod(home.absolutePath, 0b111000000)
   }
 
-  private fun writeMetadata(layout: Layout, asset: String, bootstrapBytes: Long) {
+  private fun writeMetadata(layout: Layout, asset: BootstrapAsset, bootstrapBytes: Long) {
     require(layout.metadataDirectory.mkdirs() || layout.metadataDirectory.isDirectory) {
       "Could not create Copper Runtime metadata directory."
     }
     val properties = Properties().apply {
       setProperty("product", "Copper Runtime")
-      setProperty("asset", asset)
+      setProperty("asset", asset.archivePath)
+      setProperty("bootstrapSha256", asset.expectedSha256)
       setProperty("bootstrapBytes", bootstrapBytes.toString())
       setProperty("runtimePrefix", layout.prefix.absolutePath)
       setProperty("runtimeHome", layout.home.absolutePath)
