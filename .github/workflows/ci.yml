@@ -46,16 +46,16 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
-  # ── 3. On-demand real Copper Runtime bootstrap build ───────────────────────
-  # This is deliberately opt-in by commit message. The standalone manual
-  # workflow becomes dispatchable once its file reaches the default branch;
-  # this job lets the implementation branch validate a real bootstrap first.
+  # ── 3. On-demand Copper Runtime package preflight / bootstrap ─────────────
+  # Both paths are deliberately opt-in by commit message. The standalone manual
+  # workflow becomes dispatchable once its file reaches the default branch.
   copper-runtime-bootstrap:
-    name: Copper Runtime arm64 bootstrap
-    # A source bootstrap is expensive. Do not start it until the independently
-    # compiled-and-executed Android PTY transport gate has passed.
+    name: Copper Runtime arm64 package preflight / bootstrap
+    # A source bootstrap is expensive. Do not start either the pinned package
+    # preflight or the source bootstrap until the compiled-and-executed Android
+    # PTY transport gate has passed.
     needs: copper-native-runtime-compile
-    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-bootstrap]') && needs.copper-native-runtime-compile.result == 'success' }}
+    if: ${{ always() && github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-preflight]')) && needs.copper-native-runtime-compile.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -103,12 +103,19 @@ jobs:
           npm run runtime:upstream -- --dir "$RUNNER_TEMP/copper-runtime-source"
           npm run runtime:patch -- --workspace "$RUNNER_TEMP/copper-runtime-source"
 
-      - name: Build and verify Copper-prefix arm64 bootstrap
+      - name: Run Copper arm64 package preflight or bootstrap
+        env:
+          COPPER_RUNTIME_PREFLIGHT_ONLY: ${{ contains(github.event.head_commit.message, '[runtime-preflight]') }}
         run: |
           set -o pipefail
+          args=()
+          if [ "$COPPER_RUNTIME_PREFLIGHT_ONLY" = "true" ]; then
+            args+=(--preflight-only)
+          fi
           npm run runtime:bootstrap -- \
             --workspace "$RUNNER_TEMP/copper-runtime-source" \
-            --out "$RUNNER_TEMP/copper-runtime-output" 2>&1 | tee "$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
+            --out "$RUNNER_TEMP/copper-runtime-output" \
+            "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
 
       - name: Surface bootstrap diagnostics on failure
         # This makes a concise failure visible through check annotations even
@@ -123,7 +130,12 @@ jobs:
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to install|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" | tail -20 || true
+            {
+              # Include component lines following Gradle's SDK-install header;
+              # without this context an annotation hides the actionable names.
+              grep -Ei --no-group-separator -A6 'failed to install the following sdk components' "$LOG" || true
+              grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
+            } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
             echo "::error title=Copper bootstrap::Bootstrap failed without a recognizable diagnostic. Open the retained build log artifact; no ordinary build-output lines were relabeled as errors."
@@ -146,6 +158,7 @@ jobs:
           retention-days: 14
 
       - name: Upload verified bootstrap input
+        if: ${{ !contains(github.event.head_commit.message, '[runtime-preflight]') }}
         uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bootstrap-aarch64
@@ -160,7 +173,7 @@ jobs:
     name: Copper Runtime native PTY validation
     # Run independently on direct native changes and as a required, fast gate
     # before every expensive source bootstrap build.
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-bootstrap]')) }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-bootstrap]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

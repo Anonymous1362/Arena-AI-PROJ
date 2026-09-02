@@ -33,6 +33,7 @@ const workspace = resolve(args[workspaceIndex + 1]);
 const packagesRoot = resolve(workspace, 'termux-packages');
 const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
+const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
 
@@ -115,6 +116,61 @@ try {
   );
   writeFileSync(buildPackagePath, buildPackage);
 
+  // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
+  // build-tools 30.0.3. The pinned package-builder image intentionally ships
+  // newer common SDK parts instead. Letting Gradle install those missing parts
+  // into the image SDK fails in the container with "Failed to read or create
+  // install properties file". Provision the two pinned components into a
+  // package-private, writable SDK root before Gradle starts. The command-line
+  // tools and accepted licences come from the pinned builder image; all added
+  // SDK data stays under termux-am's disposable package tmp directory.
+  let termuxAmRecipe = readFileSync(termuxAmRecipePath, 'utf8');
+  const termuxAmGradleInvocation = [
+    '\texport ANDROID_HOME',
+    '\texport GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx1536m -Dorg.gradle.java.home=/usr/lib/jvm/java-1.17.0-openjdk-amd64"',
+    '',
+    '\t$TERMUX_PKG_TMPDIR/gradle/gradle-$_GRADLE_VERSION/bin/gradle \\',
+    '\t\t:app:assembleRelease',
+  ].join('\n');
+  const copperTermuxAmSdkProvisioning = [
+    '\t# Keep the package-builder SDK immutable: Gradle 7.4 needs these older',
+    '\t# components, so install them in this package\'s writable temporary SDK.',
+    '\tlocal termux_am_sdk_source="$ANDROID_HOME"',
+    '\tlocal termux_am_sdk_root="$TERMUX_PKG_TMPDIR/android-sdk"',
+    '\tlocal termux_am_sdkmanager=""',
+    '\tfor candidate in "$termux_am_sdk_source/cmdline-tools/latest/bin/sdkmanager" "$termux_am_sdk_source/cmdline-tools/bin/sdkmanager"; do',
+    '\t\tif [ -x "$candidate" ]; then',
+    '\t\t\ttermux_am_sdkmanager="$candidate"',
+    '\t\t\tbreak',
+    '\t\tfi',
+    '\tdone',
+    '\tif [ -z "$termux_am_sdkmanager" ]; then',
+    '\t\techo "ERROR: termux-am could not find sdkmanager in $termux_am_sdk_source" >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '\tmkdir -p "$termux_am_sdk_root"',
+    '\tcp -a "$termux_am_sdk_source/licenses" "$termux_am_sdk_root/"',
+    '\texport ANDROID_HOME="$termux_am_sdk_root"',
+    '\texport ANDROID_SDK_ROOT="$termux_am_sdk_root"',
+    '\tyes | "$termux_am_sdkmanager" --sdk_root="$termux_am_sdk_root" --licenses >/dev/null',
+    '\tyes | "$termux_am_sdkmanager" --sdk_root="$termux_am_sdk_root" \\',
+    '\t\t"platform-tools" \\',
+    '\t\t"platforms;android-33" \\',
+    '\t\t"build-tools;30.0.3"',
+    '',
+    '\texport GRADLE_OPTS="-Dorg.gradle.daemon=false -Xmx1536m -Dorg.gradle.java.home=/usr/lib/jvm/java-1.17.0-openjdk-amd64"',
+    '',
+    '\t$TERMUX_PKG_TMPDIR/gradle/gradle-$_GRADLE_VERSION/bin/gradle \\',
+    '\t\t:app:assembleRelease',
+  ].join('\n');
+  termuxAmRecipe = replaceExactly(
+    termuxAmRecipe,
+    termuxAmGradleInvocation,
+    copperTermuxAmSdkProvisioning,
+    'termux-am isolated Android SDK provisioning hook'
+  );
+  writeFileSync(termuxAmRecipePath, termuxAmRecipe);
+
   const receipt = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -133,6 +189,7 @@ try {
       'TERMUX__PROJECT_SUBDIR=\"copper-runtime\"',
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
       'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace while retaining output .deb files, installed prefix, and shared toolchain cache.',
+      'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
   };

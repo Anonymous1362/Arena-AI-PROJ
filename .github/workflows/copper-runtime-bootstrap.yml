@@ -98,7 +98,12 @@ jobs:
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to install|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" | tail -20 || true
+            {
+              # Include component lines following Gradle's SDK-install header;
+              # without this context an annotation hides the actionable names.
+              grep -Ei --no-group-separator -A6 'failed to install the following sdk components' "$LOG" || true
+              grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
+            } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
             echo "::error title=Copper bootstrap::Bootstrap failed without a recognizable diagnostic. Open the retained build log artifact; no ordinary build-output lines were relabeled as errors."
