@@ -174,6 +174,25 @@ export function executorStatus(): ExecutorMode {
   return nativeExecutor() ? 'native' : 'builtin';
 }
 
+/**
+ * Interactive runner for the Terminal tab. Uses the exact same engine as the
+ * agent's run_command tool — a real native executor on Android when one is
+ * present (copper-exec bridge), otherwise the sandboxed built-in mini-shell.
+ */
+export async function runInteractiveCommand(
+  command: string,
+  timeoutMs = 20_000
+): Promise<{ output: string; ok: boolean; mode: ExecutorMode; ms: number }> {
+  const started = Date.now();
+  const res = await runCommand(command.trim(), timeoutMs, timeoutMs);
+  return {
+    output: res.output,
+    ok: res.ok,
+    mode: executorStatus(),
+    ms: Date.now() - started,
+  };
+}
+
 function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout: string; exit: number }>) | null {
   if (Platform.OS !== 'android') return null;
   const g = globalThis as any;
