@@ -94,6 +94,18 @@
 - [x] **GitHub connector** (pure REST, no git binary): 9 tools — status, repos, tree, read, write (commit with blob-sha fetch so updates can't silently conflict), delete, code search, issues, PRs; repo + branch pickers, connection test with rate-limit readout, and "Pull repo into sandbox" (≤400 text files, ≤512 KB each) with live progress
 - [x] `docs/TERMINAL-AND-CODING-AGENTS.md` — the honest write-up: why not Termux / WebContainers / a downloaded toolchain, what the two executor tiers do, the repo map's limits, the connector's limits (no object database, no local-diff commits), and the ranked upgrade path
 
+## Phase 5.1 — device storage, artifacts & the Claude-style plan ✅ (this update)
+
+- [x] **All-files-access storage tier** (`MANAGE_EXTERNAL_STORAGE`, still no root): real paths on internal *and* removable SD (`/storage/0123-4567/…`), alongside the SAF folder picker; one shared jail for agent + terminal, volume detection, verify flow, three root cards in Shell & sandbox
+- [x] **Artifacts in chat**: file chips under the message that wrote them (zip → save/share on tap; md/txt/code → pull-down reader sheet with a three-dot save menu), plus a per-chat Files sheet for everything produced so far
+- [x] **zip_dir tool** + dependency-free ZIP writer (store method, CRC32, verified against Python's zipfile); saves straight into `Download/` when allowed, share sheet otherwise, browser download on web
+- [x] **Syntax highlighting** without dependencies: cached-regex lexer for 12 language groups, theme palettes for light/dark, used in code blocks and the file reader
+- [x] **Claude-style plan**: square hand-drawn glyph tiles per step kind (code/write/read/run/find/craft), connector line that draws downward as steps complete, tap a step → sheet with the exact commands/tools it ran
+- [x] **Model failover**: 404/429/503 automatically retries the provider's next recommended model, with a toast naming the swap
+- [x] **Project folders**: `projects/<name>/` per chat (toggleable back to free organisation), workspace & deliverables rules in the system prompt (show code in chat, zip on request, stay inside the root)
+- [x] De-Aurora'd: legacy `AuroraExec` probes removed (CopperExec only), the agent introduces itself as Copper, package renamed `copper`
+- [x] Toast system for action feedback (saved paths, grants, copies)
+
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)
 - Light theme as default (currently system-adaptive, light is the signature look)

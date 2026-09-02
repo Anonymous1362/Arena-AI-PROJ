@@ -89,9 +89,15 @@ export default function TerminalScreen() {
             label={native ? 'copper-exec · native shell' : 'built-in sandbox shell'}
           />
           <StatusChip
-            color={root.tier === 'granted' ? colors.success : colors.textSub}
-            icon={root.tier === 'granted' ? 'folder-open-outline' : 'shield-checkmark-outline'}
-            label={root.tier === 'granted' ? 'your folder' : 'app sandbox'}
+            color={root.tier === 'sandbox' ? colors.textSub : root.tier === 'managed' ? colors.warning : colors.success}
+            icon={root.tier === 'managed' ? 'key-outline' : root.tier === 'granted' ? 'folder-open-outline' : 'shield-checkmark-outline'}
+            label={
+              root.tier === 'managed'
+                ? root.uri.replace('file://', '').replace(/^\/storage\//, '')
+                : root.tier === 'granted'
+                  ? 'your folder'
+                  : 'app sandbox'
+            }
           />
           <StatusChip color={colors.accent} icon="terminal-outline" label={`/${shellCwd() === '.' ? '' : shellCwd()}`} mono />
         </View>

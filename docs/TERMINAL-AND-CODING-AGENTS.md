@@ -54,8 +54,6 @@ assumes:
 ```
 globalThis.CopperExec?.exec
 globalThis.expo?.modules?.CopperExec?.exec
-globalThis.AuroraExec?.exec          (legacy name, still honoured)
-globalThis.expo?.modules?.ExpoFileSystem?.exec
 ```
 
 | Tier | When | What runs | UI label |
@@ -117,7 +115,22 @@ Those need a kernel-level shell, i.e. tier 1.
 | Tier | Path | Permissions | When |
 |---|---|---|---|
 | `sandbox` | `<documentDirectory>/files/` | none — app-private | default, always available, iOS only option |
-| `granted` | Android SAF tree URI | user picks a folder once | Settings → Shell & sandbox → "Grant a folder" |
+| `granted` | Android SAF tree URI | user picks a folder once (SAF picker) | Settings → Shell & sandbox → "Picked folder" |
+| `managed` | any absolute Android path | `MANAGE_EXTERNAL_STORAGE` ("All files access") | Settings → Shell & sandbox → "All files access" |
+
+The `managed` tier is the Termux-adjacent one, still without root: with All-files
+access the app addresses **real paths** — internal (`/storage/emulated/0/…`) and
+removable SD cards (`/storage/0123-4567/…`) — through plain `file://` URIs, no
+SAF document-URI dance. `listStorageVolumes()` enumerates the actual mounts so
+the settings screen can offer them as chips. The permission is granted in a
+system page (`android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION`) and
+verified by listing a directory only it can see — never assumed.
+
+**The root is the jail, and there is exactly one of it.** Agent and terminal
+always share it. Point it at `…/COPPER Projects` and nothing outside that
+folder can be touched; point it at `/storage` and the terminal becomes
+Termux-like over the whole device. That choice is the user's, made once, in
+plain words — not buried in code.
 
 SAF navigation is the expensive part (document URIs must be resolved segment by
 segment), so `safResolve()` caches directory listings in `uriCache`, cleared on
@@ -268,6 +281,47 @@ Consequences, stated plainly:
    never commit or push unless asked.
 
 ---
+
+## 7.5 Artifacts, downloads and zips
+
+Files the agent writes are first-class chat objects, derived from tool events
+(`write_file`, `zip_dir`) so the UI can never disagree with what happened
+(`src/utils/artifacts.ts`).
+
+- **Per-message chips** under the reply that produced them. Tapping a `.zip`
+  (or any binary) goes straight to saving; tapping text/code opens the reader.
+- **Reader sheet** (`FileSheet`): pull-down-to-close panel, syntax-coloured
+  content, three-dot corner menu → save to device / copy contents / copy path.
+- **Files sheet**: every artifact of the conversation, open or save per row.
+- **Saving** (`src/utils/download.ts`): with All-files access the file is copied
+  straight into `<internal>/Download/` and the toast quotes the exact path;
+  otherwise the system share sheet handles it; on web it is a browser download.
+- **`zip_dir` tool**: packs a project folder into a real `.zip` the user can
+  hand to ZArchiver or Files. The ZIP writer (`src/utils/zip.ts`) is ~150 lines
+  of dependency-free store-method packing with a proper CRC32 — verified against
+  Python's `zipfile` (names, CRCs, UTF-8 names, binary entries). Entries are
+  stored uncompressed on purpose: no native/wasm inflater on the phone, instant
+  packing, honest trade.
+
+## 7.6 Chat code colours and the Claude-style plan
+
+- **Syntax highlighting** is a dependency-free lexer (`src/utils/highlight.ts`):
+  one cached master regex per language family (JS/TS, Python, C-family, shell,
+  SQL, CSS, JSON, YAML, HTML), classified by which alternative captured. It
+  colours what code looks like — enough for bubbles and readers, zero grammars.
+  Capped at 6k tokens so a 10k-line paste can't freeze the list.
+- **Plan timeline** (`AgentPanels.tsx`): each step gets a square tile with a
+  hand-drawn glyph for its kind (code / write / read / run / find / craft —
+  `Icons.tsx`), the connector line *draws downward* over ~0.9 s as steps
+  complete, and tapping a step opens a sheet with the commands and tool calls
+  that step actually ran (plan steps carry `startedAt`/`doneAt` stamps, so
+  events bind to the right step).
+
+## 7.7 Model failover
+
+A 404 (retired model), 429 (rate limit) or 503 (overloaded) no longer kills a
+long agent run: `fallbackChainFor()` walks the provider's own recommended
+models and retries, and a toast says which model took over.
 
 ## 8. Safety model
 

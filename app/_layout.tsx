@@ -8,6 +8,9 @@ import { ThemeProvider, useTheme } from '@/src/theme';
 import { Durations } from '@/src/theme/motion';
 import { SplashGate, holdNativeSplash } from '@/src/components/Splash';
 import { KeyboardGuard } from '@/src/components/KeyboardGuard';
+import { Toast } from '@/src/components/Toast';
+import { setGrantedTree, setManagedBase, verifyManagedAccess } from '@/src/agent/fs';
+import { useSettingsStore } from '@/src/store/settings';
 
 // Hold the native splash until the animated JS splash is ready to take over.
 holdNativeSplash();
@@ -18,6 +21,8 @@ function Routes() {
     <>
       <SystemUI.StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <KeyboardGuard />
+      <StorageSync />
+      <Toast />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -75,3 +80,24 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({ fill: { flex: 1 } });
+
+/**
+ * Keeps the file-system layer in step with persisted settings — on cold start
+ * and whenever the user changes roots, without having to visit Settings first.
+ */
+function StorageSync(): null {
+  const storageEnabled = useSettingsStore((s) => s.agentScope.storageEnabled);
+  const safTreeUri = useSettingsStore((s) => s.agentScope.safTreeUri);
+  const managedBase = useSettingsStore((s) => s.agentScope.managedBase);
+
+  useEffect(() => {
+    setGrantedTree(storageEnabled && Platform.OS === 'android' ? safTreeUri ?? null : null);
+  }, [storageEnabled, safTreeUri]);
+
+  useEffect(() => {
+    setManagedBase(managedBase || null);
+    if (managedBase) void verifyManagedAccess(managedBase);
+  }, [managedBase]);
+
+  return null;
+}

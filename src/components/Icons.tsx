@@ -290,3 +290,52 @@ export const Pencil = (p: IconProps) => (
     <Path d="M17 3.2a2.6 2.6 0 0 1 3.7 3.7L7.6 20 2.5 21.5 4 16.4z" />
   </Base>
 );
+
+/* ---------------------------- plan step glyphs ----------------------------- */
+/* One hand-drawn square-tile glyph per step kind: code, write, read, run,
+   find, craft. No emoji, no checkmark circles — the tile + colour carry state. */
+
+export const StepCode = (p: IconProps) => (
+  <Base {...p}>
+    <Path d="M8.5 7 4 12l4.5 5" />
+    <Path d="M15.5 7 20 12l-4.5 5" />
+    <Path d="M13.2 5.5l-2.4 13" />
+  </Base>
+);
+
+export const StepWrite = (p: IconProps) => (
+  <Base {...p}>
+    <Path d="M4 20h16" />
+    <Path d="M14.5 4.5a2.1 2.1 0 0 1 3 3L8 17l-4 1 1-4z" />
+  </Base>
+);
+
+export const StepRead = (p: IconProps) => (
+  <Base {...p}>
+    <Path d="M12 6.5C10.4 5 8 4.5 4 4.5v13c4 0 6.4.5 8 2 1.6-1.5 4-2 8-2v-13c-4 0-6.4.5-8 2z" />
+    <Path d="M12 6.5v13" />
+  </Base>
+);
+
+export const StepRun = (p: IconProps) => (
+  <Base {...p}>
+    <Rect x={3} y={4.5} width={18} height={15} rx={2.5} />
+    <Path d="M7 9.5l3 2.5-3 2.5" />
+    <Path d="M12.5 15h4.5" />
+  </Base>
+);
+
+export const StepFind = (p: IconProps) => (
+  <Base {...p}>
+    <Circle cx={10.5} cy={10.5} r={5.5} />
+    <Path d="M14.8 14.8 20 20" />
+    <Path d="M8.4 10.5h4.2" />
+  </Base>
+);
+
+export const StepCraft = (p: IconProps) => (
+  <Base {...p}>
+    <Path d="M12 3v4.2M12 16.8V21M3 12h4.2M16.8 12H21" />
+    <Path d="M6 6l2.6 2.6M15.4 15.4 18 18M18 6l-2.6 2.6M8.6 15.4 6 18" />
+  </Base>
+);

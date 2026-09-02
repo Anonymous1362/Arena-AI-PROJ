@@ -10,6 +10,8 @@ import { runAgentTurn } from '@/src/agent/loop';
 import { buildSystemPrompt } from '@/src/agent/prompts';
 import { currentRoot } from '@/src/agent/fs';
 import { executorStatus } from '@/src/agent/tools';
+import { projectDirFor } from '@/src/agent/workspace';
+import { toast } from '@/src/store/toast';
 import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
 import { useUsageStore } from '@/src/store/usage';
@@ -118,12 +120,16 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   const system = buildSystemPrompt({
     userSystemPrompt: (effectiveUserSystemPrompt ?? '') + summaryBlock(fresh ?? conv),
     scopeLabel:
-      settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
-        ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
-        : currentRoot().tier === 'granted'
-          ? 'user-granted storage root'
-          : 'app sandbox',
+      currentRoot().tier === 'managed'
+        ? `all-files storage root “${currentRoot().uri.replace('file://', '')}”`
+        : settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
+          ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
+          : currentRoot().tier === 'granted'
+            ? 'user-granted storage root'
+            : 'app sandbox',
     executorReal: executorStatus() === 'native',
+    rootUri: currentRoot().uri,
+    projectDir: projectDirFor(fresh ?? conv),
     githubConnected: settings.agentScope.githubTools && (settings.github?.token ?? '').trim().length > 8,
     githubRepo: settings.github?.repo ? `${settings.github.owner ?? ''}/${settings.github.repo}`.replace(/^\//, '') : undefined,
   });
@@ -250,6 +256,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         signal: abort.signal,
         handlers: {
           onContent: paintContent,
+          onModelFallback: (model, status) => {
+            toast(
+              `${status === 429 ? 'Rate-limited' : status === 404 ? 'Model unavailable' : 'Provider overloaded'} — switched to ${model}`,
+              'warn'
+            );
+          },
         },
       });
       useChatsStore.getState().updateMessage(convId, assistant.id, {

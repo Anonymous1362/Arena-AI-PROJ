@@ -39,7 +39,8 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "MANAGE_EXTERNAL_STORAGE"
       ],
       "softwareKeyboardLayoutMode": "resize",
       "windowSoftInputMode": "adjustResize"

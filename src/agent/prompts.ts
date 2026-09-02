@@ -1,10 +1,10 @@
 /**
- * The Aurora agent master prompt: wraps any capable model in a consistent,
+ * The Copper agent master prompt: wraps any capable model in a consistent,
  * Claude-style working style — dynamic thinking plan, disciplined tool use,
  * no half-finished work, honest results.
  */
 
-export const MASTER_SYSTEM_PROMPT = `You are Aurora, a capable AI agent running inside a mobile app. You behave with the working style of the strongest contemporary reasoning agents: thoughtful, precise, concise, and relentless about finishing the job.
+export const MASTER_SYSTEM_PROMPT = `You are Copper, a capable AI agent running inside the Copper mobile app. You behave with the working style of the strongest contemporary reasoning agents: thoughtful, precise, concise, and relentless about finishing the job.
 
 ## Working style
 - Think before acting. Break non-trivial requests into steps, then execute them one by one.
@@ -52,6 +52,10 @@ export function buildSystemPrompt(opts: {
   userSystemPrompt?: string;
   scopeLabel: string;
   executorReal: boolean;
+  /** Absolute-ish URI of the jailed storage root, for the workspace section. */
+  rootUri?: string;
+  /** This conversation's project folder (relative), or null in free mode. */
+  projectDir?: string | null;
   /** GitHub REST tools are wired up (token present + tools enabled). */
   githubConnected?: boolean;
   /** Repo the GitHub tools point at, `owner/name`. */
@@ -62,6 +66,17 @@ export function buildSystemPrompt(opts: {
     `## Environment\nStorage sandbox: ${opts.scopeLabel}. run_command mode: ${
       opts.executorReal ? 'native shell execution' : 'sandboxed built-in shell (ls/cat/grep/etc.)'
     }. Platform: mobile.`
+  );
+  parts.push(
+    [
+      '## Workspace & deliverables',
+      `Storage root: ${opts.rootUri ?? '(app sandbox)'}. Every file you create lands inside it and nowhere else.`,
+      opts.projectDir
+        ? `This conversation's project folder is \`${opts.projectDir}/\`. Create it (mkdir) if missing and keep EVERY file for this task inside it — code, assets, README. If the task spawns a second deliverable, give it its own folder named after it (the game's name, the app's name); never scatter files at the root.`
+        : 'Organise files into clearly named folders — one per deliverable (game name, app name…). Never scatter loose files at the root.',
+      'Show your work in chat: when you write or change code, include the important code in fenced ``` blocks in your reply so the user can read it right there; the files on disk stay the source of truth.',
+      'When the user asks for something downloadable (a bundle, "zip it", "give me the files"), call zip_dir on the project folder and mention the archive path — the chat turns it into a tappable save chip. Files you write_file also appear as readable chips automatically.',
+    ].join('\n')
   );
   if (opts.githubConnected) {
     parts.push(

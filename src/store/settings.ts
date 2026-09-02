@@ -50,12 +50,22 @@ export interface AgentScope {
   storageEnabled: boolean;
   safTreeUri?: string;
   safRootLabel?: string;
+  /**
+   * "All files access" root: an absolute Android path (internal or SD card),
+   * e.g. `/storage/0123-4567/Download/COPPER Projects`. Empty = not used.
+   * Wins over the SAF grant when present and the permission is granted.
+   */
+  managedBase?: string;
   /** Ask before destructive tool calls (delete, rm -rf). */
   confirmDangerous: boolean;
   /** Read assistant replies aloud automatically. */
   autoReadAloud: boolean;
   /** Give the agent the GitHub tools (needs a token in `github`). */
   githubTools: boolean;
+  /** Agent keeps each task inside a named project folder under the root. */
+  projectFolders: boolean;
+  /** One project folder per chat (off = the agent organises freely). */
+  oneProjectPerChat: boolean;
 }
 
 /* ------------------------------- appearance -------------------------------- */
@@ -192,6 +202,8 @@ const defaultAgentScope: AgentScope = {
   confirmDangerous: true,
   autoReadAloud: false,
   githubTools: false,
+  projectFolders: true,
+  oneProjectPerChat: true,
 };
 
 const defaultAppearance: AppearanceSettings = {

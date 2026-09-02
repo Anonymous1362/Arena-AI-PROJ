@@ -29,6 +29,8 @@ import { PressableScale } from '@/src/components/PressableScale';
 import { Banner, Button, Segmented, SwitchRow, TextField } from '@/src/components/ui';
 import { EmptyState } from '@/src/components/EmptyState';
 import { ConfirmSheet } from '@/src/components/ConfirmSheet';
+import { ArtifactChips, FileSheet, FilesSheet } from '@/src/components/FileSheet';
+import { artifactsFromMessages, artifactsOfMessage } from '@/src/utils/artifacts';
 import { ContextMeter } from '@/src/components/ContextMeter';
 import { speakAloud, stopSpeaking } from '@/src/utils/speech';
 import { haptics } from '@/src/utils/haptics';
@@ -137,6 +139,8 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
 
   const [modelSheet, setModelSheet] = useState(false);
   const [menuSheet, setMenuSheet] = useState(false);
+  const [filePath, setFilePath] = useState<string | null>(null);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [thinkSheet, setThinkSheet] = useState(false);
   const [renameSheet, setRenameSheet] = useState(false);
   const [renameText, setRenameText] = useState('');
@@ -299,10 +303,18 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
   const levels = supportedThinkingLevels(modelName);
   const prompt = conv?.systemPromptOverride ?? globalSystemPrompt ?? '';
   const usage = useMemo(() => contextUsageFor(conv, prompt), [conv, prompt]);
+  const artifacts = useMemo(() => artifactsFromMessages(conv?.messages ?? []), [conv]);
 
   const menuActions = useMemo(
     () => (
       <>
+        <SheetAction
+          icon="folder-open-outline"
+          label="Files in this chat"
+          sublabel={artifacts.length ? `${artifacts.length} artifact${artifacts.length === 1 ? '' : 's'} — read or save` : 'Nothing written yet'}
+          tint={colors.chart[0]}
+          onPress={() => { setMenuSheet(false); setTimeout(() => setFilesOpen(true), Durations.smooth); }}
+        />
         <SheetAction icon="pencil-outline" label="Rename" onPress={() => { setRenameText(conv?.title ?? ''); setMenuSheet(false); setTimeout(() => setRenameSheet(true), Durations.smooth); }} />
         <SheetAction icon={conv?.pinned ? 'pin' : 'pin-outline'} label={conv?.pinned ? 'Unpin' : 'Pin to top'} onPress={() => { togglePin(conversationId); setMenuSheet(false); }} />
         <SheetAction icon="sparkles-outline" label="Thinking level" sublabel={`${thinkingLabel(thinking)} · ${meta.family}`} tint={colors.chart[1]} onPress={() => { setMenuSheet(false); setTimeout(() => setThinkSheet(true), Durations.smooth); }} />
@@ -327,7 +339,7 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
         />
       </>
     ),
-    [clearCompaction, colors, conv, conversationId, embedded, exportChat, exportMarkdown, hasOverride, meta.family, onNewChat, openSysPromptSheet, thinking, togglePin, deleteMessage, usage.pct]
+    [artifacts.length, clearCompaction, colors, conv, conversationId, embedded, exportChat, exportMarkdown, hasOverride, meta.family, onNewChat, openSysPromptSheet, thinking, togglePin, deleteMessage, usage.pct]
   );
 
   /* --------------------------------- animations -------------------------------- */
@@ -493,6 +505,9 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
                       onLongPress={setActionsMsg}
                       onRetry={retry}
                     />
+                    {m.role === 'assistant' ? (
+                      <ArtifactChips artifacts={artifactsOfMessage(m)} onOpen={setFilePath} />
+                    ) : null}
                   </Animated.View>
                 </React.Fragment>
               );
@@ -741,6 +756,8 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
       </Sheet>
 
       <ConfirmSheet />
+      <FilesSheet visible={filesOpen} onClose={() => setFilesOpen(false)} artifacts={artifacts} />
+      <FileSheet path={filePath} onClose={() => setFilePath(null)} />
 
       <Sheet
         visible={editSheet}

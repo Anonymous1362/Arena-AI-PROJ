@@ -14,6 +14,8 @@ import { Platform } from 'react-native';
 import { useSettingsStore } from '@/src/store/settings';
 import { GITHUB_TOOL_SPECS, GITHUB_TOOL_NAMES, dispatchGithubTool } from '@/src/agent/github';
 import { buildRepoMap } from '@/src/agent/repomap';
+import { zipStore, utf8Bytes, type ZipEntry } from '@/src/utils/zip';
+import { readAgentFileBytes, writeAgentFileBytes, listAgentEntries } from '@/src/agent/fs';
 import {
   readAgentFile,
   writeAgentFile,
@@ -110,6 +112,16 @@ export const TOOL_SPECS: ToolSpec[] = [
     required: [],
   },
   {
+    name: 'zip_dir',
+    description:
+      'Pack a folder of the storage root into a .zip archive the user can download or share. Use it when the user asks for a bundle/archive of a project. Entries are stored uncompressed; binaries are included.',
+    params: {
+      path: { type: 'string', description: 'Folder to pack, relative (e.g. "space-game")' },
+      out: { type: 'string', description: 'Archive path to write, relative (default "<folder>.zip" at the root)' },
+    },
+    required: ['path'],
+  },
+  {
     name: 'run_command',
     description:
       'Run a shell command inside the app sandbox (cwd = storage root). Real shell when an executor is available; otherwise a built-in shell emulation for common commands (ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd). Timeout applies.',
@@ -175,6 +187,9 @@ export async function dispatchTool(
         return { ok: true, output: await deleteAgentPath(String(args.path ?? '')) };
       case 'stat':
         return { ok: true, output: await statAgentPath(String(args.path ?? '')) };
+      case 'zip_dir': {
+        return await zipDirTool(String(args.path ?? '.'), args.out != null ? String(args.out) : null);
+      }
       case 'repo_map': {
         const map = await buildRepoMap({
           root: args.root != null && String(args.root).trim() ? String(args.root) : '.',
@@ -213,13 +228,7 @@ function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout
   if (Platform.OS !== 'android') return null;
   const g = globalThis as any;
   const exec =
-    g.CopperExec?.exec ??
-    g.expo?.modules?.CopperExec?.exec ??
-    // Legacy bridge name retained so existing development builds keep working.
-    g.AuroraExec?.exec ??
-    g.expo?.modules?.AuroraExec?.exec ??
-    g.expo?.modules?.ExpoFileSystem?.exec ??
-    null;
+    g.CopperExec?.exec ?? g.expo?.modules?.CopperExec?.exec ?? null;
   if (typeof exec !== 'function') return null;
   return (cmd: string, timeoutMs: number) =>
     exec(cmd, timeoutMs).then((r: any) => ({ stdout: String(r?.stdout ?? r ?? ''), exit: Number(r?.exit ?? r?.code ?? 0) }));
@@ -689,4 +698,77 @@ async function walkAll(rel: string): Promise<string[]> {
   };
   await walk(safeRelPath(rel) || '.');
   return files;
+}
+
+/* --------------------------------- zip_dir --------------------------------- */
+
+const ZIP_SKIP = new Set([
+  'node_modules', '.git', '.hg', 'dist', 'build', 'out', 'target', '.next',
+  '.expo', '.cache', '.gradle', '__pycache__', '.venv', 'coverage', '.turbo',
+  'Pods', 'vendor',
+]);
+const ZIP_MAX_FILES = 600;
+const ZIP_MAX_BYTES = 24 * 1024 * 1024;
+
+async function zipDirTool(dir: string, out: string | null): Promise<ToolResult> {
+  const root = (dir || '.').replace(/^\/+/, '') || '.';
+  const entries: ZipEntry[] = [];
+  let bytes = 0;
+  let stopped: string | null = null;
+
+  const visit = async (rel: string, depth: number): Promise<void> => {
+    if (stopped || depth > 8) return;
+    let listing;
+    try {
+      listing = await listAgentEntries(rel);
+    } catch (e) {
+      stopped = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    for (const e of listing) {
+      if (stopped) return;
+      const child = rel === '.' || rel === '' ? e.name : `${rel}/${e.name}`;
+      if (e.isDir) {
+        if (ZIP_SKIP.has(e.name) || e.name.startsWith('.')) continue;
+        entries.push({ name: `${child}/`, data: new Uint8Array(0) });
+        await visit(child, depth + 1);
+        continue;
+      }
+      if (entries.length >= ZIP_MAX_FILES) {
+        stopped = `stopped at ${ZIP_MAX_FILES} files`;
+        return;
+      }
+      try {
+        const data = await readAgentFileBytes(child, 4 * 1024 * 1024);
+        bytes += data.length;
+        if (bytes > ZIP_MAX_BYTES) {
+          stopped = `stopped at ${Math.round(ZIP_MAX_BYTES / 1024 / 1024)} MB`;
+          return;
+        }
+        entries.push({ name: child, data });
+      } catch (err) {
+        entries.push({ name: `${child}.unreadable.txt`, data: utf8Bytes(String(err)) });
+      }
+    }
+  };
+
+  await visit(root, 1);
+  if (!entries.length) {
+    return { ok: false, output: stopped ? `Nothing packed: ${stopped}` : `Nothing to pack under "${root}".` };
+  }
+
+  const folderName = root === '.' ? 'project' : root.split('/').pop() ?? 'project';
+  const outPath = (out ?? `${folderName}.zip`).replace(/^\/+/, '');
+  const archive = zipStore(entries);
+  const msg = await writeAgentFileBytes(outPath, archive);
+  return {
+    ok: true,
+    output: [
+      `${msg} (${entries.length} entries, ${Math.round(archive.length / 1024)} KB).`,
+      `The chat shows it as a downloadable file chip — the user taps it to save or share.`,
+      stopped ? `Note: ${stopped}.` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  };
 }

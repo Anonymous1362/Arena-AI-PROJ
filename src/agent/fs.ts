@@ -9,11 +9,12 @@
  *
  * All agent paths are relative and jailed to the active root.
  */
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import type * as FSTypes from 'expo-file-system';
+import { bytesFromBase64, base64FromBytes } from '@/src/utils/zip';
 
-export type FsTier = 'sandbox' | 'granted';
+export type FsTier = 'sandbox' | 'granted' | 'managed';
 
 export interface FsPermissionInfo {
   tier: FsTier;
@@ -36,6 +37,93 @@ const SAF = (FileSystem as unknown as {
 
 let grantedTreeUri: string | null = null;
 
+/* ------------------------- "All files access" tier ------------------------- */
+
+/**
+ * Android's MANAGE_EXTERNAL_STORAGE ("All files access") tier.
+ *
+ * With it the app can address real paths — internal (`/storage/emulated/0/…`)
+ * *and* a removable SD card (`/storage/0123-4567/…`) — through plain file URIs,
+ * no SAF document-URI dance. The jail becomes whatever base path the user
+ * picks: their COPPER Projects folder, the SD card, or `/storage` for
+ * Termux-style whole-device access. Still no root, still one explicit root.
+ */
+let managedBaseAbs: string | null = null;
+let managedOk = false;
+
+export function setManagedBase(absPath: string | null): void {
+  const clean = (absPath ?? '').trim().replace(/\/+$/, '');
+  managedBaseAbs = clean && clean.startsWith('/') ? clean : null;
+  if (!managedBaseAbs) managedOk = false;
+}
+
+export function managedBasePath(): string | null {
+  return managedOk ? managedBaseAbs : null;
+}
+
+export function managedAccessGranted(): boolean {
+  return managedOk;
+}
+
+/** Probes the permission by listing a directory only it can see. */
+export async function verifyManagedAccess(base?: string | null): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  const candidates = [base ?? managedBaseAbs, '/storage/emulated/0', '/storage'].filter(
+    (c): c is string => !!c
+  );
+  for (const c of candidates) {
+    try {
+      await FileSystem.readDirectoryAsync(`file://${c}`);
+      managedOk = true;
+      if (base ?? managedBaseAbs ? c === (base ?? managedBaseAbs) : true) return true;
+    } catch {
+      /* next candidate */
+    }
+  }
+  managedOk = false;
+  return false;
+}
+
+/** Opens Android's "All files access" page for this app. */
+export async function openAllFilesSettings(): Promise<void> {
+  try {
+    await Linking.sendIntent('android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION');
+    return;
+  } catch {
+    /* fall through */
+  }
+  await Linking.openSettings();
+}
+
+export interface StorageVolume {
+  path: string;
+  label: string;
+}
+
+/** Real mount points (internal + SD cards) — only visible with All-files access. */
+export async function listStorageVolumes(): Promise<StorageVolume[]> {
+  if (!(await verifyManagedAccess())) return [];
+  try {
+    const tops = await FileSystem.readDirectoryAsync('file:///storage');
+    const out: StorageVolume[] = [];
+    for (const name of tops) {
+      if (name === 'emulated') {
+        try {
+          const inner = await FileSystem.readDirectoryAsync('file:///storage/emulated');
+          for (const u of inner) out.push({ path: `/storage/emulated/${u}`, label: u === '0' ? 'Internal storage' : `Internal ${u}` });
+        } catch {
+          out.push({ path: '/storage/emulated/0', label: 'Internal storage' });
+        }
+      } else if (/^[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4,8}$/.test(name)) {
+        out.push({ path: `/storage/${name}`, label: `SD card (${name})` });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function setGrantedTree(uri: string | null): void {
   grantedTreeUri = uri;
 }
@@ -45,6 +133,9 @@ export function getGrantedTree(): string | null {
 }
 
 export function currentRoot(): { tier: FsTier; uri: string } {
+  if (managedOk && managedBaseAbs && Platform.OS !== 'web') {
+    return { tier: 'managed', uri: `file://${managedBaseAbs}/` };
+  }
   if (grantedTreeUri && Platform.OS !== 'web') return { tier: 'granted', uri: grantedTreeUri };
   return { tier: 'sandbox', uri: `${FileSystem.documentDirectory ?? ''}files/` };
 }
@@ -320,4 +411,53 @@ export async function listAgentEntries(rel: string): Promise<AgentEntry[]> {
 /** True when the active root can report entry sizes cheaply (sandbox tier). */
 export function rootHasSizes(): boolean {
   return currentRoot().tier === 'sandbox';
+}
+
+/* ------------------------------ binary + uris ------------------------------ */
+
+/** Read a file as bytes (base64 under the hood) — needed for zipping binaries. */
+export async function readAgentFileBytes(rel: string, maxSize = 8 * 1024 * 1024): Promise<Uint8Array> {
+  const path = safeRelPath(rel);
+  const root = currentRoot();
+  const uri = root.tier === 'granted' && SAF ? await safResolve(path) : `${root.uri}${path}`;
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists) throw new Error(`File not found: ${path}`);
+  const size = (info as { size?: number }).size ?? 0;
+  if (size > maxSize) throw new Error(`File too large to pack (${formatKB(size)}; limit ${formatKB(maxSize)}).`);
+  const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+  return bytesFromBase64(b64);
+}
+
+/** Write raw bytes (base64) — used for .zip exports. */
+export async function writeAgentFileBytes(rel: string, bytes: Uint8Array, maxSize = 48 * 1024 * 1024): Promise<string> {
+  const path = safeRelPath(rel);
+  if (bytes.length > maxSize) throw new Error(`Archive too large (${formatKB(bytes.length)}; limit ${formatKB(maxSize)}).`);
+  const b64 = base64FromBytes(bytes);
+  const root = currentRoot();
+  if (root.tier === 'granted' && SAF) {
+    const segs = path.split('/');
+    const name = segs.pop()!;
+    const dirUri = await safResolve(segs.join('/'), true);
+    await (SAF as any).writeFileAsync(dirUri, name, b64, FileSystem.EncodingType.Base64);
+    uriCache.clear();
+    return `Wrote ${formatKB(bytes.length)} to ${path}`;
+  }
+  const uri = `${root.uri}${path}`;
+  const dir = uri.slice(0, uri.lastIndexOf('/'));
+  (await FileSystem.getInfoAsync(dir)).exists || (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
+  await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
+  return `Wrote ${formatKB(bytes.length)} to ${path}`;
+}
+
+/** Absolute URI of a jailed path — what the share sheet / copier needs. */
+export async function absoluteUriFor(rel: string): Promise<string> {
+  const path = safeRelPath(rel);
+  const root = currentRoot();
+  if (root.tier === 'granted' && SAF) return safResolve(path);
+  return `${root.uri}${path}`;
+}
+
+/** True when a path looks like text we can show in a reader panel. */
+export function isTextPath(rel: string): boolean {
+  return TEXT_EXT.test(rel) || !/\.[A-Za-z0-9]{1,5}$/.test(rel);
 }

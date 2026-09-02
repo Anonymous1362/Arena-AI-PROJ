@@ -13,6 +13,7 @@ import {
   sortModelIds,
   thinkingFields,
   presetForBaseUrl,
+  fallbackChainFor,
 } from '@/src/ai/catalog';
 
 /* Re-exported so existing imports (`@/src/ai/remote`) keep working. */
@@ -171,6 +172,16 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
 
   let body: Record<string, unknown> = { ...base, ...thinking };
   let res = await postChat({ target, body, signal: req.signal });
+
+  // ---- automatic model failover (404 retired model, 429 rate limit, 503) ----
+  if (res.status === 404 || res.status === 429 || res.status === 503) {
+    for (const next of fallbackChainFor(target.baseUrl, target.model)) {
+      req.handlers.onModelFallback?.(next, res.status);
+      body = { ...base, model: next, ...thinking };
+      res = await postChat({ target: { ...target, model: next }, body, signal: req.signal });
+      if (res.status !== 404 && res.status !== 429 && res.status !== 503) break;
+    }
+  }
 
   // Vendor-extension rejection → drop the extras and try again.
   if (res.status === 400 && Object.keys(thinking).length) {

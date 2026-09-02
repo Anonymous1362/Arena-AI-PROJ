@@ -15,6 +15,8 @@ export interface EngineHandlers {
   onContent?: (content: string) => void;
   /** Called with accumulated reasoning so far (throttled). May never fire. */
   onReasoning?: (reasoning: string) => void;
+  /** A model failed (404/429/503) and the request moved to a fallback model. */
+  onModelFallback?: (model: string, status: number) => void;
   onDone?: (result: EngineResult) => void;
   onError?: (err: Error) => void;
 }
@@ -79,6 +81,10 @@ export interface PlanStep {
   id: string;
   label: string;
   state: 'pending' | 'active' | 'done';
+  /** Wall-clock ms when the step became active / finished — lets the UI bind
+   *  tool events (commands, file writes) to the step that produced them. */
+  startedAt?: number;
+  doneAt?: number;
 }
 
 export interface ToolEvent {

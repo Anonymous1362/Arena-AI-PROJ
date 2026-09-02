@@ -46,6 +46,18 @@ export interface ThemeColors {
   termAccent: string;
   /** Distinct hues for data viz / section chrome so screens stop looking mono. */
   chart: [string, string, string, string, string];
+  /** Syntax-highlight palette (see components/CodeHighlight.tsx). */
+  code: {
+    plain: string;
+    comment: string;
+    string: string;
+    number: string;
+    keyword: string;
+    fn: string;
+    type: string;
+    prop: string;
+    tag: string;
+  };
 }
 
 /* ------------------------------- accent families ---------------------------- */
@@ -136,6 +148,17 @@ const NEUTRALS: Record<Scheme, Omit<ThemeColors, 'accent' | 'accentSoft' | 'acce
     termText: '#E8E4D8',
     termAccent: '#8FD18A',
     chart: ['#C15F3C', '#2F5FD0', '#2E7D52', '#B07C22', '#6B4FD8'],
+    code: {
+      plain: '#1F1E1B',
+      comment: '#8A8578',
+      string: '#3E7A4E',
+      number: '#A6622A',
+      keyword: '#B4552D',
+      fn: '#2F6F8F',
+      type: '#7A4E8C',
+      prop: '#2E7D6E',
+      tag: '#B4552D',
+    },
   },
   dark: {
     bg: '#191817',
@@ -163,6 +186,17 @@ const NEUTRALS: Record<Scheme, Omit<ThemeColors, 'accent' | 'accentSoft' | 'acce
     termText: '#E8E4D8',
     termAccent: '#8FD18A',
     chart: ['#D97757', '#7FA6FF', '#5CBF86', '#D19A3D', '#A48CFF'],
+    code: {
+      plain: '#E8E4D8',
+      comment: '#7C786D',
+      string: '#8FD18A',
+      number: '#D19A3D',
+      keyword: '#E08A5E',
+      fn: '#7FB8D1',
+      type: '#C79BD1',
+      prop: '#7FCBB4',
+      tag: '#E08A5E',
+    },
   },
 };
 

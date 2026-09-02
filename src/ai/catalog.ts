@@ -635,3 +635,23 @@ export function isChatModel(id: string): boolean {
   const m = cleanModelId(id).toLowerCase();
   return !/(embedding|tts|transcribe|veo-|imagen|guard|whisper|rerank|-live|bidi|robotics|lyria|computer-use)/.test(m);
 }
+
+/**
+ * Fallback chain for automatic model failover: the provider's own recommended
+ * models, nearest first, excluding the one that just failed. Used when a
+ * request 404s (model retired/typo), 429s (rate limit) or 503s (overloaded) so
+ * a long agent run survives provider hiccups instead of dying.
+ */
+export function fallbackChainFor(baseUrl: string, current: string): string[] {
+  const preset = presetForBaseUrl(baseUrl);
+  const pool = [...(preset?.suggestedModels ?? []), ...(preset?.cards?.map((m: { id: string }) => m.id) ?? [])];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of pool) {
+    if (m === current || seen.has(m)) continue;
+    seen.add(m);
+    out.push(m);
+    if (out.length >= 3) break;
+  }
+  return out;
+}

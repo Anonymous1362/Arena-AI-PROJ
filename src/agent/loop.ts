@@ -135,10 +135,16 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     if (m && steps.length) {
       const idx = Number(m[1]) - 1;
       const prevDoneCount = steps.filter((s) => s.state === 'done').length;
-      steps = steps.map((s, i) => ({
-        ...s,
-        state: i < idx ? 'done' : i === idx ? 'active' : s.state === 'done' ? 'done' : 'pending',
-      }));
+      const now = Date.now();
+      steps = steps.map((s, i): PlanStep => {
+        const next: PlanStep['state'] = i < idx ? 'done' : i === idx ? 'active' : s.state === 'done' ? 'done' : 'pending';
+        return {
+          ...s,
+          state: next,
+          startedAt: s.startedAt ?? (next === 'active' || next === 'done' ? now : undefined),
+          doneAt: next === 'done' ? (s.doneAt ?? now) : undefined,
+        };
+      });
       const newDoneCount = steps.filter((s) => s.state === 'done').length;
       // Fire a haptic for each newly-completed step.
       if (newDoneCount > prevDoneCount) haptics.success();
@@ -284,7 +290,11 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
           id: uid(),
           kind: isCommand ? 'command' : 'tool',
           title: isCommand ? (parsedArgs.command ?? 'command') : fnName,
-          detail: isCommand ? '$ ' : String(parsedArgs.path ?? parsedArgs.name ?? ''),
+          detail: isCommand
+            ? '$ '
+            : fnName === 'zip_dir'
+              ? String(parsedArgs.out ?? `${String(parsedArgs.path ?? 'project').replace(/\/+$/, '') || 'project'}.zip`)
+              : String(parsedArgs.path ?? parsedArgs.name ?? ''),
           output: '',
           ok: true,
           running: true,
@@ -310,7 +320,13 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
       // continue looping — the model now sees tool outputs
     }
 
-    const finalSteps = steps.map((s) => ({ ...s, state: s.state === 'active' ? 'done' : s.state } as PlanStep));
+    const finalAt = Date.now();
+    const finalSteps = steps.map((s) => ({
+      ...s,
+      state: s.state === 'active' ? 'done' : s.state,
+      startedAt: s.startedAt ?? (s.state !== 'pending' ? finalAt : undefined),
+      doneAt: s.state === 'done' ? (s.doneAt ?? finalAt) : s.state === 'active' ? finalAt : undefined,
+    }));
     // If the plan had steps and they're all done, fire a completion haptic.
     if (finalSteps.length > 0 && finalSteps.every((s) => s.state === 'done')) {
       haptics.success();

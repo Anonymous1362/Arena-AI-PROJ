@@ -14,7 +14,8 @@ import type { ChatMessage } from '@/src/store/chats';
 import { Markdown } from '@/src/components/Markdown';
 import { TypingDots } from '@/src/components/TypingDots';
 import { PressableScale } from '@/src/components/PressableScale';
-import { ArtifactPanel, PlanPanel, ToolEventCard } from '@/src/components/AgentPanels';
+import { ArtifactPanel, PlanPanel, StepSheet, ToolEventCard } from '@/src/components/AgentPanels';
+import type { ToolEvent } from '@/src/ai/types';
 import { formatDuration } from '@/src/utils/format';
 
 function Caret({ color }: { color: string }) {
@@ -100,6 +101,17 @@ export const MessageBubble = memo(function MessageBubble({
     [isUser]
   );
 
+  const [openStep, setOpenStep] = useState<number | null>(null);
+
+  /** Tool events that happened while step `i` was the active one. */
+  const stepEvents = (i: number): ToolEvent[] => {
+    const st = message.planSteps?.[i];
+    const evs = message.toolEvents ?? [];
+    if (!st?.startedAt) return [];
+    const end = message.planSteps?.[i + 1]?.startedAt ?? Number.MAX_SAFE_INTEGER;
+    return evs.filter((e) => e.ts >= (st.startedAt ?? 0) && e.ts < end && !e.running);
+  };
+
   if (isUser) {
     return (
       <View style={[bubbleStyle, { alignItems: 'flex-end', marginVertical: spacing(1.2) }]}>
@@ -140,7 +152,12 @@ export const MessageBubble = memo(function MessageBubble({
           ) : null}
 
           {message.planSteps?.length ? (
-            <PlanPanel steps={message.planSteps} running={!!streaming} />
+            <PlanPanel
+              steps={message.planSteps}
+              running={!!streaming}
+              onOpenStep={(i) => setOpenStep(i)}
+              canOpenStep={(i) => stepEvents(i).length > 0}
+            />
           ) : null}
 
           {message.toolEvents?.length ? <ArtifactPanel events={message.toolEvents} /> : null}
@@ -222,6 +239,13 @@ export const MessageBubble = memo(function MessageBubble({
           )}
         </View>
       </PressableScale>
+
+      <StepSheet
+        visible={openStep != null}
+        onClose={() => setOpenStep(null)}
+        step={openStep != null ? message.planSteps?.[openStep] ?? null : null}
+        events={openStep != null ? stepEvents(openStep) : []}
+      />
     </View>
   );
 });
