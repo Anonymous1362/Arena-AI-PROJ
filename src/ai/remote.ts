@@ -51,7 +51,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     pricingNote: 'Generous free tier at AI Studio — best first pick.',
     id: 'google',
     name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/open',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyUrl: 'https://aistudio.google.com/app/apikey',
     note: 'Gemini via the OpenAI-compatible endpoint. Generous free tier.',
     suggestedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
