@@ -44,16 +44,27 @@ jobs:
         run: |
           set -euo pipefail
           EXTRA="$EXTRA_BOOTSTRAP_PACKAGES"
-          if [ -n "$EXTRA" ]; then
-            npm run runtime:bootstrap -- \
-              --workspace "$RUNNER_TEMP/copper-runtime-source" \
-              --out "$RUNNER_TEMP/copper-runtime-output" \
-              --add "$EXTRA"
-          else
-            npm run runtime:bootstrap -- \
-              --workspace "$RUNNER_TEMP/copper-runtime-source" \
-              --out "$RUNNER_TEMP/copper-runtime-output"
-          fi
+          {
+            if [ -n "$EXTRA" ]; then
+              npm run runtime:bootstrap -- \
+                --workspace "$RUNNER_TEMP/copper-runtime-source" \
+                --out "$RUNNER_TEMP/copper-runtime-output" \
+                --add "$EXTRA"
+            else
+              npm run runtime:bootstrap -- \
+                --workspace "$RUNNER_TEMP/copper-runtime-source" \
+                --out "$RUNNER_TEMP/copper-runtime-output"
+            fi
+          } 2>&1 | tee "$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
+
+      - name: Upload bootstrap build log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: copper-runtime-bootstrap-build-log
+          path: ${{ runner.temp }}/copper-runtime-bootstrap-build.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Show verified runtime input
         run: |

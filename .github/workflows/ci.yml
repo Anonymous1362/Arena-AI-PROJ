@@ -73,9 +73,19 @@ jobs:
 
       - name: Build and verify Copper-prefix arm64 bootstrap
         run: |
+          set -o pipefail
           npm run runtime:bootstrap -- \
             --workspace "$RUNNER_TEMP/copper-runtime-source" \
-            --out "$RUNNER_TEMP/copper-runtime-output"
+            --out "$RUNNER_TEMP/copper-runtime-output" 2>&1 | tee "$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
+
+      - name: Upload bootstrap build log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: copper-runtime-bootstrap-build-log
+          path: ${{ runner.temp }}/copper-runtime-bootstrap-build.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload verified bootstrap input
         uses: actions/upload-artifact@v4
