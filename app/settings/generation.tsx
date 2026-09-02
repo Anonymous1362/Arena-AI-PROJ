@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +6,7 @@ import { useTheme, spacing } from '@/src/theme';
 import { useSettingsStore } from '@/src/store/settings';
 import { AppHeader } from '@/src/components/AppHeader';
 import { Button, Card, Chip, SectionHeader, Stepper, TextField } from '@/src/components/ui';
+import { PromptLibrarySheet } from '@/src/components/PromptLibrarySheet';
 
 const TEMP_PRESETS = [
   { label: 'Precise', value: 0.2, icon: 'checkmark-circle-outline' as const },
@@ -19,6 +20,7 @@ export default function GenerationSettingsScreen() {
   const router = useRouter();
   const generation = useSettingsStore((s) => s.generation);
   const patch = useSettingsStore((s) => s.patchGeneration);
+  const [promptLib, setPromptLib] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -35,6 +37,13 @@ export default function GenerationSettingsScreen() {
           onChangeText={(t) => patch({ systemPrompt: t })}
           multiline
           style={{ textAlignVertical: 'top', minHeight: 90 }}
+        />
+        <Button
+          label="Prompt Library"
+          variant="ghost"
+          icon="library-outline"
+          style={{ marginTop: spacing(2) }}
+          onPress={() => setPromptLib(true)}
         />
 
         <SectionHeader title="Creativity" />
@@ -100,6 +109,13 @@ export default function GenerationSettingsScreen() {
           }
         />
       </ScrollView>
+
+      <PromptLibrarySheet
+        visible={promptLib}
+        onClose={() => setPromptLib(false)}
+        onSelect={(body) => patch({ systemPrompt: body })}
+        selectLabel="Use as global system prompt"
+      />
     </View>
   );
 }

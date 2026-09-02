@@ -16,6 +16,7 @@ import type { RemoteTarget } from '@/src/ai/types';
 import { dispatchTool, openAITools } from '@/src/agent/tools';
 import { CONTINUE_NUDGE } from '@/src/agent/prompts';
 import { useConfirmStore } from '@/src/agent/confirm';
+import { haptics } from '@/src/utils/haptics';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -123,10 +124,14 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     const m = [...text.matchAll(/\*\*(\d+)\/(\d+)\s+([^*]+)\*\*/g)].pop();
     if (m && steps.length) {
       const idx = Number(m[1]) - 1;
+      const prevDoneCount = steps.filter((s) => s.state === 'done').length;
       steps = steps.map((s, i) => ({
         ...s,
         state: i < idx ? 'done' : i === idx ? 'active' : s.state === 'done' ? 'done' : 'pending',
       }));
+      const newDoneCount = steps.filter((s) => s.state === 'done').length;
+      // Fire a haptic for each newly-completed step.
+      if (newDoneCount > prevDoneCount) haptics.success();
       callbacks.onPlan([...steps]);
     }
   };
@@ -293,10 +298,16 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
       // continue looping — the model now sees tool outputs
     }
 
+    const finalSteps = steps.map((s) => ({ ...s, state: s.state === 'active' ? 'done' : s.state } as PlanStep));
+    // If the plan had steps and they're all done, fire a completion haptic.
+    if (finalSteps.length > 0 && finalSteps.every((s) => s.state === 'done')) {
+      haptics.success();
+    }
+
     callbacks.onDone({
       text: fullText,
       toolEvents,
-      steps: steps.map((s) => ({ ...s, state: s.state === 'active' ? 'done' : s.state })),
+      steps: finalSteps,
       ms: Date.now() - started,
       stopReason,
       transcriptTail: working.slice(1),
