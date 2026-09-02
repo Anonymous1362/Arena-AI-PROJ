@@ -114,10 +114,20 @@ jobs:
       - name: Compile Copper native module and PTY library
         working-directory: android
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew :copper-exec:assembleDebug --no-daemon
+          ./gradlew :copper-exec:assembleDebug --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-native-build.log"
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Upload native build log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: copper-runtime-native-build-log
+          path: ${{ runner.temp }}/copper-native-build.log
+          if-no-files-found: warn
+          retention-days: 14
 
   # ── 5. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
