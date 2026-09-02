@@ -42,3 +42,7 @@ build/
 *.aab
 *.ipa
 Payload/
+
+# Copper Runtime build products (source configuration remains tracked)
+/runtime/artifacts/
+/runtime/repository-output/

@@ -32,7 +32,32 @@ Before the first upstream source is imported, the Copper distribution must:
 4. Build with a Copper package name and runtime prefix; do not ship binaries that assume `com.termux`.
 5. Use a Copper package repository/metadata signed and maintained by this project. Do not claim official Termux package-repository support.
 
-The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtime/copper-runtime.lock.json). That lock records source revisions only; it does not vendor or redistribute the upstream source yet.
+The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtime/copper-runtime.lock.json), and the active build choices are in [`runtime/copper-runtime.config.json`](../runtime/copper-runtime.config.json). These records pin source revisions only; they do not vendor or redistribute upstream source yet.
+
+## Reproducible R1 commands
+
+```bash
+# 1. Fetch exact source revisions into an ignored working directory.
+npm run runtime:upstream -- --dir /absolute/path/copper-runtime-source
+
+# 2. Apply only the reviewed Copper-prefix package-build settings.
+npm run runtime:patch -- --workspace /absolute/path/copper-runtime-source
+
+# 3. Build and verify a real arm64 bootstrap with Docker.
+npm run runtime:bootstrap -- \
+  --workspace /absolute/path/copper-runtime-source \
+  --out /absolute/path/copper-runtime-artifacts
+
+# 4. Assemble a signed static APT repository from Copper-built .deb files.
+# The signing key must be supplied from a secure location, never committed.
+npm run runtime:repo -- \
+  --packages /absolute/path/copper-runtime-source/termux-packages/output \
+  --out /absolute/path/copper-apt-repository \
+  --base-url https://your-copper-package-host.example/apt/termux-main \
+  --signing-key /secure/offline/copper-runtime-archive-secret.asc
+```
+
+The repository builder has an explicit `--allow-unsigned-draft` mode only for local metadata-layout tests. It writes `DRAFT-NOT-FOR-PUBLISHING.txt`; Copper Runtime must never configure or publish such a repository.
 
 ## Architecture
 
@@ -80,8 +105,10 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 
 ### R1 — Bootstrap and package distribution
 
-- [ ] Fork the bootstrap build inputs and produce a Copper-prefix arm64 bootstrap containing the minimal package manager, shell, core utilities, TLS/certificates, and storage-link setup.
-- [ ] Host/version Copper package repository metadata and packages; add signature/key rotation policy.
+- [x] Add deterministic Copper-prefix source patching and an arm64 bootstrap build command (`runtime:patch`, `runtime:bootstrap`). The build is blocked locally until a Docker-enabled builder runs it; no upstream bootstrap binary is substituted.
+- [x] Add a static APT repository assembler that generates `Packages`, `Release`, immutable by-hash indexes, and refuses publishing without an offline-provided GPG archive key (`runtime:repo`).
+- [ ] Run the bootstrap builder successfully and retain its verified output/manifest as a CI artifact.
+- [ ] Establish a Copper-controlled HTTPS package endpoint, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
 - [ ] Add atomic first-run bootstrap installation, validation, repair, and removal.
 - [ ] Add 2 GiB runtime quota accounting and install preflight checks.
 

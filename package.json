@@ -12,7 +12,10 @@
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web",
     "doctor": "expo-doctor",
-    "runtime:upstream": "node scripts/prepare-copper-runtime-upstream.mjs"
+    "runtime:upstream": "node scripts/prepare-copper-runtime-upstream.mjs",
+    "runtime:patch": "node scripts/patch-copper-runtime-upstream.mjs",
+    "runtime:bootstrap": "node scripts/build-copper-runtime-bootstrap.mjs",
+    "runtime:repo": "node scripts/build-copper-apt-repository.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.14",

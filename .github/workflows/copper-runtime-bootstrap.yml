@@ -1,0 +1,70 @@
+name: Copper Runtime Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      additional_bootstrap_packages:
+        description: "Optional comma-separated packages to include in the arm64 bootstrap (for example: git,curl)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copper-runtime-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-arm64-bootstrap:
+    name: Build Copper-prefix arm64 bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Copper tooling
+        run: npm ci --ignore-scripts
+
+      - name: Fetch pinned GPL upstream sources
+        run: npm run runtime:upstream -- --dir "$RUNNER_TEMP/copper-runtime-source"
+
+      - name: Apply Copper-prefix package patch
+        run: npm run runtime:patch -- --workspace "$RUNNER_TEMP/copper-runtime-source"
+
+      - name: Build and verify bootstrap
+        env:
+          EXTRA_BOOTSTRAP_PACKAGES: ${{ inputs.additional_bootstrap_packages }}
+        run: |
+          set -euo pipefail
+          EXTRA="$EXTRA_BOOTSTRAP_PACKAGES"
+          if [ -n "$EXTRA" ]; then
+            npm run runtime:bootstrap -- \
+              --workspace "$RUNNER_TEMP/copper-runtime-source" \
+              --out "$RUNNER_TEMP/copper-runtime-output" \
+              --add "$EXTRA"
+          else
+            npm run runtime:bootstrap -- \
+              --workspace "$RUNNER_TEMP/copper-runtime-source" \
+              --out "$RUNNER_TEMP/copper-runtime-output"
+          fi
+
+      - name: Show verified runtime input
+        run: |
+          set -euo pipefail
+          find "$RUNNER_TEMP/copper-runtime-output" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+          cat "$RUNNER_TEMP/copper-runtime-output/copper-runtime-bootstrap-aarch64.zip.json"
+
+      - name: Upload unpublishable bootstrap input
+        uses: actions/upload-artifact@v4
+        with:
+          name: copper-runtime-bootstrap-aarch64
+          path: ${{ runner.temp }}/copper-runtime-output/
+          if-no-files-found: error
+          retention-days: 14

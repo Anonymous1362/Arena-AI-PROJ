@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "displayName": "Copper Runtime",
+  "applicationId": "com.copper.chat",
+  "runtimePrefix": "/data/data/com.copper.chat/files/usr",
+  "runtimeHome": "/data/data/com.copper.chat/files/home",
+  "architecture": "aarch64",
+  "androidCompatibility": "android7-plus",
+  "packageVariant": "apt-android-7",
+  "packageManager": "apt",
+  "persistentRuntimeQuotaBytes": 2147483648,
+  "repository": {
+    "channel": "stable",
+    "component": "main",
+    "architecture": "aarch64",
+    "baseUrl": null,
+    "signing": {
+      "required": true,
+      "keyFingerprint": null,
+      "note": "A release cannot be published until a Copper-controlled HTTPS endpoint and offline-generated archive signing key/fingerprint are configured. Never commit the private signing key."
+    }
+  },
+  "bootstrap": {
+    "additionalPackages": [],
+    "requiredFiles": [
+      "bin/bash",
+      "bin/apt",
+      "bin/pkg",
+      "bin/termux-setup-storage",
+      "bin/termux-exec",
+      "SYMLINKS.txt"
+    ]
+  },
+  "temporaryBuildMirror": {
+    "enabled": false,
+    "retention": "delete-after-completed-failed-or-cancelled-build",
+    "excludedNames": [".git", "node_modules", ".gradle", "build", "dist"]
+  }
+}
