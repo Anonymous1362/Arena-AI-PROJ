@@ -59,7 +59,7 @@ internal object CopperRuntimeInstaller {
 
     return mapOf(
       "state" to state,
-      "ready" to prefixReady && context.packageName == COPPER_PACKAGE_ID,
+      "ready" to (prefixReady && context.packageName == COPPER_PACKAGE_ID),
       "bundleAvailable" to bundleAvailable,
       "supportedAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
       "runtimePrefix" to layout.prefix.absolutePath,
