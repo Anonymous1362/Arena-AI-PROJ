@@ -1,9 +1,9 @@
-/* Aurora PWA service worker — offline-first app shell.
+/* Copper PWA service worker — offline-first app shell.
  * Uses relative URLs so it works at any mount path (root or /<repo>/ on
  * GitHub Pages). Network-first for navigations with cache fallback;
  * cache-first for hashed static assets. Never touches API traffic.
  */
-const CACHE = 'aurora-v1';
+const CACHE = 'copper-v1';
 const PRECACHE = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

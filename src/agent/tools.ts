@@ -4,9 +4,9 @@
  * The model calls these through the OpenAI `tools` protocol. Every call runs
  * inside the storage root configured by the user (see fs.ts + settings.agentScope):
  *  - `read_file` / `write_file` / `list_dir` / `delete_path` / `mkdir` / `stat`
- *    operate on the automatic external root or a user-granted SAF tree.
- *  - `run_command` runs Android's system shell with the automatic external
- *    root as cwd. A custom SAF tree uses the honest pure-JS shell fallback.
+ *    operate only on the selected AI workspace (normally COPPER Projects).
+ *  - `run_command` uses the workspace-safe built-in shell unless Copper has
+ *    an explicitly configured physical workspace executor.
  */
 import { Platform } from 'react-native';
 import {
@@ -20,7 +20,7 @@ import {
   initExternalStorage,
   safeRelPath,
 } from '@/src/agent/fs';
-import { AuroraExec } from '@/modules/aurora-exec';
+import { CopperExec } from '@/modules/copper-exec';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -95,7 +95,7 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: 'run_command',
     description:
-      'Run a shell command with the active storage root as cwd. Android uses its external-storage shell; a custom folder or unsupported platform uses built-in commands (ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd). Timeout applies.',
+      'Run a command inside the selected AI project workspace. Built-in workspace commands include ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd. Timeout applies.',
     params: {
       command: { type: 'string', description: 'The shell command to run' },
       timeout_seconds: { type: 'number', description: 'Timeout in seconds (default 20, max 60)' },
@@ -172,7 +172,7 @@ export type ExecutorMode = 'native' | 'builtin';
 
 export function executorStatus(): ExecutorMode {
   const root = currentRoot();
-  return Platform.OS === 'android' && root.tier === 'external' && !!root.path && AuroraExec.isAvailable()
+  return Platform.OS === 'android' && root.tier === 'external' && !!root.path && CopperExec.isAvailable()
     ? 'native'
     : 'builtin';
 }
@@ -185,7 +185,7 @@ async function runCommand(command: string, timeoutMs: number, _cap?: number): Pr
   if (executorStatus() === 'native' && root.path) {
     try {
       const result = await Promise.race([
-        AuroraExec.exec(command, root.path, timeoutMs),
+        CopperExec.exec(command, root.path, timeoutMs),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs + 1_500)
         ),

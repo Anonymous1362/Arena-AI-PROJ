@@ -3,7 +3,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { useTheme } from '@/src/theme';
-import { Message, Layers, Sliders } from '@/src/components/Icons';
+import { Message, Layers, Sliders, Terminal } from '@/src/components/Icons';
 
 function TabBarBackground() {
   const { colors, scheme } = useTheme();
@@ -46,6 +46,15 @@ export default function TabsLayout() {
           title: 'Chats',
           tabBarIcon: ({ focused, color, size }) => (
             <Message size={size - 3} color={String(color)} strokeWidth={focused ? 2.1 : 1.7} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="terminal"
+        options={{
+          title: 'Terminal',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Terminal size={size - 3} color={String(color)} strokeWidth={focused ? 2.1 : 1.7} />
           ),
         }}
       />

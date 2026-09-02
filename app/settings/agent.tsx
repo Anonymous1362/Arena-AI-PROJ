@@ -13,11 +13,12 @@ import {
   requestStorageAccess,
   revokeStorageAccess,
   setGrantedTree,
-  useDefaultExternalStorage,
+  setWorkspaceOnly,
   type FsPermissionInfo,
 } from '@/src/agent/fs';
 import { TOOL_SPECS, executorStatus } from '@/src/agent/tools';
 import { haptics } from '@/src/utils/haptics';
+import { CopperExec } from '@/modules/copper-exec';
 
 export default function AgentSettingsScreen() {
   const { colors } = useTheme();
@@ -31,17 +32,24 @@ export default function AgentSettingsScreen() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [storage, setStorage] = useState<FsPermissionInfo>(() => getStorageStatus());
+  const [hasAllFiles, setHasAllFiles] = useState(false);
 
   // Re-arm persisted SAF access after hydration, while always discovering the
   // automatic removable/primary external root in the background.
   useEffect(() => {
     let mounted = true;
+    setWorkspaceOnly(agentScope.workspaceOnly);
     setGrantedTree(agentScope.storageEnabled && Platform.OS === 'android' ? agentScope.safTreeUri ?? null : null);
-    void initExternalStorage().then(() => {
-      if (mounted) setStorage(getStorageStatus());
+    void Promise.all([
+      initExternalStorage(),
+      Platform.OS === 'android' ? CopperExec.hasAllFilesAccess() : Promise.resolve(false),
+    ]).then(([, allFiles]) => {
+      if (!mounted) return;
+      setStorage(getStorageStatus());
+      setHasAllFiles(allFiles);
     });
     return () => { mounted = false; };
-  }, [agentScope.safTreeUri, agentScope.storageEnabled]);
+  }, [agentScope.safTreeUri, agentScope.storageEnabled, agentScope.workspaceOnly]);
 
   const pickFolder = async () => {
     setBusy(true);
@@ -51,16 +59,18 @@ export default function AgentSettingsScreen() {
       const granted = res.tier === 'granted';
       patch({
         storageEnabled: granted,
+        workspaceOnly: true,
         safTreeUri: granted ? res.treeUri : undefined,
         safRootLabel: granted ? res.rootLabel : undefined,
       });
+      setWorkspaceOnly(true);
       setGrantedTree(granted ? res.treeUri ?? null : null);
       setStorage(getStorageStatus());
       haptics.success();
       setNote(
         granted
-          ? `Custom storage root selected: “${res.rootLabel}”. Agent files and exports now use that folder.`
-          : `Folder picker closed. Copper is still using ${res.rootLabel.toLowerCase()} automatically.`
+          ? `AI workspace selected: “${res.rootLabel}”. The AI can create and read projects only inside that folder.`
+          : 'Folder picker closed. Select COPPER Projects to enable the AI workspace.'
       );
     } catch (e) {
       haptics.error();
@@ -70,25 +80,31 @@ export default function AgentSettingsScreen() {
     }
   };
 
-  const useAutomaticExternal = async () => {
+  const clearAiWorkspace = async () => {
     setBusy(true);
-    setNote(null);
     try {
       revokeStorageAccess();
-      patch({ storageEnabled: false, safTreeUri: undefined, safRootLabel: undefined });
-      const res = await useDefaultExternalStorage();
+      setWorkspaceOnly(true);
+      patch({ storageEnabled: false, workspaceOnly: true, safTreeUri: undefined, safRootLabel: undefined });
+      await initExternalStorage();
       setStorage(getStorageStatus());
-      haptics.success();
-      setNote(
-        res.tier === 'external'
-          ? `Using ${res.rootLabel.toLowerCase()} automatically. No broad storage permission is needed.`
-          : res.rootLabel
-      );
-    } catch (e) {
-      haptics.error();
-      setNote(`Could not switch storage: ${(e as Error).message}`);
+      setNote('AI workspace cleared. Select another folder before letting the AI create or edit project files.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const requestAllFiles = async () => {
+    try {
+      const granted = await CopperExec.requestAllFilesAccess();
+      setHasAllFiles(granted);
+      setNote(
+        granted
+          ? 'All files access is enabled for the manual Terminal tab.'
+          : 'Android Settings opened. Enable “Allow access to manage all files”, then return and reopen this screen.'
+      );
+    } catch (e) {
+      setNote(`Could not open Android storage permission: ${(e as Error).message}`);
     }
   };
 
@@ -117,6 +133,16 @@ export default function AgentSettingsScreen() {
             hint="Automatically resume when a reply is cut off by token limits."
             value={behavior.autoContinue}
             onChange={(v) => patchBehavior({ autoContinue: v })}
+          />
+          <SwitchRow
+            label="Limit AI to selected workspace"
+            hint="Recommended. AI files stay inside the folder you select, such as COPPER Projects."
+            value={agentScope.workspaceOnly}
+            onChange={(v) => {
+              setWorkspaceOnly(v);
+              patch({ workspaceOnly: v });
+              setStorage(getStorageStatus());
+            }}
           />
         </Card>
 
@@ -157,46 +183,37 @@ export default function AgentSettingsScreen() {
           {isAndroid ? (
             <>
               <Text style={{ color: colors.text, fontSize: 14, fontWeight: '800', marginBottom: spacing(1) }}>
-                Always uses external / SD card storage
+                AI project workspace
               </Text>
               <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(3) }}>
-                Agent file tools, the native terminal, and Copper exports use the app’s external files folder.
-                A removable SD card is preferred when it is mounted; otherwise Android’s primary external storage is used.
-                Copper does not silently fall back to internal app storage for these files.
+                Select your COPPER Projects folder on the SD card. AI file tools and generated exports are jailed inside it,
+                so a game can be created as its own named subfolder without the AI touching folders outside your workspace.
               </Text>
-              {storage.tier === 'unavailable' ? (
+              {!usingCustomFolder && agentScope.workspaceOnly ? (
                 <Text style={{ color: colors.warning, fontSize: 12.5, lineHeight: 18, marginBottom: spacing(3) }}>
-                  No writable external volume is available right now. Insert/remount the card and tap “Use default external”.
+                  Select `/storage/0123-4567/Download/COPPER Projects` in the picker to enable AI project files.
                 </Text>
               ) : null}
               <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginBottom: spacing(3) }}>
-                The automatic folder needs no Termux-style setup or broad “all files” permission. To use a different folder
-                (SD card, Downloads, Documents), choose it explicitly below.
+                The picker opens at a removable card when one is mounted. You can choose COPPER Projects, Downloads,
+                Documents, or another folder. Multiple named projects can live inside the one selected workspace.
               </Text>
               <View style={{ gap: spacing(2) }}>
                 <Button
-                  label="Pick a folder (SD card, Downloads… )"
+                  label={usingCustomFolder ? 'Change AI workspace folder' : 'Select COPPER Projects folder'}
                   icon="folder-open-outline"
                   loading={busy}
                   onPress={pickFolder}
                 />
                 {usingCustomFolder ? (
                   <Button
-                    label="Use default external (auto)"
-                    variant="secondary"
-                    icon="refresh-outline"
-                    loading={busy}
-                    onPress={useAutomaticExternal}
-                  />
-                ) : (
-                  <Button
-                    label="Refresh external / SD card"
+                    label="Stop using selected workspace"
                     variant="ghost"
-                    icon="refresh-outline"
+                    icon="lock-closed-outline"
                     loading={busy}
-                    onPress={useAutomaticExternal}
+                    onPress={clearAiWorkspace}
                   />
-                )}
+                ) : null}
               </View>
             </>
           ) : (
@@ -205,6 +222,31 @@ export default function AgentSettingsScreen() {
             </Text>
           )}
         </Card>
+
+        {isAndroid ? (
+          <Card style={{ marginTop: spacing(4) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3), marginBottom: spacing(2) }}>
+              <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: colors.termBg, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="terminal" size={19} color={colors.termText} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Manual terminal access</Text>
+                <Text style={{ color: hasAllFiles ? colors.success : colors.textSub, fontSize: 12.5, marginTop: 1 }}>
+                  {hasAllFiles ? 'All shared storage enabled' : 'All shared storage not enabled'}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(3) }}>
+              This applies only to commands you type in the Terminal tab. It can access device storage and mounted SD cards under /storage/ after you approve Android’s special all-files screen. AI tools remain in the selected project workspace.
+            </Text>
+            <Button
+              label={hasAllFiles ? 'All files access enabled' : 'Open Android storage permission'}
+              variant={hasAllFiles ? 'secondary' : 'primary'}
+              icon={hasAllFiles ? 'checkmark-circle-outline' : 'shield-outline'}
+              onPress={requestAllFiles}
+            />
+          </Card>
+        ) : null}
 
         {note ? <Banner kind="info" text={note} onClose={() => setNote(null)} /> : null}
 
@@ -243,7 +285,7 @@ export default function AgentSettingsScreen() {
           >
             <Ionicons name="terminal" size={14} color={colors.termText} />
             <Text style={{ color: colors.termText, fontSize: 12.5, fontWeight: '700', flex: 1 }}>
-              Shell: {executorStatus() === 'native' ? 'native · external storage cwd' : 'sandboxed built-ins (ls, cat, grep, find…)'}
+              AI shell: {executorStatus() === 'native' ? 'native · automatic external cwd' : 'workspace-safe file commands (ls, cat, grep, find…)'}
             </Text>
             <View
               style={{
@@ -255,8 +297,7 @@ export default function AgentSettingsScreen() {
             />
           </View>
           <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginTop: spacing(2) }}>
-            Native Android commands start in the automatic external root. When you choose a custom SAF folder,
-            the safe built-in commands stay inside that folder instead.
+            AI commands stay inside the selected workspace when workspace protection is on. The separate Terminal tab is for your manual all-files commands.
           </Text>
         </Card>
 

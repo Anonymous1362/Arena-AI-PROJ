@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { writeAgentExport } from '@/src/agent/fs';
-import { AuroraExec } from '@/modules/aurora-exec';
+import { CopperExec } from '@/modules/copper-exec';
 
 /** Share either a normal file URI or an Android SAF content URI. */
 export async function shareExportedFile(
@@ -13,7 +13,7 @@ export async function shareExportedFile(
   // share a file from a removable UUID volume and it rejects SAF content://
   // outright. The native bridge handles both without an internal cache copy.
   if (Platform.OS === 'android' && (fileUri.startsWith('file://') || fileUri.startsWith('content://'))) {
-    await AuroraExec.shareUri(fileUri, options.mimeType, options.dialogTitle);
+    await CopperExec.shareUri(fileUri, options.mimeType, options.dialogTitle);
     return;
   }
   if (await Sharing.isAvailableAsync()) {

@@ -12,8 +12,8 @@ expo-env.d.ts
 android/
 ios/
 # Keep source for local Expo modules; only the generated app-level projects above are ignored.
-!modules/aurora-exec/android/
-!modules/aurora-exec/android/**
+!modules/copper-exec/android/
+!modules/copper-exec/android/**
 
 # @generated expo-cli sync-2c9bc7bd18a2f9e8f69f4b6a40e6e0a17a8f5f3b
 .tailwind-rn.backup.*

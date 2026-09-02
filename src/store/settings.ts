@@ -32,8 +32,10 @@ export interface GenerationSettings {
 export interface AgentScope {
   /** Master switch: tools + terminal available to the model. */
   enabled: boolean;
-  /** User granted a storage root (Android SAF tree / app sandbox). */
+  /** User granted an Android project workspace through SAF. */
   storageEnabled: boolean;
+  /** Keep AI tools inside the selected workspace instead of auto external storage. */
+  workspaceOnly: boolean;
   safTreeUri?: string;
   safRootLabel?: string;
   /** Ask before destructive tool calls (delete, rm -rf). */
@@ -92,6 +94,7 @@ const defaultGeneration: GenerationSettings = {
 const defaultAgentScope: AgentScope = {
   enabled: true,
   storageEnabled: false,
+  workspaceOnly: true,
   confirmDangerous: true,
   autoReadAloud: false,
 };
@@ -179,12 +182,18 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'aurora/settings/v2',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 2,
-      // v1 → v2: drop local-model records, add agentScope defaults.
+      version: 4,
+      // v1 → v4: drop legacy records and add safe agent-workspace defaults.
       migrate: (persisted: any) => {
         const s = { ...persisted };
         delete s.localModels;
         if (!s.agentScope) s.agentScope = defaultAgentScope;
+        if (typeof (s.agentScope as any).workspaceOnly !== 'boolean') {
+          (s.agentScope as any).workspaceOnly = true;
+        }
+        if (s.generation && (s.generation as any).systemPrompt === '__aurora_default__') {
+          (s.generation as any).systemPrompt = '__copper_default__';
+        }
         if (s.generation && typeof (s.generation as any).contextSize === 'number') {
           delete (s.generation as any).contextSize;
         }

@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import * as SystemUI from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@/src/theme';
-import { initExternalStorage, setGrantedTree } from '@/src/agent/fs';
+import { initExternalStorage, setGrantedTree, setWorkspaceOnly } from '@/src/agent/fs';
 import { useSettingsStore } from '@/src/store/settings';
 
 function Routes() {
@@ -43,12 +43,14 @@ function Routes() {
  */
 function StorageRootInitializer() {
   const storageEnabled = useSettingsStore((s) => s.agentScope.storageEnabled);
+  const workspaceOnly = useSettingsStore((s) => s.agentScope.workspaceOnly);
   const safTreeUri = useSettingsStore((s) => s.agentScope.safTreeUri);
 
   useEffect(() => {
+    setWorkspaceOnly(workspaceOnly);
     setGrantedTree(Platform.OS === 'android' && storageEnabled ? safTreeUri ?? null : null);
     void initExternalStorage();
-  }, [safTreeUri, storageEnabled]);
+  }, [safTreeUri, storageEnabled, workspaceOnly]);
 
   return null;
 }

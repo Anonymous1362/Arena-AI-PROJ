@@ -1,10 +1,12 @@
-package com.copper.auroraexec
+package com.copper.copperexec
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -12,9 +14,11 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents"
 private const val MAX_TIMEOUT_MS = 60_000L
+private const val MAX_OUTPUT_BYTES = 512 * 1024
 
 /**
  * Provides Copper's physical, app-specific external storage location.
@@ -23,12 +27,12 @@ private const val MAX_TIMEOUT_MS = 60_000L
  * removable volume is deliberately preferred over emulated primary storage,
  * and no internal-files-directory fallback is ever returned on Android.
  */
-class AuroraExecModule : Module() {
+class CopperExecModule : Module() {
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.AppContextLost()
 
   override fun definition() = ModuleDefinition {
-    Name("AuroraExec")
+    Name("CopperExec")
 
     AsyncFunction("getStorageInfo") {
       storageInfo(preferredExternalFilesDir())
@@ -44,6 +48,53 @@ class AuroraExecModule : Module() {
 
     AsyncFunction("getExternalSdCard") {
       removableExternalFilesDir()?.let { storageInfo(it) }
+    }
+
+    /** Whether Android has granted the special all-shared-storage access. */
+    AsyncFunction("hasAllFilesAccess") {
+      hasAllFilesAccess()
+    }
+
+    /**
+     * Opens Android's per-app All files access screen. The user must explicitly
+     * enable it there; this method returns the current state immediately.
+     */
+    AsyncFunction("requestAllFilesAccess") {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+        val packageUri = Uri.parse("package:${context.packageName}")
+        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+        try {
+          appContext.throwingActivity.startActivity(intent)
+        } catch (_: Exception) {
+          appContext.throwingActivity.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+        }
+      }
+      hasAllFilesAccess()
+    }
+
+    /** Start manual Terminal sessions at the removable card root when present. */
+    AsyncFunction("getTerminalStartDirectory") {
+      preferredExternalFilesDir()?.let(::volumeRootFor)?.absolutePath
+    }
+
+    /** Resolves a `cd` target while keeping the manual terminal on /storage. */
+    AsyncFunction("resolveSharedDirectory") { target: String, workingDirectory: String? ->
+      if (!hasAllFilesAccess()) {
+        throw SecurityException("Enable All files access for Copper in Android Settings before using the manual terminal.")
+      }
+      resolveSharedTerminalDirectory(target, workingDirectory).absolutePath
+    }
+
+    /**
+     * Runs a manual-terminal command against a caller-selected shared-storage
+     * directory. It is enabled only after Android's All files access grant and
+     * refuses /data or other private system paths.
+     */
+    AsyncFunction("execAllFiles") { command: String, workingDirectory: String?, timeoutMs: Double ->
+      if (!hasAllFilesAccess()) {
+        throw SecurityException("Enable All files access for Copper in Android Settings before using the manual terminal.")
+      }
+      runShell(command, resolveSharedTerminalDirectory(workingDirectory, null), timeoutMs.toLong())
     }
 
     /**
@@ -116,6 +167,34 @@ class AuroraExecModule : Module() {
   private fun removableExternalFilesDir(): File? =
     writableExternalFilesDirs().firstOrNull(::isRemovable)
 
+  private fun hasAllFilesAccess(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+  /**
+   * Keeps the all-files terminal in Android's shared volumes. It may traverse
+   * any external card/primary folder after the special grant, but never enters
+   * the app-private /data area.
+   */
+  private fun resolveSharedTerminalDirectory(requested: String?, currentDirectory: String?): File {
+    val defaultDir = preferredExternalFilesDir()?.let(::volumeRootFor)
+      ?: throw IllegalStateException("No external storage is mounted.")
+    val base = currentDirectory?.takeIf { it.isNotBlank() }?.let(::File) ?: defaultDir
+    val candidate = when {
+      requested.isNullOrBlank() -> base
+      File(requested).isAbsolute -> File(requested)
+      else -> File(base, requested)
+    }
+    val canonical = candidate.canonicalFile
+    val path = canonical.path
+    if (path != "/storage" && !path.startsWith("/storage/")) {
+      throw SecurityException("Manual terminal directories must stay on shared external storage (/storage/...).")
+    }
+    if (!canonical.isDirectory) {
+      throw IllegalArgumentException("Directory does not exist: ${canonical.path}")
+    }
+    return canonical
+  }
+
   private fun isRemovable(dir: File): Boolean = try {
     Environment.isExternalStorageRemovable(dir)
   } catch (_: Exception) {
@@ -135,6 +214,7 @@ class AuroraExecModule : Module() {
       "label" to if (removable) "SD card ($volumeId)" else "External storage (Android/data/${context.packageName}/files)",
       "rootUri" to fileUri(selected),
       "rootPath" to selected.absolutePath,
+      "volumeRootPath" to volumeRoot.absolutePath,
       "volumeRootUri" to fileUri(volumeRoot),
       "safRootUri" to safRootUri(volumeId)
     )
@@ -189,8 +269,22 @@ class AuroraExecModule : Module() {
       .start()
 
     val output = ByteArrayOutputStream()
+    val outputTruncated = AtomicBoolean(false)
     val reader = Thread {
-      process.inputStream.use { input -> input.copyTo(output) }
+      process.inputStream.use { input ->
+        val buffer = ByteArray(8 * 1024)
+        while (true) {
+          val bytesRead = input.read(buffer)
+          if (bytesRead <= 0) break
+          synchronized(output) {
+            val remaining = MAX_OUTPUT_BYTES - output.size()
+            if (remaining > 0) {
+              output.write(buffer, 0, minOf(remaining, bytesRead))
+            }
+            if (bytesRead > remaining) outputTruncated.set(true)
+          }
+        }
+      }
     }.apply {
       isDaemon = true
       start()
@@ -203,8 +297,10 @@ class AuroraExecModule : Module() {
     }
     reader.join(1_500)
 
+    val stdout = output.toString(Charsets.UTF_8.name()) +
+      if (outputTruncated.get()) "\n…[output capped at 512 KB]" else ""
     return mapOf(
-      "stdout" to output.toString(Charsets.UTF_8.name()),
+      "stdout" to stdout,
       "exit" to if (finished) process.exitValue() else 124,
       "timedOut" to !finished,
       "cwd" to cwd.absolutePath

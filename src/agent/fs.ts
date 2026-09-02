@@ -1,20 +1,18 @@
 /**
  * Agent file-system layer.
  *
- * Android always starts in Copper's app-specific external directory. When a
- * removable SD card is mounted, Android selects that volume before emulated
- * primary storage. There is deliberately no Android-internal-storage fallback:
- * a missing/ejected card is reported instead of silently writing under
- * /data/data.
- *
- * A user can optionally grant a different folder with Android's Storage Access
- * Framework (SAF). All agent paths remain relative and jailed to that root.
+ * Android discovers Copper's app-specific external directory, preferring a
+ * removable volume over emulated primary storage. By default, AI tools require
+ * an explicitly selected project workspace through Android's Storage Access
+ * Framework (SAF), such as `COPPER Projects`. All agent paths remain relative
+ * and jailed to that root. The user can deliberately turn that boundary off.
+ * There is never an Android-internal-storage fallback for agent file work.
  * iOS and web retain their platform sandbox because Android external volumes do
  * not exist there.
  */
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { AuroraExec, type ExternalStorageInfo } from '@/modules/aurora-exec';
+import { CopperExec, type ExternalStorageInfo } from '@/modules/copper-exec';
 
 export type FsTier = 'external' | 'granted' | 'sandbox' | 'unavailable';
 
@@ -47,6 +45,7 @@ const SAF = (FileSystem as unknown as {
 /* ------------------------------- root state -------------------------------- */
 
 let grantedTreeUri: string | null = null;
+let workspaceOnly = true;
 let automaticExternal: ExternalStorageInfo | null = null;
 let automaticStorageChecked = false;
 let automaticStorageTask: Promise<FsPermissionInfo> | null = null;
@@ -59,6 +58,12 @@ function withTrailingSlash(uri: string): string {
 
 function externalInfo(): FsPermissionInfo {
   if (automaticExternal?.available && automaticExternal.rootUri && automaticExternal.rootPath) {
+    if (workspaceOnly) {
+      return {
+        tier: 'unavailable',
+        rootLabel: 'Select a project workspace (for example, COPPER Projects)',
+      };
+    }
     return {
       tier: 'external',
       rootLabel: automaticExternal.label ?? (automaticExternal.kind === 'removable' ? 'SD card' : 'External storage'),
@@ -68,7 +73,7 @@ function externalInfo(): FsPermissionInfo {
   }
   return {
     tier: 'unavailable',
-    rootLabel: AuroraExec.isAvailable()
+    rootLabel: CopperExec.isAvailable()
       ? 'No writable external storage is mounted'
       : 'External storage needs a Copper Android build',
   };
@@ -94,6 +99,11 @@ export function getGrantedTree(): string | null {
   return grantedTreeUri;
 }
 
+/** Whether AI file tools must remain inside an explicitly selected workspace. */
+export function setWorkspaceOnly(enabled: boolean): void {
+  workspaceOnly = enabled;
+}
+
 /**
  * Discover the automatic Android root. Safe to call more than once; `force`
  * is useful after inserting/ejecting a card. It never falls back to internal
@@ -114,7 +124,7 @@ export async function initExternalStorage(force = false): Promise<FsPermissionIn
 
   automaticStorageTask = (async () => {
     try {
-      const info = await AuroraExec.getStorageInfo();
+      const info = await CopperExec.getStorageInfo();
       automaticExternal = info?.available && info.rootUri && info.rootPath ? info : null;
       automaticStorageChecked = true;
 
@@ -204,7 +214,8 @@ export async function requestStorageAccess(): Promise<FsPermissionInfo> {
         treeUri: res.directoryUri,
       };
     }
-    // The user closed the picker. Keep the automatic external root active.
+    // The user closed the picker. Keep the selected-workspace requirement in
+    // place (or the user’s deliberate automatic-root setting) unchanged.
     return getStorageStatus();
   }
 
@@ -226,9 +237,12 @@ async function activeRoot(): Promise<FsRoot> {
   }
   const root = currentRoot();
   if (root.tier === 'unavailable' || !root.uri) {
+    if (Platform.OS === 'android' && workspaceOnly && !grantedTreeUri) {
+      throw new Error('No AI project workspace is selected. In Settings → Agent & storage, choose your COPPER Projects folder first.');
+    }
     throw new Error(
-      AuroraExec.isAvailable()
-        ? 'No writable external storage is mounted. Insert or remount the SD card, then tap “Use default external” in Agent & storage.'
+      CopperExec.isAvailable()
+        ? 'No writable external storage is mounted. Insert or remount the SD card, then select a project workspace in Agent & storage.'
         : 'External storage is available only in a Copper Android build. Expo Go cannot load the external-storage module.'
     );
   }
