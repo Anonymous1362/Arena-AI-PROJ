@@ -20,11 +20,16 @@ interface PressableScaleProps extends PressableProps {
 /**
  * The app-wide touchable: springy scale + opacity response and a consistent
  * haptic vocabulary. This is what gives the UI its "premium sensi touch feel".
+ *
+ * Haptic policy: default is `none`. A vibration fires *only* where a caller
+ * opts in explicitly — and exactly once per gesture (on press-in). Semantic
+ * feedback (success / warning / error) belongs in the onPress handler of the
+ * action itself, never in both places, so Android never delivers a double buzz.
  */
 export function PressableScale({
   scale = 0.97,
   opacityOnPress = 0.85,
-  haptic = 'light',
+  haptic = 'none',
   style,
   onPress,
   onPressIn,

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -62,13 +62,18 @@ export default function ChatsScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!useSettingsStore.getState().onboarded) setWelcome(true);
+      return () => {
+        // Leaving this tab (or pushing a chat) should drop the keyboard —
+        // it must never linger over other screens.
+        Keyboard.dismiss();
+      };
     }, [])
   );
 
   const newChat = useCallback(
     (prefill?: string) => {
+      Keyboard.dismiss();
       const conv = createConversation(useSettingsStore.getState().activeModel);
-      haptics.medium();
       router.push({
         pathname: '/chat/[id]',
         params: prefill ? { id: conv.id, prefill } : { id: conv.id },
@@ -99,11 +104,16 @@ export default function ChatsScreen() {
           <Ionicons name="sparkles" size={18} color="#FFF" />
         </LinearGradient>
         <Text style={{ color: colors.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.4, flex: 1 }}>Copper</Text>
-        <PressableScale haptic="medium" onPress={() => newChat()}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.accentSoft, borderRadius: radius.full, paddingHorizontal: spacing(3), paddingVertical: spacing(2) }}>
-            <Ionicons name="add" size={16} color={colors.accent} />
-            <Text style={{ color: colors.accent, fontSize: 13.5, fontWeight: '700' }}>New</Text>
-          </View>
+        <PressableScale haptic="medium" onPress={() => newChat()} scale={0.94}>
+          <LinearGradient
+            colors={[colors.userBubbleFrom, colors.userBubbleTo]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.full, paddingHorizontal: spacing(3.5), paddingVertical: spacing(2.2) }}
+          >
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={{ color: '#FFFFFF', fontSize: 13.5, fontWeight: '800' }}>New chat</Text>
+          </LinearGradient>
         </PressableScale>
       </View>
 
@@ -147,10 +157,7 @@ export default function ChatsScreen() {
           <ConversationRow
             conversation={item}
             streaming={!!streamingIds[item.id]}
-            onPress={() => {
-              haptics.light();
-              router.push({ pathname: '/chat/[id]', params: { id: item.id } });
-            }}
+            onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id } })}
             onDelete={() => confirmDelete(item)}
             onPin={() => togglePin(item.id)}
           />
@@ -164,7 +171,23 @@ export default function ChatsScreen() {
               </Text>
             </View>
           ) : (
-            <EmptyState engineReady={!!activeModel} onPick={(t) => newChat(t)} />
+            <EmptyState
+              engineReady={!!activeModel}
+              onPick={(t) => newChat(t)}
+              footer={
+                <PressableScale haptic="medium" scale={0.96} onPress={() => newChat()}>
+                  <LinearGradient
+                    colors={[colors.userBubbleFrom, colors.userBubbleTo]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: radius.full, paddingHorizontal: spacing(6), paddingVertical: spacing(3), marginTop: spacing(2) }}
+                  >
+                    <Ionicons name="add" size={17} color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800' }}>Start a new chat</Text>
+                  </LinearGradient>
+                </PressableScale>
+              }
+            />
           )
         }
         showsVerticalScrollIndicator={false}

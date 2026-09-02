@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useChatsStore, type ChatMessage } from '@/src/store/chats';
@@ -24,6 +25,7 @@ import { PressableScale } from '@/src/components/PressableScale';
 import { Banner, Button, TextField } from '@/src/components/ui';
 import { EmptyState } from '@/src/components/EmptyState';
 import { ConfirmSheet } from '@/src/components/ConfirmSheet';
+import { TokenBar } from '@/src/components/TokenBar';
 import { speakAloud, stopSpeaking } from '@/src/utils/speech';
 import { haptics } from '@/src/utils/haptics';
 import { shareJson } from '@/src/utils/share';
@@ -57,7 +59,7 @@ function SheetAction({
 }) {
   const { colors } = useTheme();
   return (
-    <PressableScale haptic="light" scale={0.98} onPress={onPress}>
+    <PressableScale haptic="none" scale={0.98} onPress={onPress}>
       <View
         style={{
           flexDirection: 'row',
@@ -127,12 +129,30 @@ export default function ChatScreen() {
   const messages = conv?.messages ?? [];
   const lastMessage = messages[messages.length - 1];
 
+  // Only the *newest* message animates in (older ones render instantly when a
+  // conversation is reopened — no distracting cascade).
+  const prevLenRef = useRef(messages.length);
+  const animateTail = messages.length > prevLenRef.current && messages.length > 0;
+  useEffect(() => {
+    prevLenRef.current = messages.length;
+  }, [messages.length]);
+
+  // Drop the keyboard whenever we leave this screen (back, modal, tab switch).
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        Keyboard.dismiss();
+      };
+    }, [])
+  );
+
   // nudge the user into the model picker when sending without a model
   useEffect(() => {
     return onNoModel((convId) => {
       if (convId !== id) return;
       consumeNoModel(convId);
       setBanner('Connect a model first — pick one from the header.');
+      Keyboard.dismiss();
       setModelSheet(true);
     });
   }, [id]);
@@ -238,25 +258,70 @@ export default function ChatScreen() {
   const menuActions = useMemo(
     () => (
       <>
-        <SheetAction icon="pencil-outline" label="Rename" onPress={() => { setRenameText(conv?.title ?? ''); setMenuSheet(false); setTimeout(() => setRenameSheet(true), 240); }} />
-        <SheetAction icon={conv?.pinned ? 'pin' : 'pin-outline'} label={conv?.pinned ? 'Unpin' : 'Pin to top'} onPress={() => { togglePin(id!); setMenuSheet(false); }} />
+        <SheetAction
+          icon="pencil-outline"
+          label="Rename"
+          onPress={() => {
+            haptics.light();
+            setRenameText(conv?.title ?? '');
+            setMenuSheet(false);
+            setTimeout(() => setRenameSheet(true), 240);
+          }}
+        />
+        <SheetAction
+          icon={conv?.pinned ? 'pin' : 'pin-outline'}
+          label={conv?.pinned ? 'Unpin' : 'Pin to top'}
+          onPress={() => {
+            haptics.selection();
+            togglePin(id!);
+            setMenuSheet(false);
+          }}
+        />
         <SheetAction
           icon="text-outline"
           label="System prompt"
           sublabel={hasOverride ? 'Override set for this chat' : 'Using global setting'}
-          onPress={openSysPromptSheet}
+          onPress={() => {
+            haptics.light();
+            openSysPromptSheet();
+          }}
         />
-        <SheetAction icon="share-outline" label="Export chat (.json)" onPress={() => { setMenuSheet(false); exportChat(); }} />
-        <SheetAction icon="document-text-outline" label="Export run log (.md)" onPress={() => { setMenuSheet(false); exportMarkdown(); }} />
-        <SheetAction icon="cube-outline" label="Change model" onPress={() => { setMenuSheet(false); setModelSheet(true); }} />
+        <SheetAction
+          icon="share-outline"
+          label="Export chat (.json)"
+          onPress={() => {
+            haptics.light();
+            setMenuSheet(false);
+            exportChat();
+          }}
+        />
+        <SheetAction
+          icon="document-text-outline"
+          label="Export run log (.md)"
+          onPress={() => {
+            haptics.light();
+            setMenuSheet(false);
+            exportMarkdown();
+          }}
+        />
+        <SheetAction
+          icon="cube-outline"
+          label="Change model"
+          onPress={() => {
+            haptics.light();
+            setMenuSheet(false);
+            Keyboard.dismiss();
+            setModelSheet(true);
+          }}
+        />
         <SheetAction
           icon="refresh-outline"
           label="Clear messages"
           onPress={() => {
+            haptics.warning();
             setMenuSheet(false);
             if (!conv) return;
             for (const m of [...conv.messages]) deleteMessage(conv.id, m.id);
-            haptics.warning();
           }}
         />
       </>
@@ -273,7 +338,14 @@ export default function ChatScreen() {
       {/* header */}
       <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
         <View style={styles.headerRow}>
-          <PressableScale haptic="light" onPress={() => router.back()} scale={0.9}>
+          <PressableScale
+            haptic="light"
+            onPress={() => {
+              Keyboard.dismiss();
+              router.back();
+            }}
+            scale={0.9}
+          >
             <View style={[styles.backBtn, { backgroundColor: colors.surface2 }]}>
               <Ionicons name="chevron-back" size={22} color={colors.text} />
             </View>
@@ -283,15 +355,29 @@ export default function ChatScreen() {
               {conv.title}
             </Text>
             <View style={{ alignSelf: 'flex-start', marginTop: 2 }}>
-              <ModelPill model={conv.model} onPress={() => setModelSheet(true)} />
+              <ModelPill
+                model={conv.model}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setModelSheet(true);
+                }}
+              />
             </View>
           </View>
-          <PressableScale haptic="light" onPress={() => setMenuSheet(true)} scale={0.9}>
+          <PressableScale
+            haptic="light"
+            onPress={() => {
+              Keyboard.dismiss();
+              setMenuSheet(true);
+            }}
+            scale={0.9}
+          >
             <View style={[styles.backBtn, { backgroundColor: colors.surface2 }]}>
               <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
             </View>
           </PressableScale>
         </View>
+        <TokenBar conv={conv} modelLabel={conv.model?.model} />
       </View>
 
       <KeyboardAvoidingView
@@ -320,16 +406,35 @@ export default function ChatScreen() {
             {messages.map((m, i) => {
               const prev = i > 0 ? messages[i - 1] : null;
               const showDivider = !prev || m.createdAt - prev.createdAt > 5 * 60_000;
+              const isTail = i === messages.length - 1;
               return (
                 <React.Fragment key={m.id}>
                   {showDivider ? <TimeDivider ts={m.createdAt} /> : null}
-                  <MessageBubble
-                    message={m}
-                    fontSize={msgFontSize}
-                    streaming={streaming && m === lastMessage && m.role === 'assistant'}
-                    onLongPress={setActionsMsg}
-                    onRetry={retry}
-                  />
+                  {isTail && animateTail ? (
+                    <Animated.View entering={FadeInDown.duration(240)}>
+                      <MessageBubble
+                        message={m}
+                        fontSize={msgFontSize}
+                        streaming={streaming && m === lastMessage && m.role === 'assistant'}
+                        onLongPress={(msg) => {
+                          haptics.medium();
+                          setActionsMsg(msg);
+                        }}
+                        onRetry={retry}
+                      />
+                    </Animated.View>
+                  ) : (
+                    <MessageBubble
+                      message={m}
+                      fontSize={msgFontSize}
+                      streaming={streaming && m === lastMessage && m.role === 'assistant'}
+                      onLongPress={(msg) => {
+                        haptics.medium();
+                        setActionsMsg(msg);
+                      }}
+                      onRetry={retry}
+                    />
+                  )}
                 </React.Fragment>
               );
             })}
@@ -344,6 +449,7 @@ export default function ChatScreen() {
             onStop={() => stopGeneration(id!)}
             prefillRef={composerPrefillRef}
             onOpenPromptLib={() => {
+              Keyboard.dismiss();
               setPromptLibTarget('composer');
               setPromptLibSheet(true);
             }}
@@ -427,17 +533,18 @@ export default function ChatScreen() {
               <Button
                 label="Clear override"
                 variant="ghost"
+                haptic="none"
                 style={{ flex: 1 }}
                 onPress={() => {
-                  setConversationSystemPrompt(id!, undefined);
                   haptics.light();
+                  setConversationSystemPrompt(id!, undefined);
                   setSysPromptSheet(false);
                 }}
               />
             ) : (
               <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setSysPromptSheet(false)} />
             )}
-            <Button label="Save" style={{ flex: 1 }} onPress={saveSysPrompt} />
+            <Button label="Save" haptic="none" style={{ flex: 1 }} onPress={saveSysPrompt} />
           </View>
         </View>
       </Sheet>
@@ -472,6 +579,7 @@ export default function ChatScreen() {
             icon="stop-outline"
             label="Stop reading"
             onPress={() => {
+              haptics.light();
               stopSpeaking();
               setActionsMsg(null);
             }}
@@ -490,6 +598,7 @@ export default function ChatScreen() {
               icon="pencil-outline"
               label="Edit & resend"
               onPress={() => {
+                haptics.light();
                 setEditText(actionsMsg?.content ?? '');
                 setEditingMsg(actionsMsg);
                 setActionsMsg(null);
@@ -502,6 +611,7 @@ export default function ChatScreen() {
               icon="refresh"
               label="Regenerate"
               onPress={() => {
+                haptics.medium();
                 setActionsMsg(null);
                 deleteMessage(id!, actionsMsg.id);
                 sendMessage(id!, { regenerate: true }).catch((e: Error) => setBanner(e.message));

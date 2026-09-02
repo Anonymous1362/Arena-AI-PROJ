@@ -103,7 +103,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (isUser) {
     return (
       <View style={[bubbleStyle, { alignItems: 'flex-end', marginVertical: spacing(1.2) }]}>
-        <PressableScale haptic="medium" scale={0.98} onLongPress={() => onLongPress?.(message)} delayLongPress={280}>
+        <PressableScale haptic="none" scale={0.98} onLongPress={() => onLongPress?.(message)} delayLongPress={280}>
           <LinearGradient
             colors={[colors.userBubbleFrom, colors.userBubbleTo]}
             start={{ x: 0, y: 0 }}
@@ -124,7 +124,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   return (
     <View style={[bubbleStyle, { alignItems: 'flex-start', marginVertical: spacing(1.2) }]}>
-      <PressableScale haptic="medium" scale={0.99} opacityOnPress={0.85} onLongPress={() => onLongPress?.(message)} delayLongPress={280}>
+      <PressableScale haptic="none" scale={0.99} opacityOnPress={0.85} onLongPress={() => onLongPress?.(message)} delayLongPress={280}>
         <View
           style={[
             styles.assistantBubble,

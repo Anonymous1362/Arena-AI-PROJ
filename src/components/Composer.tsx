@@ -142,7 +142,7 @@ export function Composer({
       ) : null}
 
       <View style={styles.inputRow}>
-        <PressableScale haptic="light" onPress={pick} scale={0.88} disabled={streaming}>
+        <PressableScale haptic="none" onPress={pick} scale={0.88} disabled={streaming}>
           <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
             <Paperclip size={19} color={streaming ? colors.textFaint : colors.accent} />
           </View>
