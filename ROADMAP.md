@@ -41,6 +41,17 @@
 - [ ] Export agent transcripts as markdown run logs
 - [ ] Haptic refinement on plan-step completion
 
+## Phase 4 — Copper Runtime (authorized; in progress)
+- [x] Confirm GPLv3-compatible Termux-derived approach, Copper branding, arm64-first target, 2 GiB persistent runtime cap, and SD-card projects
+- [x] Pin upstream source inputs and add reproducible source-preparation workflow
+- [ ] Rebuild the Termux bootstrap and packages for `com.copper.chat`; do not use `com.termux` binaries unchanged
+- [ ] Add GPL notices/source-release workflow for every bundled runtime/package artifact
+- [ ] Add runtime installer, package storage meter/cap, and cleanup controls
+- [ ] Replace the Android system-shell terminal with persistent PTY-backed Copper Runtime sessions
+- [ ] Add optional temporary build mirror with guaranteed cleanup after builds
+- [ ] Add a distinct workspace-bound agent runner; never expose unrestricted manual terminal sessions to the AI
+
+See [Copper Runtime implementation plan](docs/COPPER-RUNTIME.md).
+
 ## Your calls still open
-- Name "Copper" — keep or rename (one-line change + assets)
 - Light theme as default (currently system-adaptive, light is the signature look)

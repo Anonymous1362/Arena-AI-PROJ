@@ -108,8 +108,8 @@ The **manual Terminal tab is separate**. It can be given Android’s special **A
 - API keys are stored in AsyncStorage **on device only** and sent only to the endpoint you configure.
 - On Android, AI file tools are jailed to one project workspace folder you explicitly grant. The separately permissioned manual terminal can use shared storage only when you enable it. Every AI path is normalized and escape-checked.
 - The app ships **zero analytics**. Export/import is user-initiated only.
-- MIT licensed.
+- GPL-3.0-only licensed.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Local model licenses are listed on each model card in the app (Apache-2.0, MIT, Llama Community, Gemma Terms).
+GPL-3.0-only — see [LICENSE](LICENSE). Copper Runtime is planned as a GPLv3-compatible Termux-derived component; its required upstream and package notices, pinned sources, and implementation plan are documented in [docs/COPPER-RUNTIME.md](docs/COPPER-RUNTIME.md).

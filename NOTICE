@@ -1,0 +1,20 @@
+Copper
+Copyright (C) 2026 Copper contributors
+
+This repository is distributed under GPL-3.0-only. See LICENSE.
+
+Copper Runtime (planned)
+------------------------
+Copper Runtime is planned as a Copper-branded, GPLv3-compatible derivative of
+Termux components. No upstream Termux source or bootstrap binary is vendored in
+this repository at the time of this notice. Before a runtime source import or
+binary distribution, Copper will retain all applicable upstream copyrights and
+license notices, publish corresponding source and patches, and include package-
+specific notices for every redistributed package.
+
+Pinned upstream sources and the implementation/compliance plan are recorded in:
+- runtime/copper-runtime.lock.json
+- docs/COPPER-RUNTIME.md
+
+Upstream project: https://github.com/termux/termux-app
+Upstream license notice: https://github.com/termux/termux-app/blob/master/LICENSE.md

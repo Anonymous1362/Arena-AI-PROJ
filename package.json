@@ -11,7 +11,8 @@
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web",
-    "doctor": "expo-doctor"
+    "doctor": "expo-doctor",
+    "runtime:upstream": "node scripts/prepare-copper-runtime-upstream.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.14",
@@ -49,5 +50,6 @@
   "devDependencies": {
     "@types/react": "~19.2.0",
     "typescript": "~5.9.2"
-  }
+  },
+  "license": "GPL-3.0-only"
 }

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "status": "design-pinned-no-upstream-source-vendored",
+  "product": {
+    "name": "Copper Runtime",
+    "branding": "Copper",
+    "description": "A GPLv3-compatible, Termux-derived native runtime for Copper Android builds. It is not branded as Termux and does not require the separately installed Termux app."
+  },
+  "licensing": {
+    "combinedDistribution": "GPL-3.0-only",
+    "upstreamAppLicense": "GPL-3.0-only",
+    "terminalLibrariesLicense": "Apache-2.0",
+    "noticeRequired": true,
+    "sourceOfferRequired": true
+  },
+  "upstream": {
+    "termuxApp": {
+      "repository": "https://github.com/termux/termux-app.git",
+      "revision": "3b66f8799635a4dba4a206563048ff0e6792c487",
+      "licenseFile": "LICENSE.md",
+      "modules": ["app", "termux-shared", "terminal-emulator", "terminal-view"]
+    },
+    "termuxPackages": {
+      "repository": "https://github.com/termux/termux-packages.git",
+      "revision": "e480d5053cdb260babda82d3d863393b70833c18",
+      "license": "Package recipes and resulting packages have their own licenses; each redistributed package must retain its applicable notices."
+    }
+  },
+  "copperTarget": {
+    "androidApplicationId": "com.copper.chat",
+    "runtimePrefix": "/data/data/com.copper.chat/files/usr",
+    "runtimeHome": "/data/data/com.copper.chat/files/home",
+    "targetAbis": ["arm64-v8a"],
+    "maxPersistentRuntimeBytes": 2147483648,
+    "visibleProjectRoot": "/storage/0123-4567/Download/COPPER Projects",
+    "projectStorage": "external-sd-card",
+    "projectMirror": "not-enabled-by-default; future opt-in temporary mirror must be deleted after a completed or cancelled build"
+  },
+  "securityModel": {
+    "manualTerminal": "Persistent PTY sessions using the installed runtime and Android shared-storage permission after explicit user approval.",
+    "agentTools": "Separate workspace-bound API. Do not expose the unrestricted manual terminal process to the AI tool registry.",
+    "warning": "A same-app path wrapper is a product boundary, not a kernel-grade containment boundary. Android does not offer an unprivileged chroot/container that makes an arbitrary native shell both fully capable and provably restricted to one SAF tree."
+  }
+}
