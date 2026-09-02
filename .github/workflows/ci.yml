@@ -56,6 +56,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
+      # Termux's source bootstrap builds use the Docker toolchain plus many
+      # intermediate package build trees. GitHub's image ships SDK/.NET/Haskell
+      # payloads that are irrelevant to this Linux-only job and otherwise let
+      # the runner itself exhaust its filesystem mid-build.
+      - name: Reclaim runner disk for Copper package builds
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          sudo apt-get clean
+          docker system prune --all --force || true
+          df -h /
+          docker system df || true
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
