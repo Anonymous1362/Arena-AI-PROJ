@@ -98,6 +98,7 @@ try {
   console.log(`Copper Runtime bootstrap target: ${config.applicationId}`);
   console.log(`Runtime prefix: ${config.runtimePrefix}`);
   console.log(`Architecture: ${config.architecture}`);
+  console.log('Completed package build-tree pruning: enabled (output .debs and shared toolchain cache are retained).');
   console.log(`Build command: (cd ${packagesRoot} && ${command.join(' ')})`);
 
   if (printCommand) {
@@ -112,7 +113,18 @@ try {
 
   const expectedArchive = resolve(packagesRoot, `bootstrap-${config.architecture}.zip`);
   rmSync(expectedArchive, { force: true });
-  const run = spawnSync(command[0], command.slice(1), { cwd: packagesRoot, stdio: 'inherit', env: { ...process.env, CI: 'true' } });
+  const run = spawnSync(command[0], command.slice(1), {
+    cwd: packagesRoot,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      CI: 'true',
+      // The Copper patch makes this safe: completed per-package work trees
+      // are reclaimed after their .debs are emitted, while output/ and the
+      // shared cross-toolchain cache remain available to later packages.
+      COPPER_BOOTSTRAP_PRUNE_BUILD_TREES: 'true',
+    },
+  });
   if (run.status !== 0) throw new Error(`Upstream bootstrap build failed with exit code ${run.status ?? 'unknown'}.`);
   if (!existsSync(expectedArchive)) throw new Error(`Build reported success but did not create ${expectedArchive}.`);
 

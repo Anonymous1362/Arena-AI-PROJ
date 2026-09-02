@@ -63,7 +63,17 @@ jobs:
       - name: Reclaim runner disk for Copper package builds
         run: |
           set -euo pipefail
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          TOOLCACHE="${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell \
+            "$TOOLCACHE"
           sudo apt-get clean
           docker system prune --all --force || true
           df -h /
@@ -90,6 +100,31 @@ jobs:
           npm run runtime:bootstrap -- \
             --workspace "$RUNNER_TEMP/copper-runtime-source" \
             --out "$RUNNER_TEMP/copper-runtime-output" 2>&1 | tee "$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
+
+      - name: Surface bootstrap diagnostics on failure
+        # This makes a concise failure visible through check annotations even
+        # when a client cannot reach GitHub Actions' artifact blob endpoint.
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/copper-runtime-bootstrap-build.log"
+          if [ ! -f "$LOG" ]; then
+            echo "::error title=Copper bootstrap::The bootstrap failed before its build log was created."
+            exit 0
+          fi
+          mapfile -t diagnostics < <(
+            grep -Ei 'no space left|out of (disk|memory)|error:|failure:|failed to|could not|exception|build failed' "$LOG" | tail -20 || true
+          )
+          if [ "${#diagnostics[@]}" -eq 0 ]; then
+            mapfile -t diagnostics < <(tail -20 "$LOG")
+          fi
+          for line in "${diagnostics[@]}"; do
+            line="${line//'%'/'%25'}"
+            line="${line//$'\r'/'%0D'}"
+            line="${line//$'\n'/'%0A'}"
+            echo "::error title=Copper bootstrap::$line"
+          done
 
       - name: Upload bootstrap build log on failure
         if: ${{ failure() }}

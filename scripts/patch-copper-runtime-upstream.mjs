@@ -32,6 +32,7 @@ if (workspaceIndex === -1 || !args[workspaceIndex + 1] || args.some((arg) => arg
 const workspace = resolve(args[workspaceIndex + 1]);
 const packagesRoot = resolve(workspace, 'termux-packages');
 const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
+const bootstrapScriptPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
 
@@ -87,6 +88,34 @@ try {
   );
   writeFileSync(propertiesPath, properties);
 
+  // A source bootstrap builds many dependency packages in one Docker container.
+  // Their completed per-package build trees are no longer needed once their
+  // .deb files exist under output/, but can otherwise exhaust a hosted runner
+  // before termux-am's small Android subproject runs. This is opt-in at build
+  // time so upstream's normal bootstrap behavior remains available unchanged.
+  let bootstrapScript = readFileSync(bootstrapScriptPath, 'utf8');
+  const bootstrapBuildLoop = [
+    '\t\t\tset +e',
+    '\t\t\tbuild_package "$TERMUX_ARCH" "$package_name" || return $?',
+    '\t\t\tset -e',
+  ].join('\n');
+  const copperBuildTreePruning = [
+    bootstrapBuildLoop,
+    '',
+    '\t\t\tif [ "${COPPER_BOOTSTRAP_PRUNE_BUILD_TREES:-false}" = "true" ]; then',
+    '\t\t\t\t# Keep shared toolchain/source cache and output .debs, while removing',
+    '\t\t\t\t# completed package-specific source, build, staging, and massage trees.',
+    '\t\t\t\tfind "$TERMUX_TOPDIR" -mindepth 1 -maxdepth 1 -type d ! -name "_cache" -exec rm -rf {} +',
+    '\t\t\tfi',
+  ].join('\n');
+  bootstrapScript = replaceExactly(
+    bootstrapScript,
+    bootstrapBuildLoop,
+    copperBuildTreePruning,
+    'bootstrap intermediate build-tree pruning hook'
+  );
+  writeFileSync(bootstrapScriptPath, bootstrapScript);
+
   const receipt = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -104,6 +133,7 @@ try {
       `TERMUX_APP__PACKAGE_NAME=\"${config.applicationId}\"`,
       'TERMUX__PROJECT_SUBDIR=\"copper-runtime\"',
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
+      'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook to discard completed package build trees while retaining output .deb files and shared toolchain cache.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
   };
