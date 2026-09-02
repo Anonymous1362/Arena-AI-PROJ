@@ -45,8 +45,27 @@ const KW = {
 
 type GroupId = keyof typeof KW | 'yaml' | 'html' | 'none';
 
+/**
+ * Plugin-registered language packs (see src/agent/plugins.ts). A plugin can
+ * teach the highlighter a new language with just keywords + a comment style —
+ * data, not code, which is what a sealed JS bundle allows.
+ */
+interface DynamicLang {
+  keywords: string;
+  comment: 'c' | 'hash' | 'none';
+}
+const dynamic = new Map<string, DynamicLang>();
+
+export function registerLanguage(id: string, def: { keywords: string; comment?: 'c' | 'hash' | 'none' }): void {
+  const key = (id || '').trim().toLowerCase();
+  if (!key) return;
+  dynamic.set(key, { keywords: def.keywords ?? '', comment: def.comment ?? 'c' });
+  cache.delete(key as GroupId);
+}
+
 function groupOf(lang: string): GroupId {
   const l = (lang || '').trim().toLowerCase();
+  if (dynamic.has(l)) return l as GroupId;
   if (/^(js|javascript|jsx|ts|tsx|typescript|javascriptreact|typescriptreact|mjs|cjs|vue|svelte)$/.test(l)) return 'js';
   if (/^(py|python)$/.test(l)) return 'py';
   if (/^(java|kt|kotlin|swift|c|cc|cpp|cxx|h|hpp|cs|csharp|go|golang|rs|rust|dart|zig|nim)$/.test(l)) return 'clike';
@@ -84,6 +103,19 @@ interface Piece {
 function piecesFor(group: GroupId): Piece[] {
   const kw = (words: string): Piece => ({ t: 'keyword', src: `\\b(?:${words.split(/\s+/).join('|')})\\b` });
   const out: Piece[] = [];
+
+  const dyn = dynamic.get(group as string);
+  if (dyn) {
+    if (dyn.comment === 'c') out.push({ t: 'comment', src: COMMENT_C });
+    else if (dyn.comment === 'hash') out.push({ t: 'comment', src: COMMENT_HASH });
+    out.push({ t: 'string', src: STR_BASIC });
+    out.push({ t: 'number', src: NUM });
+    if (dyn.keywords.trim()) out.push(kw(dyn.keywords));
+    out.push({ t: 'fn', src: FN });
+    out.push({ t: 'type', src: TYPE });
+    out.push({ t: 'prop', src: PROP_BARE });
+    return out;
+  }
 
   switch (group) {
     case 'none':

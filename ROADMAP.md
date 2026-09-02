@@ -106,6 +106,18 @@
 - [x] De-Aurora'd: legacy `AuroraExec` probes removed (CopperExec only), the agent introduces itself as Copper, package renamed `copper`
 - [x] Toast system for action feedback (saved paths, grants, copies)
 
+## Phase 6 — terminal power: ANSI, plugins, `pkg`, symbol index ✅ (this update)
+
+The four items previously declined as impossible got their honest-maximum
+on-device equivalents instead of being left on the list:
+
+- [x] **ANSI/VT-100 renderer** (`src/terminal/ansi.ts` + `AnsiText`): SGR 16/256/truecolour, bold/italic/underline, OSC + cursor-noise stripping, `\r` progress overwrites; interactive terminal runs in colour (`ls`/`tree`/`grep`), the agent's context never sees escape codes
+- [x] **`modules/copper-pty`** — optional native module (auto-linked by `expo prebuild`, invisible in Expo Go): real `/system/bin/sh` exec (tools.ts probes it, run_command upgrades itself) + piped interactive sessions (`spawn/write/output/alive/kill`) for REPLs; labelled honestly as *not* a PTY — `vim`/`htop` need an NDK `forkpty()` follow-up
+- [x] **Plugin system** (`src/agent/plugins.ts`): JSON manifests in `.copper/plugins/` adding shell aliases, syntax language packs (`registerLanguage` in the highlighter) and quick-chips; `plugin list|create|reload|enable|disable` builtins — the agent can write its own plugins. Runtime-code plugins remain impossible (sealed Hermes bundle + W^X) and the docs say so
+- [x] **`pkg` package manager** (`src/agent/pkg.ts`): bundled pure-JS tools — `jq`, `bc`, `seq`, `tr`, `cut`, `rev`, `nl` — installed instantly/offline into `.copper/pkg.json` and hot-registered into the shell; downloading native binaries stays impossible on non-root Android
+- [x] **Outline v2 + symbol index** (`src/agent/symindex.ts`): comments/strings masked before declaration matching (no more false positives from docblocks), outlines cached by content fingerprint (incremental repo-map), JS/TS import graph (`deps` builtin, `repo_map graph:true`), declaration search (`sym <name>` builtin)
+- [x] Docs: §9 of `docs/TERMINAL-AND-CODING-AGENTS.md` rewritten from "upgrade wishlist" to "delivered + remaining honest limits"
+
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)
 - Light theme as default (currently system-adaptive, light is the signature look)

@@ -9,10 +9,12 @@ import { PressableScale } from '@/src/components/PressableScale';
 import { useSettingsStore } from '@/src/store/settings';
 import { runShellCommand, setShellCwd, shellCwd, SHELL_BUILTINS, executorStatus } from '@/src/agent/tools';
 import { classifyCommand, dangerHeadline } from '@/src/agent/danger';
+import { loadPlugins, pluginChips } from '@/src/agent/plugins';
 import { useConfirmStore } from '@/src/agent/confirm';
 import { listAgentDir, currentRoot } from '@/src/agent/fs';
 import { haptic } from '@/src/utils/haptics';
 import { useKeyboardInset } from '@/src/utils/keyboard';
+import { AnsiText } from '@/src/components/AnsiText';
 import { uid } from '@/src/utils/id';
 
 export interface TermLine {
@@ -60,6 +62,15 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
   const [historyIx, setHistoryIx] = useState(-1);
   const history = useRef<string[]>([]);
   const [atBottom, setAtBottom] = useState(true);
+  const [extraChips, setExtraChips] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    loadPlugins().then((p) => live && setExtraChips(pluginChips(p))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const native = executorStatus() === 'native';
   const prompt = `copper:/${cwd === '.' ? '' : cwd}$`;
@@ -122,7 +133,7 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
 
       setBusy(true);
       try {
-        const res = await runShellCommand(command, 30_000, cwd);
+        const res = await runShellCommand(command, 30_000, cwd, true);
         // `cd` mutates shared shell state — mirror it locally.
         setCwd(shellCwd());
         if (res.output) push(res.ok ? 'out' : 'err', res.output);
@@ -219,9 +230,9 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
           }}
         >
           {lines.map((l) => (
-            <Text
+            <AnsiText
               key={l.id}
-              selectable
+              text={l.text}
               style={{
                 color: colorFor(l.kind),
                 fontSize: terminal.fontSize,
@@ -230,9 +241,7 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
                 opacity: l.kind === 'sys' ? 0.75 : 1,
                 flexWrap: terminal.wrap ? 'wrap' : 'nowrap',
               }}
-            >
-              {l.text}
-            </Text>
+            />
           ))}
           {busy ? (
             <Text style={{ color: colors.termAccent, fontSize: terminal.fontSize, fontFamily: MONO, marginTop: 4 }}>
@@ -257,7 +266,7 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
         contentContainerStyle={{ paddingHorizontal: spacing(3), gap: 7, paddingVertical: spacing(2) }}
         style={{ backgroundColor: colors.bg, flexGrow: 0 }}
       >
-        {QUICK.map((q) => (
+        {[...QUICK, ...extraChips].map((q) => (
           <PressableScale key={q} haptic="tap" scale={0.94} onPress={() => (q.endsWith(' ') ? setInput(q) : run(q))}>
             <View style={[styles.chip, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
               <Text style={{ color: colors.textSub, fontSize: 11.5, fontWeight: '700', fontFamily: MONO }}>{q.trim()}</Text>

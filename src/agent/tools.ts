@@ -16,6 +16,10 @@ import { GITHUB_TOOL_SPECS, GITHUB_TOOL_NAMES, dispatchGithubTool } from '@/src/
 import { buildRepoMap } from '@/src/agent/repomap';
 import { zipStore, utf8Bytes, type ZipEntry } from '@/src/utils/zip';
 import { readAgentFileBytes, writeAgentFileBytes, listAgentEntries } from '@/src/agent/fs';
+import { loadPlugins, expandAlias, starterManifest, setPluginEnabled, activePlugins } from '@/src/agent/plugins';
+import { pkgInstall, pkgRemove, pkgList, pkgCommand } from '@/src/agent/pkg';
+import { searchSymbols, importGraph } from '@/src/agent/symindex';
+import { copperPty } from '@/modules/copper-pty/src';
 import {
   readAgentFile,
   writeAgentFile,
@@ -108,6 +112,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       filter: { type: 'string', description: 'Only include paths containing this substring (e.g. "agent", ".ts")' },
       max_files: { type: 'number', description: 'Cap on files outlined (default 300, max 1000)' },
       max_chars: { type: 'number', description: 'Cap on output characters (default 12000)' },
+      graph: { type: 'boolean', description: 'Append the relative-import graph for the subtree' },
     },
     required: [],
   },
@@ -196,6 +201,7 @@ export async function dispatchTool(
           filter: args.filter ? String(args.filter) : undefined,
           maxFiles: args.max_files != null ? Number(args.max_files) : undefined,
           maxChars: args.max_chars != null ? Number(args.max_chars) : undefined,
+          graph: args.graph === true,
         });
         return { ok: true, output: map.output };
       }
@@ -226,6 +232,16 @@ export function executorStatus(): ExecutorMode {
 
 function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout: string; exit: number }>) | null {
   if (Platform.OS !== 'android') return null;
+  // 1) the compiled local module (modules/copper-pty) — the supported path.
+  const pty = copperPty;
+  if (pty && typeof pty.exec === 'function') {
+    return (cmd: string, timeoutMs: number) =>
+      Promise.resolve(pty.exec(cmd, timeoutMs)).then((r) => ({
+        stdout: String(r?.stdout ?? ''),
+        exit: Number(r?.exit ?? 0),
+      }));
+  }
+  // 2) legacy global probes, kept for hand-rolled dev builds.
   const g = globalThis as any;
   const exec =
     g.CopperExec?.exec ?? g.expo?.modules?.CopperExec?.exec ?? null;
@@ -281,9 +297,11 @@ export function resolveFromCwd(p: string, cwd: string = cwdState): string {
 export async function runShellCommand(
   command: string,
   timeoutMs = 20_000,
-  cwd: string = cwdState
+  cwd: string = cwdState,
+  /** Emit ANSI colours (interactive terminal). The agent always passes false. */
+  color = false
 ): Promise<ToolResult & { exit: number }> {
-  const res = await runCommand(command, timeoutMs, cwd);
+  const res = await runCommand(command, timeoutMs, cwd, color);
   return { ...res, exit: res.ok ? 0 : 1 };
 }
 
@@ -293,9 +311,10 @@ export const SHELL_BUILTINS = [
   'mkdir', 'rm', 'mv', 'cp', 'find', 'tree', 'date', 'whoami', 'uname', 'env',
   'clear', 'history', 'help', 'write', 'stat', 'du', 'basename', 'dirname',
   'true', 'false', 'which', 'map', 'sort', 'uniq',
+  'pkg', 'plugin', 'sym', 'deps',
 ] as const;
 
-async function runCommand(command: string, timeoutMs: number, cwd: string = cwdState): Promise<ToolResult> {
+async function runCommand(command: string, timeoutMs: number, cwd: string = cwdState, color = false): Promise<ToolResult> {
   const real = nativeExecutor();
   if (real) {
     const dir = resolveFromCwd('.', cwd);
@@ -318,7 +337,11 @@ async function runCommand(command: string, timeoutMs: number, cwd: string = cwdS
     }
   }
   // Built-in tier — honest about what it is, still useful.
-  return simulateShell(command, cwd);
+  return simulateShell(command, cwd, color);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /* --------------------------- built-in mini-shell ---------------------------- */
@@ -332,8 +355,8 @@ async function runCommand(command: string, timeoutMs: number, cwd: string = cwdS
  * It is *not* a Linux userland — see docs/TERMINAL-AND-CODING-AGENTS.md for the
  * honest comparison with Termux / WebContainers / a native exec module.
  */
-async function simulateShell(rawCommand: string, cwd: string): Promise<ToolResult> {
-  const command = rawCommand.trim();
+async function simulateShell(rawCommand: string, cwd: string, color = false): Promise<ToolResult> {
+  const command = expandAlias(rawCommand.trim(), await loadPlugins());
   if (!command) return { ok: false, output: 'Empty command.' };
 
   // Sequencing: `a && b` runs b only if a succeeded; `a ; b` always runs b.
@@ -343,7 +366,7 @@ async function simulateShell(rawCommand: string, cwd: string): Promise<ToolResul
     const chunks: string[] = [];
     for (const seg of segments) {
       if (seg.op === '&&' && !lastOk) continue;
-      const r = await simulateShell(seg.text, cwd);
+      const r = await simulateShell(seg.text, cwd, color);
       lastOk = r.ok;
       if (r.output) chunks.push(r.output);
     }
@@ -351,9 +374,9 @@ async function simulateShell(rawCommand: string, cwd: string): Promise<ToolResul
   }
 
   const [beforePipe, ...pipeStages] = splitPipes(command);
-  let result = await execOne(beforePipe, cwd);
+  let result = await execOne(beforePipe, cwd, color);
   for (const stage of pipeStages) {
-    result = await execPipeStage(stage, result.output);
+    result = await execPipeStage(stage, result.output, color);
   }
   return result;
 }
@@ -427,7 +450,7 @@ function splitPipes(cmd: string): string[] {
   return out.filter(Boolean);
 }
 
-async function execPipeStage(stage: string, input: string): Promise<ToolResult> {
+async function execPipeStage(stage: string, input: string, color = false): Promise<ToolResult> {
   const parts = tokenize(stage);
   const [cmd, ...rest] = parts;
   const n = Number((rest.find((f) => /^-n?\d+$/.test(f)) ?? '').replace(/[^0-9]/g, '')) || 10;
@@ -442,7 +465,10 @@ async function execPipeStage(stage: string, input: string): Promise<ToolResult> 
     case 'grep': {
       const pattern = rest.filter((r) => !r.startsWith('-'))[0] ?? '';
       const matches = lines.filter((l) => l.toLowerCase().includes(pattern.toLowerCase()));
-      return { ok: matches.length > 0, output: matches.slice(0, 200).join('\n') || '' };
+      const shown = color
+        ? matches.map((l) => l.replace(new RegExp(escapeRegExp(pattern), 'gi'), (m) => sgrMatch(m, true)))
+        : matches;
+      return { ok: matches.length > 0, output: shown.slice(0, 200).join('\n') || '' };
     }
     case 'sort':
       return { ok: true, output: [...lines].sort().join('\n') };
@@ -453,7 +479,12 @@ async function execPipeStage(stage: string, input: string): Promise<ToolResult> 
   }
 }
 
-async function execOne(command: string, cwd: string): Promise<ToolResult> {
+/* SGR helpers — only ever applied when the caller asked for colour. */
+const sgrDir = (s: string, color: boolean) => (color ? `\x1b[1;34m${s}\x1b[0m` : s);
+const sgrMatch = (s: string, color: boolean) => (color ? `\x1b[1;31m${s}\x1b[0m` : s);
+const sgrOk = (s: string, color: boolean) => (color ? `\x1b[32m${s}\x1b[0m` : s);
+
+async function execOne(command: string, cwd: string, color = false): Promise<ToolResult> {
   const parts = tokenize(command);
   if (!parts.length) return { ok: false, output: 'Empty command.' };
   const [cmd, ...rest] = parts;
@@ -478,13 +509,21 @@ async function execOne(command: string, cwd: string): Promise<ToolResult> {
         return { ok: true, output: '' };
       }
       case 'ls': {
-        const out = await listAgentDir(at(firstOp || '.'));
+        const raw = await listAgentDir(at(firstOp || '.'));
+        if (!color) return { ok: true, output: raw };
+        const out = raw
+          .split('\n')
+          .map((l, i) => {
+            if (i === 0 || !l.startsWith('d ')) return l;
+            return `d ${sgrDir(l.slice(2), true)}`;
+          })
+          .join('\n');
         return { ok: true, output: out };
       }
       case 'tree': {
         const root = at(firstOp || '.');
         const all = await walkAll(root);
-        const lines = all.slice(0, 400).map((f) => f);
+        const lines = all.slice(0, 400).map((f) => (color && f.endsWith('/') ? sgrDir(f, true) : f));
         return { ok: true, output: lines.length ? `${root}\n${lines.join('\n')}` : `${root} (empty)` };
       }
       case 'map': {
@@ -561,7 +600,10 @@ async function execOne(command: string, cwd: string): Promise<ToolResult> {
             const text = await readAgentFile(src, 1024 * 1024);
             text.split('\n').forEach((line, i) => {
               if (line.toLowerCase().includes(pattern.toLowerCase())) {
-                results.push(`${file ? '' : `${src}:`}${i + 1}: ${line}`);
+                const shown = color
+                  ? line.replace(new RegExp(escapeRegExp(pattern), 'gi'), (m) => sgrMatch(m, true))
+                  : line;
+                results.push(`${file ? '' : `${src}:`}${i + 1}: ${shown}`);
               }
             });
           } catch {
@@ -635,6 +677,9 @@ async function execOne(command: string, cwd: string): Promise<ToolResult> {
             '',
             '  navigation   cd  pwd  ls  tree  find  du  stat',
             '  project      map [dir] [filter]   outline of files + symbols with line numbers',
+            '               sym <name> · deps [dir]   declaration search · import graph',
+            '  packages     pkg list|install|remove   bundled pure-JS tools (jq, bc, …)',
+            '  plugins      plugin list|create|reload|disable   aliases, syntax packs, chips',
             '  files        cat  head  tail  wc  touch  write  mkdir  rm  mv  cp',
             '  text         echo  grep  sort  uniq',
             '  misc         date  whoami  uname  env  which  clear  help',
@@ -645,11 +690,67 @@ async function execOne(command: string, cwd: string): Promise<ToolResult> {
             'Built-ins only — no package manager, no downloaded binaries (Android W^X).',
           ].join('\n'),
         };
-      default:
+      case 'pkg': {
+        const sub = firstOp || 'list';
+        if (sub === 'install') return { ok: true, output: await pkgInstall(operands.slice(1)) };
+        if (sub === 'remove' || sub === 'rm') return { ok: true, output: await pkgRemove(operands.slice(1)) };
+        return { ok: true, output: await pkgList() };
+      }
+      case 'plugin': {
+        const sub = firstOp || 'list';
+        const plugins = await loadPlugins(sub === 'reload');
+        if (sub === 'reload') return { ok: true, output: `Reloaded ${plugins.length} plugin manifest(s) from .copper/plugins/.` };
+        if (sub === 'create') {
+          const name = operands[1];
+          if (!name) return { ok: false, output: 'plugin create <name>' };
+          const msg = await writeAgentFile(`.copper/plugins/${name}.json`, starterManifest(name));
+          return { ok: true, output: `${msg}\nEdit it (aliases, syntax pack, chips), then run \`plugin reload\`.` };
+        }
+        if (sub === 'disable' || sub === 'enable') {
+          const id = operands[1];
+          if (!id) return { ok: false, output: `plugin ${sub} <id>` };
+          await setPluginEnabled(id, sub === 'enable');
+          return { ok: true, output: `${id} ${sub}d.` };
+        }
+        if (!plugins.length) {
+          return { ok: true, output: 'No plugins yet. `plugin create mypack` writes a starter manifest in .copper/plugins/.' };
+        }
+        return {
+          ok: true,
+          output: plugins
+            .map((p) => {
+              const on = activePlugins(plugins).some((a) => a.id === p.id);
+              const m = p.manifest;
+              return `${on ? '[x]' : '[ ]'} ${p.id} — ${m.description ?? m.name}\n        aliases: ${Object.keys(m.aliases ?? {}).join(', ') || '-'} · syntax: ${m.syntax?.id ?? '-'} · chips: ${(m.chips ?? []).length}`;
+            })
+            .join('\n'),
+        };
+      }
+      case 'sym': {
+        if (!firstOp) return { ok: false, output: 'sym <name> — search declarations (functions, classes, types)' };
+        const hits = await searchSymbols(at('.'), firstOp);
+        if (!hits.length) return { ok: false, output: `sym: no declaration matches "${firstOp}"` };
+        return { ok: true, output: hits.map((h) => `${h.path}:${h.line}  ${h.name}`).join('\n') };
+      }
+      case 'deps': {
+        const edges = await importGraph(at(firstOp || '.'));
+        return { ok: true, output: edges.length ? edges.join('\n') : 'deps: no relative imports found under this path' };
+      }
+      default: {
+        const pkg = await pkgCommand(cmd);
+        if (pkg) {
+          try {
+            const out = await pkg.run(rest, { cwd, read: (r) => readAgentFile(at(r), 1024 * 1024) });
+            return { ok: true, output: out };
+          } catch (e) {
+            return { ok: false, output: `${cmd}: ${e instanceof Error ? e.message : String(e)}` };
+          }
+        }
         return {
           ok: false,
-          output: `${cmd}: command not found. Type \`help\` for the built-in list.`,
+          output: `${cmd}: command not found. Type \`help\` for built-ins, \`pkg list\` for installable tools.`,
         };
+      }
     }
   } catch (e) {
     return { ok: false, output: `${cmd}: ${(e as Error).message}` };

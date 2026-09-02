@@ -14,6 +14,7 @@ import { Terminal } from '@/src/components/Icons';
 import { useChatsStore } from '@/src/store/chats';
 import { useSettingsStore } from '@/src/store/settings';
 import { executorStatus, shellCwd } from '@/src/agent/tools';
+import { sessionAvailable } from '@/modules/copper-pty/src';
 import { currentRoot } from '@/src/agent/fs';
 import { haptic } from '@/src/utils/haptics';
 
@@ -86,7 +87,7 @@ export default function TerminalScreen() {
           <StatusChip
             color={native ? colors.success : colors.warning}
             icon={native ? 'hardware-chip-outline' : 'code-slash'}
-            label={native ? 'copper-exec · native shell' : 'built-in sandbox shell'}
+            label={native ? (sessionAvailable() ? 'native shell + sessions' : 'copper-exec · native shell') : 'built-in sandbox shell'}
           />
           <StatusChip
             color={root.tier === 'sandbox' ? colors.textSub : root.tier === 'managed' ? colors.warning : colors.success}

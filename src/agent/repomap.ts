@@ -18,7 +18,8 @@
  * Symbol extraction itself lives in `./outline.ts` (pure, no RN imports).
  */
 import { listAgentEntries, readAgentFile, currentRoot } from '@/src/agent/fs';
-import { langOf, outline } from '@/src/agent/outline';
+import { langOf } from '@/src/agent/outline';
+import { outlineFor, importGraph } from '@/src/agent/symindex';
 
 /* --------------------------------- options --------------------------------- */
 
@@ -33,6 +34,8 @@ export interface RepoMapOptions {
   filter?: string;
   /** Include the directory tree section. */
   tree?: boolean;
+  /** Append the relative-import graph (JS/TS) for the subtree. */
+  graph?: boolean;
 }
 
 export interface RepoMapResult {
@@ -201,9 +204,11 @@ export async function buildRepoMap(opts: RepoMapOptions = {}): Promise<RepoMapRe
         try {
           const text = await readAgentFile(f.path, MAX_BYTES_PER_FILE);
           if (text.startsWith('File too large')) return `· ${f.path}${lines} (too large)`;
-          const hits = outline(lang, text);
+          // Cached: a second map of an unchanged project skips parsing entirely.
+          const entry = outlineFor(f.path, text, f.size);
+          const hits = entry.hits;
           symbols += hits.length;
-          const lineCount = text.split('\n').length;
+          const lineCount = entry.lines;
           if (!hits.length) return `· ${f.path} — ${lang}, ${lineCount} lines`;
           const rendered = hits.map((h) => (lang === 'json' ? `      ${h.text}` : `    ${String(h.line).padStart(4, ' ')}  ${h.text}`));
           return `· ${f.path} — ${lang}, ${lineCount} lines\n${rendered.join('\n')}`;
@@ -226,6 +231,16 @@ export async function buildRepoMap(opts: RepoMapOptions = {}): Promise<RepoMapRe
   if (truncated) {
     body.push(`… truncated at ${maxChars} chars — ${found.files.length - listed} file(s) not shown.`);
     body.push('Narrow with `root` (a subtree) or `filter` (path substring), or raise `max_chars`.');
+  }
+
+  if (opts.graph) {
+    const edges = await importGraph(root, 150);
+    if (edges.length) {
+      body.push('');
+      body.push('imports (relative, JS/TS):');
+      for (const e of edges.slice(0, 80)) body.push(`  ${e}`);
+      if (edges.length > 80) body.push(`  … +${edges.length - 80} more`);
+    }
   }
 
   const output = `${head.join('\n')}${body.join('\n')}`;

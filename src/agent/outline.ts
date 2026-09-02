@@ -51,6 +51,32 @@ export interface SymbolHit {
 
 const P = (src: string, flags = '') => new RegExp(src, flags);
 
+/* --------------------- comment/string masking (v2) --------------------------
+ * Declarations living inside a comment or a string are not declarations.
+ * Before matching, code-family sources get their comments and string literals
+ * blanked to spaces (newlines preserved, so line numbers stay true). This is
+ * the cheap, dependency-free slice of what tree-sitter would give us: it kills
+ * the classic false positives — a `// function old()` note, a docstring full
+ * of examples, a markdown snippet embedded in a template literal.
+ */
+const MASK_C_COMMENT = /\/\/[^\n]*|\/\*[\s\S]*?\*\//g;
+const MASK_HASH_COMMENT = /#[^\n]*/g;
+const MASK_STR_TS = /"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\[\s\S])*`?/g;
+const MASK_STR_PY =
+  /(?:[rbfu]{1,2})?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?)/g;
+const MASK_STR_BASIC = /"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?/g;
+
+const MASKED_LANGS = new Set<Lang>(['ts', 'py', 'go', 'rs', 'java', 'swift', 'c', 'rb', 'php', 'sh']);
+
+function maskText(lang: Lang, text: string): string {
+  if (!MASKED_LANGS.has(lang)) return text;
+  const blank = (m: string) => m.replace(/[^\n]/g, ' ');
+  let out = text;
+  out = out.replace(lang === 'sh' || lang === 'py' || lang === 'rb' ? MASK_HASH_COMMENT : MASK_C_COMMENT, blank);
+  out = out.replace(lang === 'py' ? MASK_STR_PY : lang === 'ts' ? MASK_STR_TS : MASK_STR_BASIC, blank);
+  return out;
+}
+
 /** Per-language declaration matchers, in priority order. */
 const RULES: Record<Lang, RegExp[]> = {
   ts: [
@@ -120,7 +146,7 @@ const RULES: Record<Lang, RegExp[]> = {
 };
 
 export function outline(lang: Lang, text: string): SymbolHit[] {
-  const lines = text.split('\n');
+  const lines = maskText(lang, text).split('\n');
 
   if (lang === 'json') return jsonKeys(text);
 

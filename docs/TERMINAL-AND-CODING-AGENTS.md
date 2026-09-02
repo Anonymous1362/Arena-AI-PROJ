@@ -343,24 +343,65 @@ never disagree about what "destructive" means: **`src/agent/danger.ts`**.
 
 ---
 
-## 9. Known limits and the honest upgrade path
+## 9. Delivered upgrades and the remaining honest limits
 
-Ranked by value per unit of effort:
+The old upgrade list has been worked through. What shipped, and what remains:
 
-1. **Multi-file commits via the Git Data API** — pure REST, no native code,
-   makes `github_write` able to publish a whole change set atomically.
-2. **A `CopperExec` Expo module** — ~150 lines of Kotlin wrapping
-   `Runtime.exec` with a working-directory argument. Unlocks tier 1 on custom
-   builds: real `sh`, real pipes, and — if the user installs a git binary —
-   real git. The app already detects and prefers it.
-3. **Incremental repo map** — cache outlines keyed by path + size + mtime so a
-   second `map` of a big project is free.
-4. **tree-sitter via WASM** — only worth it if a language routinely defeats the
-   patterns (C++ templates, Scala, Elixir). Costs MB and startup time; the
-   regex outline covers the languages this app's users actually ship.
-5. **PTY-style interaction** — a real pseudo-terminal would allow `vim`, `top`,
-   REPLs. Requires tier 1 plus a native PTY; the built-in shell is
-   request/response by design.
+### 9.1 ANSI/VT-100 rendering — delivered (`src/terminal/ansi.ts`)
+
+The terminal now parses SGR sequences (16-colour, 256-colour, truecolour,
+bold/faint/italic/underline), strips OSC and cursor noise, and honours `\r`
+progress-bar overwrites. `AnsiText` renders the runs as nested selectable
+`<Text>` spans; plain lines skip parsing entirely. The interactive terminal
+calls `runShellCommand(..., color = true)` and `ls`/`tree`/`grep` emit colour —
+the agent's context never sees escape codes.
+
+### 9.2 Native sessions — delivered as far as W^X allows (`modules/copper-pty`)
+
+A compiled local Expo module (auto-linked by `expo prebuild`, ignored in Expo
+Go) providing `exec` (real `/system/bin/sh` one-shots — `tools.ts` probes it
+automatically) and `spawn/write/output/alive/kill` (piped interactive sessions
+for line-oriented programs and REPLs). It is **not** a PTY: full-screen TUIs
+(`vim`, `htop`) need `forkpty()` in an NDK layer, which remains the documented
+follow-up. The Terminal tab chip says "native shell + sessions" only when the
+module is actually compiled in.
+
+### 9.3 Plugins — delivered (`src/agent/plugins.ts`)
+
+JSON manifests in `<root>/.copper/plugins/<id>.json` add shell **aliases**,
+**syntax-highlight language packs** (via `registerLanguage` in
+`src/utils/highlight.ts`) and **quick-chips**. `plugin list|create|reload|
+enable|disable` are shell builtins, so the agent can author plugins itself.
+Runtime-code plugins are impossible in a sealed Hermes bundle with no `eval`
+and Android's W^X — data manifests are what Acode's useful plugins mostly are
+anyway.
+
+### 9.4 `pkg` package manager — delivered (`src/agent/pkg.ts`)
+
+`pkg list|install|remove` manages bundled pure-JS tools — `jq` (paths,
+indexes, `.length`, `.keys`, `-r`), `bc` (arithmetic with parens and `^`),
+`seq`, `tr`, `cut`, `rev`, `nl` — persisted in `.copper/pkg.json` and
+hot-registered into `execOne`. Downloaded native binaries can never execute on
+non-root Android; "install" therefore means switching on code that ships in the
+bundle (instant, offline, honest).
+
+### 9.5 Outline v2 + symbol index — delivered (`src/agent/symindex.ts`)
+
+`outline.ts` now masks comments and string literals to spaces before matching
+declarations (line numbers preserved), killing the classic false positives a
+real parser was supposed to fix. `symindex` caches outlines by a size+content
+fingerprint (second `map` of an unchanged project is free — the incremental
+repo-map item), extracts relative **import graphs** for JS/TS (`deps` builtin,
+`repo_map` with `graph: true`), and powers declaration-only search (`sym
+<name>` builtin). tree-sitter-via-WASM stays declined: masking + cached regex
+covers the languages this app's users ship, at zero MB and zero startup cost.
+
+### 9.6 Still open
+
+1. **Multi-file atomic commits** via the Git Data API (pure REST, no native
+   code) — the remaining high-value `github_write` upgrade.
+2. **NDK `forkpty()`** in copper-pty — the only path to real TUI apps, and it
+   must stay clearly labelled when/if it lands.
 
 ---
 
@@ -387,7 +428,13 @@ Ranked by value per unit of effort:
 | `src/agent/tools.ts` | tool specs, dispatch, executor probe, `simulateShell` |
 | `src/agent/fs.ts` | two-tier jailed file system, SAF resolution + cache |
 | `src/agent/repomap.ts` | repo-map walk, formatting, caps |
-| `src/agent/outline.ts` | pure per-language declaration patterns |
+| `src/agent/outline.ts` | pure per-language declaration patterns, comment/string masking |
+| `src/agent/symindex.ts` | outline cache, import graph, `sym` search |
+| `src/agent/plugins.ts` | JSON plugin manifests: aliases, syntax packs, chips |
+| `src/agent/pkg.ts` | `pkg` registry: jq, bc, seq, tr, cut, rev, nl |
+| `src/terminal/ansi.ts` | SGR parser / stripper for terminal output |
+| `src/components/AnsiText.tsx` | ANSI runs → nested selectable `<Text>` |
+| `modules/copper-pty/` | optional native module: real sh exec + piped sessions |
 | `src/agent/danger.ts` | shared destructive-command classifier |
 | `src/agent/github.ts` | REST connector, 9 tools, `cloneRepoIntoSandbox` |
 | `src/agent/loop.ts` | plan parsing, tool loop, auto-continue, confirmation gate |
