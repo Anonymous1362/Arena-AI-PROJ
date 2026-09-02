@@ -4,7 +4,7 @@
 
 ---
 
-## Phase 0 — The pivot ✅ (this update)
+## Phase 0 — The pivot ✅
 - [x] Removed the entire local-LLM stack (llama.rn, GGUF catalog, downloader, model files) — no RAM/GPU/storage use
 - [x] Rebrand: **Copper** — warm ivory/charcoal palette, terracotta accent, custom asterisk icon, zero "AI-slop" gradients
 - [x] **Agent core**: master prompt (Claude-style behavior), `[PLAN]` protocol with AI-named steps, tool-calling loop, auto-continue on token/tool limits
@@ -50,25 +50,73 @@
 - [x] Android/iOS keyboard-safe chat composer
 - [x] Correct Gemini OpenAI-compatible endpoint
 
-## Phase 5 — Feel & connection fixes ✅
-- [x] Fix Gemini “not found”: Google’s OpenAI-compat base is `…/v1beta/openai` — the client no longer appends a second `/v1` to chat/models paths; live model listing now works and feeds the picker with the newest official ids
-- [x] Refresh suggested models across providers (Gemini 2.5 Pro/Flash/Flash-Lite + 3.x previews, Claude Opus 4.5, Grok-4 family) — picker still live-syncs from `/models`
-- [x] Manual model-id entry in the model sheet (preview / thinking variants not yet listed)
-- [x] Animated splash (spring pop + ripple + wordmark, buttery dissolve) in `app/_layout.tsx`
-- [x] Haptics reworked: single vibration per gesture, press-in dedupe window on Android, “every click” buzz removed (defaults to no haptic, opt-in per control)
-- [x] Keyboard no longer overlaps the composer or follows you around: Android `adjustResize`, blur-dismiss on back/tab leave, KAV height behaviour + inset
-- [x] Live context/token bar under the chat header (green → amber 70% → red 90%)
-- [x] New-message entry animation (FadeInDown), smoother springs/easing presets, sheet + overlay polish
-- [x] Settings regrouped into color-coded sections (Agent & models / Chat / App / About) with gradient active-engine card
-- [x] Chats tab: prominent gradient “New chat”, empty-state CTA, tab cross-fade, keyboard-aware tab bar
-- [x] Interactive Terminal tab — type commands yourself + agent run history, same executor the agent uses (native when copper-exec is present, sandboxed built-ins otherwise)
+## Phase 5 — Feel, terminal & coding agents ✅ (this update)
 
-## Phase 6 — Embedded Linux core (no Termux app) — design approved, build pending
-- [ ] Native executor module in the APK (`copper-exec` bridge the JS already probes for)
-- [ ] Linux userspace bundled in the APK **or** downloaded on first launch (~100–400 MB) via proot + Alpine/Debian rootfs
-- [ ] Pre-seed python3 / node / git / gcc / curl so it works with zero commands
-- [ ] Agent `run_command` + Terminal tab both exec into the embedded userspace
-- [ ] GitHub connector (clone/repo-aware coding from a repo) — design documented, pending implementation
+**Providers & models**
+- [x] Fixed Gemini "not found": the model-list URL regex missed the OpenAI-compatible base, so requests went to `/v1/models` instead of `/v1beta/openai/models` — replaced with `modelListUrls()` + `normalizeBase()` self-healing, and a settings migration that repairs the truncated base URL already persisted on device
+- [x] Catalog refreshed to the current official model IDs: Gemini 3.7/3.6/3.5-flash, 3.5-flash-lite, 3.1-pro-preview, 3.1-flash-lite, 2.5 pro/flash/flash-lite · OpenAI gpt-5.6 sol/terra/luna · Anthropic claude-fable-5 / opus-5 / sonnet-5 / haiku-4-5 · xAI grok-4-6 / 4-5 / code-fast-1 · DeepSeek chat/reasoner · Mistral medium-3.5/small-4 · Groq gpt-oss-120b, kimi-k2, qwen3.6-27b, compound · OpenRouter glm-5.2, deepseek-v4-flash
+- [x] Per-family context windows and max output (1M in / 64K out for Gemini 3.x, 1M for Claude 5, 2M for grok-code) replace the old hardcoded 32K
+- [x] Thinking levels done properly: Gemini 3.x `thinking_level` (the API equivalent of the Gemini app's "extended thinking"), Gemini 2.5 `thinking_budget`, OpenAI `reasoning_effort` — exactly one is sent (the docs forbid both), and a 400 that mentions the extension triggers a strip-and-retry so the request still lands
+- [x] New **Models** settings screen: active model, thinking level with per-family notes, thinking-panel toggle, context window override, auto-compact threshold, live catalog reference
+
+**Chat tab is a chat**
+- [x] The Chat tab now *is* the conversation: embedded `ChatSurface` with the library as a left-edge drawer (drag-to-dismiss, grouped, staggered entrance). List-first mode still available in Appearance → Chat tab
+
+**Keyboard (Android edge-to-edge)**
+- [x] `adjustResize` + `softwareKeyboardLayoutMode: resize` in app.json
+- [x] `useKeyboardInset()` measures the real IME frame on the UI thread, subtracts the bottom safe area, and detects window auto-resize so content is never lifted twice
+- [x] Ducked UI now clears the floating tab bar (`tabBarClearance`) — the composer and terminal prompt are no longer behind it
+- [x] `KeyboardGuard` dismisses the IME on any route/tab change and on backgrounding (opt-out in Motion & interaction)
+
+**Motion & haptics**
+- [x] Splash animation on open (`SplashGate`) — staged reveal, not a hard cut
+- [x] Motion vocabulary (`Durations` / `Ease` / `Spring`) + user-selectable motion level (reduced / balanced / full) with a live preview
+- [x] Haptics rebuilt around events and levels (off / subtle / standard / rich) with coalescing and a per-gesture fired-guard — the "buzzes on every tap, sometimes twice" bug is gone
+- [x] Animated segmented control (sliding pill) — one change, every settings screen feels it
+- [x] Per-tab tints, sliding tab pill, staggered list entrances, cross-fading chat/list modes
+
+**Settings, split up and coloured**
+- [x] Hub rebuilt into four tinted groups (Model · Agent · Experience · Data) with a hero card showing the active model, provider, thinking level, window, agent status and compact threshold
+- [x] Five new screens: **Appearance** (accent grid, theme previews, text size sample), **Models**, **Motion & haptics** (event test grid), **GitHub**, **Shell & sandbox** — each with its own tint, hero tile and section cards
+
+**Terminal — built in, no Termux**
+- [x] Interactive REPL (`TerminalView`): scrollback (setting-honoured), command history with up/down, **tab completion for commands and paths**, quick-command chips, copy-session, and "Ask the agent" which hands the transcript to a new chat
+- [x] Two modes in the tab: **Shell** and **Agent log** (every command the agent ran, with real output and exit status)
+- [x] Built-in shell grew: `map`, standalone `sort` / `uniq`, updated `help`
+- [x] Executor status is honest everywhere: native `copper-exec` probe vs built-in JS shell, with a status LED and plain-language settings copy
+
+**Coding-agent capabilities**
+- [x] **Repo map** — Aider/OpenCode-style orientation without tree-sitter (which would need native modules per language): pure regex declaration outline (`outline.ts`) + tier-aware walker (`repomap.ts`), exposed as the `repo_map` tool and the `map` shell command
+- [x] Agent prompt updated: orient with repo_map first, read before write, verify your own work with the project's real check, and never claim success you didn't observe
+- [x] **Git safety**: stay on the branch, diff before/after, never force-push or rewrite published history, never commit unless asked
+- [x] Shared danger classifier (`danger.ts`) — the agent and the terminal confirm the *same* commands (`rm`, `git reset --hard`, `git clean -f`, `push --force`, `dd`, fork bombs, `curl | sh`, `delete_path`, `github_delete`, …); denials are fed back to the model so it adapts
+- [x] `executorReal` is no longer hardcoded false — the prompt reports the actual shell tier
+- [x] **GitHub connector** (pure REST, no git binary): 9 tools — status, repos, tree, read, write (commit with blob-sha fetch so updates can't silently conflict), delete, code search, issues, PRs; repo + branch pickers, connection test with rate-limit readout, and "Pull repo into sandbox" (≤400 text files, ≤512 KB each) with live progress
+- [x] `docs/TERMINAL-AND-CODING-AGENTS.md` — the honest write-up: why not Termux / WebContainers / a downloaded toolchain, what the two executor tiers do, the repo map's limits, the connector's limits (no object database, no local-diff commits), and the ranked upgrade path
+
+## Phase 5.1 — device storage, artifacts & the Claude-style plan ✅ (this update)
+
+- [x] **All-files-access storage tier** (`MANAGE_EXTERNAL_STORAGE`, still no root): real paths on internal *and* removable SD (`/storage/0123-4567/…`), alongside the SAF folder picker; one shared jail for agent + terminal, volume detection, verify flow, three root cards in Shell & sandbox
+- [x] **Artifacts in chat**: file chips under the message that wrote them (zip → save/share on tap; md/txt/code → pull-down reader sheet with a three-dot save menu), plus a per-chat Files sheet for everything produced so far
+- [x] **zip_dir tool** + dependency-free ZIP writer (store method, CRC32, verified against Python's zipfile); saves straight into `Download/` when allowed, share sheet otherwise, browser download on web
+- [x] **Syntax highlighting** without dependencies: cached-regex lexer for 12 language groups, theme palettes for light/dark, used in code blocks and the file reader
+- [x] **Claude-style plan**: square hand-drawn glyph tiles per step kind (code/write/read/run/find/craft), connector line that draws downward as steps complete, tap a step → sheet with the exact commands/tools it ran
+- [x] **Model failover**: 404/429/503 automatically retries the provider's next recommended model, with a toast naming the swap
+- [x] **Project folders**: `projects/<name>/` per chat (toggleable back to free organisation), workspace & deliverables rules in the system prompt (show code in chat, zip on request, stay inside the root)
+- [x] De-Aurora'd: legacy `AuroraExec` probes removed (CopperExec only), the agent introduces itself as Copper, package renamed `copper`
+- [x] Toast system for action feedback (saved paths, grants, copies)
+
+## Phase 6 — terminal power: ANSI, plugins, `pkg`, symbol index ✅ (this update)
+
+The four items previously declined as impossible got their honest-maximum
+on-device equivalents instead of being left on the list:
+
+- [x] **ANSI/VT-100 renderer** (`src/terminal/ansi.ts` + `AnsiText`): SGR 16/256/truecolour, bold/italic/underline, OSC + cursor-noise stripping, `\r` progress overwrites; interactive terminal runs in colour (`ls`/`tree`/`grep`), the agent's context never sees escape codes
+- [x] **`modules/copper-pty`** — optional native module (auto-linked by `expo prebuild`, invisible in Expo Go): real `/system/bin/sh` exec (tools.ts probes it, run_command upgrades itself) + piped interactive sessions (`spawn/write/output/alive/kill`) for REPLs; labelled honestly as *not* a PTY — `vim`/`htop` need an NDK `forkpty()` follow-up
+- [x] **Plugin system** (`src/agent/plugins.ts`): JSON manifests in `.copper/plugins/` adding shell aliases, syntax language packs (`registerLanguage` in the highlighter) and quick-chips; `plugin list|create|reload|enable|disable` builtins — the agent can write its own plugins. Runtime-code plugins remain impossible (sealed Hermes bundle + W^X) and the docs say so
+- [x] **`pkg` package manager** (`src/agent/pkg.ts`): bundled pure-JS tools — `jq`, `bc`, `seq`, `tr`, `cut`, `rev`, `nl` — installed instantly/offline into `.copper/pkg.json` and hot-registered into the shell; downloading native binaries stays impossible on non-root Android
+- [x] **Outline v2 + symbol index** (`src/agent/symindex.ts`): comments/strings masked before declaration matching (no more false positives from docblocks), outlines cached by content fingerprint (incremental repo-map), JS/TS import graph (`deps` builtin, `repo_map graph:true`), declaration search (`sym <name>` builtin)
+- [x] Docs: §9 of `docs/TERMINAL-AND-CODING-AGENTS.md` rewritten from "upgrade wishlist" to "delivered + remaining honest limits"
 
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)

@@ -1,5 +1,5 @@
-import type { GenerationSettings } from '@/src/store/settings';
 import type { Role } from '@/src/store/chats';
+import type { ThinkingLevel } from '@/src/store/settings';
 
 export interface WireMessage {
   role: Role;
@@ -15,6 +15,8 @@ export interface EngineHandlers {
   onContent?: (content: string) => void;
   /** Called with accumulated reasoning so far (throttled). May never fire. */
   onReasoning?: (reasoning: string) => void;
+  /** A model failed (404/429/503) and the request moved to a fallback model. */
+  onModelFallback?: (model: string, status: number) => void;
   onDone?: (result: EngineResult) => void;
   onError?: (err: Error) => void;
 }
@@ -41,9 +43,25 @@ export interface EngineResult {
   finishReason?: string;
 }
 
+/**
+ * Wire-level generation parameters. `GenerationSettings` is assignable to this;
+ * the extra fields are optional so lightweight calls (auto-titling, summaries)
+ * don't have to carry the whole settings object.
+ */
+export interface EngineParams {
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+  /** Reasoning / thinking level, mapped per provider by `catalog.thinkingFields`. */
+  thinking?: ThinkingLevel;
+  /** Ask the provider to stream thought summaries into the thinking panel. */
+  showThinking?: boolean;
+  systemPrompt?: string;
+}
+
 export interface EngineRequest {
   messages: WireMessage[];
-  params: GenerationSettings;
+  params: EngineParams;
   signal?: AbortSignal;
   handlers: EngineHandlers;
   /** OpenAI-format tools array (agent mode). */
@@ -63,6 +81,10 @@ export interface PlanStep {
   id: string;
   label: string;
   state: 'pending' | 'active' | 'done';
+  /** Wall-clock ms when the step became active / finished — lets the UI bind
+   *  tool events (commands, file writes) to the step that produced them. */
+  startedAt?: number;
+  doneAt?: number;
 }
 
 export interface ToolEvent {

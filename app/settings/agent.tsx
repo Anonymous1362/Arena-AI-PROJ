@@ -105,30 +105,30 @@ export default function AgentSettingsScreen() {
               <Ionicons name="folder-open" size={19} color={colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Storage access</Text>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Project folders</Text>
               <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>
-                {agentScope.storageEnabled && agentScope.safRootLabel
-                  ? `Granted: “${agentScope.safRootLabel}”`
-                  : 'Private app sandbox (no system permission needed)'}
+                Where a chat's work lives inside the storage root.
               </Text>
             </View>
           </View>
-          <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(3) }}>
-            The agent’s file tools are jailed to one storage root. Grant a folder (Android) to let it
-            organize real files — documents, downloads, projects. It can only touch what’s inside that
-            root, and only while agent mode is on.
-          </Text>
-          <View style={{ gap: spacing(2) }}>
-            <Button
-              label={agentScope.storageEnabled ? 'Change granted folder' : 'Grant a folder'}
-              icon="key-outline"
-              loading={busy}
-              onPress={grant}
-            />
-            {agentScope.storageEnabled ? (
-              <Button label="Revoke access" variant="ghost" icon="lock-closed" onPress={revoke} />
-            ) : null}
-          </View>
+          <SwitchRow
+            label="Keep each task in a project folder"
+            hint="The agent creates projects/<name>/ per deliverable — a game becomes projects/space-game/ with all its code inside."
+            value={agentScope.projectFolders}
+            onChange={(v) => patch({ projectFolders: v })}
+          />
+          <SwitchRow
+            label="One project folder per chat"
+            hint="On: every file this chat makes shares one folder named after the chat. Off: the agent organises freely. Flip back anytime."
+            value={agentScope.oneProjectPerChat}
+            onChange={(v) => patch({ oneProjectPerChat: v })}
+          />
+          <Button
+            label="Storage root & permissions"
+            variant="ghost"
+            icon="key-outline"
+            onPress={() => router.push('/settings/shell')}
+          />
         </Card>
 
         {note ? <Banner kind="info" text={note} onClose={() => setNote(null)} /> : null}

@@ -11,6 +11,15 @@
  *    mkdir / rm / pwd) that still produces honest, useful transcript output.
  */
 import { Platform } from 'react-native';
+import { useSettingsStore } from '@/src/store/settings';
+import { GITHUB_TOOL_SPECS, GITHUB_TOOL_NAMES, dispatchGithubTool } from '@/src/agent/github';
+import { buildRepoMap } from '@/src/agent/repomap';
+import { zipStore, utf8Bytes, type ZipEntry } from '@/src/utils/zip';
+import { readAgentFileBytes, writeAgentFileBytes, listAgentEntries } from '@/src/agent/fs';
+import { loadPlugins, expandAlias, starterManifest, setPluginEnabled, activePlugins } from '@/src/agent/plugins';
+import { pkgInstall, pkgRemove, pkgList, pkgCommand } from '@/src/agent/pkg';
+import { searchSymbols, importGraph } from '@/src/agent/symindex';
+import { copperPty } from '@/modules/copper-pty/src';
 import {
   readAgentFile,
   writeAgentFile,
@@ -42,6 +51,8 @@ export interface ToolSpec {
 export interface ToolContext {
   /** wall-clock deadline for run_command */
   defaultTimeoutMs?: number;
+  /** working directory for run_command (defaults to the shared shell cwd) */
+  cwd?: string;
 }
 
 export interface ToolResult {
@@ -93,6 +104,29 @@ export const TOOL_SPECS: ToolSpec[] = [
     required: ['path'],
   },
   {
+    name: 'repo_map',
+    description:
+      'Outline the project in the storage root: directory tree plus each file\'s declared functions, classes, types and headings with 1-based line numbers. Call this FIRST when you have not seen the project — one call beats reading a dozen files. It is a regex outline (where things live), not a semantic index; open a file to read its body.',
+    params: {
+      root: { type: 'string', description: 'Subtree to map ("." for the whole root)' },
+      filter: { type: 'string', description: 'Only include paths containing this substring (e.g. "agent", ".ts")' },
+      max_files: { type: 'number', description: 'Cap on files outlined (default 300, max 1000)' },
+      max_chars: { type: 'number', description: 'Cap on output characters (default 12000)' },
+      graph: { type: 'boolean', description: 'Append the relative-import graph for the subtree' },
+    },
+    required: [],
+  },
+  {
+    name: 'zip_dir',
+    description:
+      'Pack a folder of the storage root into a .zip archive the user can download or share. Use it when the user asks for a bundle/archive of a project. Entries are stored uncompressed; binaries are included.',
+    params: {
+      path: { type: 'string', description: 'Folder to pack, relative (e.g. "space-game")' },
+      out: { type: 'string', description: 'Archive path to write, relative (default "<folder>.zip" at the root)' },
+    },
+    required: ['path'],
+  },
+  {
     name: 'run_command',
     description:
       'Run a shell command inside the app sandbox (cwd = storage root). Real shell when an executor is available; otherwise a built-in shell emulation for common commands (ls, cat, echo, head, tail, wc, grep, touch, mkdir, rm, pwd). Timeout applies.',
@@ -104,9 +138,16 @@ export const TOOL_SPECS: ToolSpec[] = [
   },
 ];
 
+/** Every tool spec available right now (storage tools + GitHub when connected). */
+export function allToolSpecs(): ToolSpec[] {
+  const s = useSettingsStore.getState();
+  const gh = s.agentScope.githubTools && (s.github?.token ?? '').trim().length > 8;
+  return gh ? [...TOOL_SPECS, ...GITHUB_TOOL_SPECS] : TOOL_SPECS;
+}
+
 /** OpenAI-format `tools` array for chat.completions. */
 export function openAITools(): any[] {
-  return TOOL_SPECS.map((t) => ({
+  return allToolSpecs().map((t) => ({
     type: 'function',
     function: {
       name: t.name,
@@ -135,6 +176,8 @@ export async function dispatchTool(
   } catch {
     return { ok: false, output: `Invalid JSON arguments for ${name}.` };
   }
+  if (GITHUB_TOOL_NAMES.has(name)) return dispatchGithubTool(name, args);
+
   try {
     switch (name) {
       case 'read_file':
@@ -149,9 +192,22 @@ export async function dispatchTool(
         return { ok: true, output: await deleteAgentPath(String(args.path ?? '')) };
       case 'stat':
         return { ok: true, output: await statAgentPath(String(args.path ?? '')) };
+      case 'zip_dir': {
+        return await zipDirTool(String(args.path ?? '.'), args.out != null ? String(args.out) : null);
+      }
+      case 'repo_map': {
+        const map = await buildRepoMap({
+          root: args.root != null && String(args.root).trim() ? String(args.root) : '.',
+          filter: args.filter ? String(args.filter) : undefined,
+          maxFiles: args.max_files != null ? Number(args.max_files) : undefined,
+          maxChars: args.max_chars != null ? Number(args.max_chars) : undefined,
+          graph: args.graph === true,
+        });
+        return { ok: true, output: map.output };
+      }
       case 'run_command': {
-        const secs = Math.min(60, Math.max(1, Number(args.timeout_seconds ?? 20)));
-        return await runCommand(String(args.command ?? ''), secs * 1000, ctx.defaultTimeoutMs);
+        const secs = Math.min(120, Math.max(1, Number(args.timeout_seconds ?? 20)));
+        return await runCommand(String(args.command ?? ''), secs * 1000, ctx.cwd ?? shellCwd());
       }
       default:
         return { ok: false, output: `Unknown tool: ${name}` };
@@ -174,173 +230,531 @@ export function executorStatus(): ExecutorMode {
   return nativeExecutor() ? 'native' : 'builtin';
 }
 
-/**
- * Interactive runner for the Terminal tab. Uses the exact same engine as the
- * agent's run_command tool — a real native executor on Android when one is
- * present (copper-exec bridge), otherwise the sandboxed built-in mini-shell.
- */
-export async function runInteractiveCommand(
-  command: string,
-  timeoutMs = 20_000
-): Promise<{ output: string; ok: boolean; mode: ExecutorMode; ms: number }> {
-  const started = Date.now();
-  const res = await runCommand(command.trim(), timeoutMs, timeoutMs);
-  return {
-    output: res.output,
-    ok: res.ok,
-    mode: executorStatus(),
-    ms: Date.now() - started,
-  };
-}
-
 function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout: string; exit: number }>) | null {
   if (Platform.OS !== 'android') return null;
+  // 1) the compiled local module (modules/copper-pty) — the supported path.
+  const pty = copperPty;
+  if (pty && typeof pty.exec === 'function') {
+    return (cmd: string, timeoutMs: number) =>
+      Promise.resolve(pty.exec(cmd, timeoutMs)).then((r) => ({
+        stdout: String(r?.stdout ?? ''),
+        exit: Number(r?.exit ?? 0),
+      }));
+  }
+  // 2) legacy global probes, kept for hand-rolled dev builds.
   const g = globalThis as any;
   const exec =
-    g.CopperExec?.exec ??
-    g.expo?.modules?.CopperExec?.exec ??
-    // Legacy bridge name retained so existing development builds keep working.
-    g.AuroraExec?.exec ??
-    g.expo?.modules?.AuroraExec?.exec ??
-    g.expo?.modules?.ExpoFileSystem?.exec ??
-    null;
+    g.CopperExec?.exec ?? g.expo?.modules?.CopperExec?.exec ?? null;
   if (typeof exec !== 'function') return null;
   return (cmd: string, timeoutMs: number) =>
     exec(cmd, timeoutMs).then((r: any) => ({ stdout: String(r?.stdout ?? r ?? ''), exit: Number(r?.exit ?? r?.code ?? 0) }));
 }
 
-async function runCommand(command: string, timeoutMs: number, _cap?: number): Promise<ToolResult> {
-  const cwdLabel = currentRoot().tier === 'granted' ? 'granted storage root' : 'app sandbox';
+/* --------------------------------- shell cwd -------------------------------- */
 
+/**
+ * The shell's working directory, relative to the jailed storage root. Shared by
+ * the agent's `run_command` tool and the interactive Terminal tab so `cd` in
+ * one place is visible in the other.
+ */
+let cwdState = '.';
+
+export function shellCwd(): string {
+  return cwdState;
+}
+
+export function setShellCwd(dir: string): void {
+  cwdState = normalizeRel(dir || '.');
+}
+
+function normalizeRel(p: string): string {
+  const parts: string[] = [];
+  for (const seg of String(p ?? '').split('/')) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') parts.pop();
+    else parts.push(seg);
+  }
+  return parts.length ? parts.join('/') : '.';
+}
+
+/** Resolve a possibly-relative path against the shell cwd. */
+export function resolveFromCwd(p: string, cwd: string = cwdState): string {
+  const raw = String(p ?? '').trim().replace(/^["']|["']$/g, '');
+  if (!raw || raw === '.') return cwd === '.' ? '.' : cwd;
+  if (raw === '~') return '.';
+  const base = raw.startsWith('/') ? '' : cwd === '.' ? '' : `${cwd}/`;
+  return normalizeRel(`${base}${raw.replace(/^\//, '')}`) || '.';
+}
+
+/* ------------------------------- run_command -------------------------------- */
+
+/**
+ * Public shell entrypoint — used by both the agent's `run_command` tool and the
+ * interactive Terminal tab so they share one executor, one sandbox and one cwd.
+ *
+ * Returns `{ ok, output, exit }`; `output` is the combined stdout/stderr text.
+ */
+export async function runShellCommand(
+  command: string,
+  timeoutMs = 20_000,
+  cwd: string = cwdState,
+  /** Emit ANSI colours (interactive terminal). The agent always passes false. */
+  color = false
+): Promise<ToolResult & { exit: number }> {
+  const res = await runCommand(command, timeoutMs, cwd, color);
+  return { ...res, exit: res.ok ? 0 : 1 };
+}
+
+/** Command names the built-in shell understands — used for tab completion. */
+export const SHELL_BUILTINS = [
+  'ls', 'cd', 'pwd', 'cat', 'head', 'tail', 'wc', 'echo', 'grep', 'touch',
+  'mkdir', 'rm', 'mv', 'cp', 'find', 'tree', 'date', 'whoami', 'uname', 'env',
+  'clear', 'history', 'help', 'write', 'stat', 'du', 'basename', 'dirname',
+  'true', 'false', 'which', 'map', 'sort', 'uniq',
+  'pkg', 'plugin', 'sym', 'deps',
+] as const;
+
+async function runCommand(command: string, timeoutMs: number, cwd: string = cwdState, color = false): Promise<ToolResult> {
   const real = nativeExecutor();
   if (real) {
+    const dir = resolveFromCwd('.', cwd);
     try {
-      const withCd = `cd "$(getcwd 2>/dev/null || echo .)" 2>/dev/null; ${command}; echo "__EXIT:$?"`;
+      const withCd = dir && dir !== '.' ? `cd "${dir}" 2>/dev/null || cd "$(pwd)"; ${command}; echo "__EXIT:$?"` : `${command}; echo "__EXIT:$?"`;
       const r = await Promise.race([
         real(withCd, timeoutMs),
         new Promise<{ stdout: string; exit: number }>((_, rej) =>
           setTimeout(() => rej(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs + 1500)
         ),
       ]);
+      const out = String(r.stdout ?? '').replace(/__EXIT:(\d+)\s*$/, '');
+      const exit = Number(/__EXIT:(\d+)/.exec(String(r.stdout ?? ''))?.[1] ?? r.exit ?? 0);
       return {
-        ok: r.exit === 0,
-        output: r.stdout.length > 32_000 ? `${r.stdout.slice(0, 16_000)}\n…[truncated]…\n${r.stdout.slice(-16_000)}` : r.stdout,
+        ok: exit === 0,
+        output: out.length > 32_000 ? `${out.slice(0, 16_000)}\n…[truncated]…\n${out.slice(-16_000)}` : out,
       };
     } catch (e) {
       return { ok: false, output: `Command failed: ${(e as Error).message}` };
     }
   }
-
-  // Simulated tier — honest about what it is, still useful.
-  return simulateShell(command, cwdLabel);
+  // Built-in tier — honest about what it is, still useful.
+  return simulateShell(command, cwd, color);
 }
 
-/* --------------------------- simulated mini-shell -------------------------- */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-function simulateShell(command: string, cwdLabel: string): Promise<ToolResult> {
-  return (async () => {
-    const parts = tokenize(command.trim());
-    if (parts.length === 0) return { ok: false, output: 'Empty command.' };
-    const [cmd, ...rest] = parts;
+/* --------------------------- built-in mini-shell ---------------------------- */
 
-    const joinRest = rest.join(' ');
-    const flags = rest.filter((r) => r.startsWith('-'));
-    const operands = rest.filter((r) => !r.startsWith('-'));
-    const firstOp = operands[0] ?? '';
+/**
+ * A small POSIX-flavoured shell that runs entirely in JS against the jailed
+ * storage root. Supports:
+ *   - sequencing with `;` and `&&`
+ *   - a single pipe stage (`| wc -l`, `| head`, `| tail`, `| grep`)
+ *   - quoting, `cd` with persistent state, and path resolution
+ * It is *not* a Linux userland — see docs/TERMINAL-AND-CODING-AGENTS.md for the
+ * honest comparison with Termux / WebContainers / a native exec module.
+ */
+async function simulateShell(rawCommand: string, cwd: string, color = false): Promise<ToolResult> {
+  const command = expandAlias(rawCommand.trim(), await loadPlugins());
+  if (!command) return { ok: false, output: 'Empty command.' };
 
-    try {
-      switch (cmd) {
-        case 'pwd':
-          return { ok: true, output: `/ (sandbox: ${cwdLabel})` };
-        case 'ls': {
-          const out = await listAgentDir(firstOp || '.');
-          return { ok: true, output: out };
-        }
-        case 'cat': {
-          if (!firstOp) return { ok: false, output: 'cat: missing operand' };
-          const out = await readAgentFile(firstOp, 256 * 1024);
-          return { ok: true, output: out };
-        }
-        case 'head': {
-          const n = Number((flags.find((f) => /^-n?\d+$|^-\d+$/.test(f)) ?? '-10').replace(/[^0-9]/g, '')) || 10;
-          const text = await readAgentFile(firstOp, 1024 * 1024);
-          return { ok: true, output: text.split('\n').slice(0, n).join('\n') };
-        }
-        case 'tail': {
-          const n = Number((flags.find((f) => /^-n?\d+$|^-\d+$/.test(f)) ?? '-10').replace(/[^0-9]/g, '')) || 10;
-          const text = await readAgentFile(firstOp, 1024 * 1024);
-          const lines = text.split('\n');
-          return { ok: true, output: lines.slice(Math.max(0, lines.length - n)).join('\n') };
-        }
-        case 'wc': {
-          const text = await readAgentFile(firstOp, 1024 * 1024);
-          const lines = text.split('\n').length;
-          const words = text.split(/\s+/).filter(Boolean).length;
-          return { ok: true, output: `${flags.includes('-l') ? `${lines}` : `${lines} ${words} ${text.length}`} ${firstOp}` };
-        }
-        case 'echo':
-          return { ok: true, output: joinRest.replace(/^["']|["']$/g, '') };
-        case 'grep': {
-          const pattern = operands[0] ?? '';
-          const file = operands[1];
-          if (!pattern) return { ok: false, output: 'grep: missing pattern' };
-          const sources = file ? [file] : (await walkAll('.')).slice(0, 200);
-          const results: string[] = [];
-          for (const src of sources) {
-            try {
-              const text = await readAgentFile(src, 1024 * 1024);
-              text.split('\n').forEach((line, i) => {
-                if (line.toLowerCase().includes(pattern.toLowerCase().replace(/^["']|["']$/g, ''))) {
-                  results.push(`${file ? '' : `${src}:`}${i + 1}: ${line}`);
-                }
-              });
-            } catch {
-              /* skip unreadable */
-            }
-          }
-          return { ok: results.length > 0, output: results.slice(0, 100).join('\n') || '(no matches)' };
-        }
-        case 'touch': {
-          if (!firstOp) return { ok: false, output: 'touch: missing operand' };
-          await writeAgentFile(firstOp, '').catch(async () => writeAgentFile(firstOp, ''));
-          return { ok: true, output: `touched ${firstOp}` };
-        }
-        case 'mkdir':
-          return { ok: true, output: await mkdirAgent(firstOp) };
-        case 'rm': {
-          const target = operands[0];
-          if (!target) return { ok: false, output: 'rm: missing operand' };
-          return { ok: true, output: await deleteAgentPath(target) };
-        }
-        case 'mv':
-        case 'cp': {
-          const [from, to] = operands;
-          if (!from || !to) return { ok: false, output: `${cmd}: needs <src> <dst>` };
-          const content = await readAgentFile(from, 1024 * 1024);
-          await writeAgentFile(to, content);
-          if (cmd === 'mv') await deleteAgentPath(from);
-          return { ok: true, output: `${cmd === 'mv' ? 'Moved' : 'Copied'} ${from} → ${to}` };
-        }
-        case 'find': {
-          const all = await walkAll(firstOp || '.');
-          return { ok: true, output: all.slice(0, 300).join('\n') || '(no files)' };
-        }
-        case 'help':
-          return {
-            ok: true,
-            output:
-              'Built-in shell (sandboxed): ls cat head tail wc echo grep touch mkdir rm mv cp find pwd help.\nFull native execution unlocks with an executor grant on Android.',
-          };
-        default:
-          return {
-            ok: false,
-            output: `${cmd}: command not available in the sandboxed shell. Built-ins: ls cat head tail wc echo grep touch mkdir rm mv cp find pwd help.`,
-          };
-      }
-    } catch (e) {
-      return { ok: false, output: `${cmd}: ${(e as Error).message}` };
+  // Sequencing: `a && b` runs b only if a succeeded; `a ; b` always runs b.
+  const segments = splitSequence(command);
+  if (segments.length > 1) {
+    let lastOk = true;
+    const chunks: string[] = [];
+    for (const seg of segments) {
+      if (seg.op === '&&' && !lastOk) continue;
+      const r = await simulateShell(seg.text, cwd, color);
+      lastOk = r.ok;
+      if (r.output) chunks.push(r.output);
     }
-  })();
+    return { ok: lastOk, output: chunks.join('\n') };
+  }
+
+  const [beforePipe, ...pipeStages] = splitPipes(command);
+  let result = await execOne(beforePipe, cwd, color);
+  for (const stage of pipeStages) {
+    result = await execPipeStage(stage, result.output, color);
+  }
+  return result;
+}
+
+interface Segment {
+  op: 'start' | ';' | '&&';
+  text: string;
+}
+
+function splitSequence(cmd: string): Segment[] {
+  const out: Segment[] = [];
+  let cur = '';
+  let quote: string | null = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    const next = cmd[i + 1];
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === '&') {
+      if (next === '&') {
+        out.push({ op: out.length ? '&&' : 'start', text: cur.trim() });
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += ch;
+      continue;
+    }
+    if (ch === ';') {
+      out.push({ op: out.length ? ';' : 'start', text: cur.trim() });
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push({ op: out.length ? ';' : 'start', text: cur.trim() });
+  return out.filter((s) => s.text);
+}
+
+function splitPipes(cmd: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let quote: string | null = null;
+  for (const ch of cmd) {
+    if (quote) {
+      cur += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+      continue;
+    }
+    if (ch === '|') {
+      out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+async function execPipeStage(stage: string, input: string, color = false): Promise<ToolResult> {
+  const parts = tokenize(stage);
+  const [cmd, ...rest] = parts;
+  const n = Number((rest.find((f) => /^-n?\d+$/.test(f)) ?? '').replace(/[^0-9]/g, '')) || 10;
+  const lines = input.split('\n');
+  switch (cmd) {
+    case 'wc':
+      return { ok: true, output: rest.includes('-l') ? String(lines.filter(Boolean).length) : `${lines.length} ${input.split(/\s+/).filter(Boolean).length} ${input.length}` };
+    case 'head':
+      return { ok: true, output: lines.slice(0, n).join('\n') };
+    case 'tail':
+      return { ok: true, output: lines.slice(Math.max(0, lines.length - n)).join('\n') };
+    case 'grep': {
+      const pattern = rest.filter((r) => !r.startsWith('-'))[0] ?? '';
+      const matches = lines.filter((l) => l.toLowerCase().includes(pattern.toLowerCase()));
+      const shown = color
+        ? matches.map((l) => l.replace(new RegExp(escapeRegExp(pattern), 'gi'), (m) => sgrMatch(m, true)))
+        : matches;
+      return { ok: matches.length > 0, output: shown.slice(0, 200).join('\n') || '' };
+    }
+    case 'sort':
+      return { ok: true, output: [...lines].sort().join('\n') };
+    case 'uniq':
+      return { ok: true, output: lines.filter((l, i) => l !== lines[i - 1]).join('\n') };
+    default:
+      return { ok: false, output: `${cmd}: not supported as a pipe stage (wc, head, tail, grep, sort, uniq)` };
+  }
+}
+
+/* SGR helpers — only ever applied when the caller asked for colour. */
+const sgrDir = (s: string, color: boolean) => (color ? `\x1b[1;34m${s}\x1b[0m` : s);
+const sgrMatch = (s: string, color: boolean) => (color ? `\x1b[1;31m${s}\x1b[0m` : s);
+const sgrOk = (s: string, color: boolean) => (color ? `\x1b[32m${s}\x1b[0m` : s);
+
+async function execOne(command: string, cwd: string, color = false): Promise<ToolResult> {
+  const parts = tokenize(command);
+  if (!parts.length) return { ok: false, output: 'Empty command.' };
+  const [cmd, ...rest] = parts;
+  const joinRest = rest.join(' ');
+  const flags = rest.filter((r) => r.startsWith('-'));
+  const operands = rest.filter((r) => !r.startsWith('-'));
+  const firstOp = operands[0] ?? '';
+  const at = (p: string) => resolveFromCwd(p, cwd);
+
+  try {
+    switch (cmd) {
+      case 'pwd':
+        return { ok: true, output: `/${cwd === '.' ? '' : cwd}` };
+      case 'cd': {
+        const target = firstOp ? at(firstOp) : '.';
+        if (target !== '.') {
+          const st = await statAgentPath(target);
+          if (!/directory/i.test(st)) return { ok: false, output: `cd: ${firstOp}: not a directory` };
+        }
+        setShellCwd(target);
+        cwdState = target;
+        return { ok: true, output: '' };
+      }
+      case 'ls': {
+        const raw = await listAgentDir(at(firstOp || '.'));
+        if (!color) return { ok: true, output: raw };
+        const out = raw
+          .split('\n')
+          .map((l, i) => {
+            if (i === 0 || !l.startsWith('d ')) return l;
+            return `d ${sgrDir(l.slice(2), true)}`;
+          })
+          .join('\n');
+        return { ok: true, output: out };
+      }
+      case 'tree': {
+        const root = at(firstOp || '.');
+        const all = await walkAll(root);
+        const lines = all.slice(0, 400).map((f) => (color && f.endsWith('/') ? sgrDir(f, true) : f));
+        return { ok: true, output: lines.length ? `${root}\n${lines.join('\n')}` : `${root} (empty)` };
+      }
+      case 'map': {
+        const root = at(firstOp || '.');
+        const filterArg = operands[1];
+        const res = await buildRepoMap({ root, filter: filterArg, maxFiles: 200, maxChars: 9_000 });
+        return { ok: true, output: res.output };
+      }
+      case 'cat': {
+        if (!firstOp) return { ok: false, output: 'cat: missing operand' };
+        const chunks: string[] = [];
+        for (const op of operands) chunks.push(await readAgentFile(at(op), 512 * 1024));
+        return { ok: true, output: chunks.join('\n') };
+      }
+      case 'head': {
+        const n = Number((flags.find((f) => /^-n?\d+$/.test(f)) ?? '-10').replace(/[^0-9]/g, '')) || 10;
+        const text = await readAgentFile(at(firstOp), 1024 * 1024);
+        return { ok: true, output: text.split('\n').slice(0, n).join('\n') };
+      }
+      case 'tail': {
+        const n = Number((flags.find((f) => /^-n?\d+$/.test(f)) ?? '-10').replace(/[^0-9]/g, '')) || 10;
+        const text = await readAgentFile(at(firstOp), 1024 * 1024);
+        const lines = text.split('\n');
+        return { ok: true, output: lines.slice(Math.max(0, lines.length - n)).join('\n') };
+      }
+      case 'wc': {
+        const text = await readAgentFile(at(firstOp), 1024 * 1024);
+        const lines = text.split('\n').length;
+        const words = text.split(/\s+/).filter(Boolean).length;
+        return { ok: true, output: `${flags.includes('-l') ? `${lines}` : `${lines} ${words} ${text.length}`} ${firstOp}` };
+      }
+      case 'sort': {
+        const text = await readAgentFile(at(firstOp), 1024 * 1024);
+        const lines = text.split('\n');
+        lines.sort();
+        if (flags.includes('-r')) lines.reverse();
+        return { ok: true, output: lines.join('\n') };
+      }
+      case 'uniq': {
+        const text = await readAgentFile(at(firstOp), 1024 * 1024);
+        const lines = text.split('\n');
+        const out: string[] = [];
+        let count = 1;
+        for (let i = 1; i <= lines.length; i++) {
+          if (i < lines.length && lines[i] === lines[i - 1]) {
+            count++;
+            continue;
+          }
+          out.push(flags.includes('-c') ? `${String(count).padStart(4)} ${lines[i - 1]}` : lines[i - 1]);
+          count = 1;
+        }
+        return { ok: true, output: out.join('\n') };
+      }
+      case 'du': {
+        const target = at(firstOp || '.');
+        const files = await walkAll(target);
+        return { ok: true, output: `${files.length} file(s) under /${target === '.' ? '' : target}` };
+      }
+      case 'echo':
+        return { ok: true, output: joinRest.replace(/^["']|["']$/g, '') };
+      case 'write': {
+        const [path, ...body] = rest;
+        if (!path) return { ok: false, output: 'write: usage — write <path> <text…>' };
+        return { ok: true, output: await writeAgentFile(at(path), body.join(' ').replace(/^["']|["']$/g, '')) };
+      }
+      case 'grep': {
+        const pattern = (operands[0] ?? '').replace(/^["']|["']$/g, '');
+        const file = operands[1];
+        if (!pattern) return { ok: false, output: 'grep: missing pattern' };
+        const sources = file ? [at(file)] : (await walkAll(cwd)).slice(0, 300);
+        const results: string[] = [];
+        for (const src of sources) {
+          try {
+            const text = await readAgentFile(src, 1024 * 1024);
+            text.split('\n').forEach((line, i) => {
+              if (line.toLowerCase().includes(pattern.toLowerCase())) {
+                const shown = color
+                  ? line.replace(new RegExp(escapeRegExp(pattern), 'gi'), (m) => sgrMatch(m, true))
+                  : line;
+                results.push(`${file ? '' : `${src}:`}${i + 1}: ${shown}`);
+              }
+            });
+          } catch {
+            /* skip unreadable */
+          }
+        }
+        return { ok: results.length > 0, output: results.slice(0, 150).join('\n') || '(no matches)' };
+      }
+      case 'touch': {
+        if (!firstOp) return { ok: false, output: 'touch: missing operand' };
+        return { ok: true, output: await writeAgentFile(at(firstOp), '') };
+      }
+      case 'mkdir':
+        return { ok: true, output: await mkdirAgent(at(firstOp)) };
+      case 'stat':
+        return { ok: true, output: await statAgentPath(at(firstOp || '.')) };
+      case 'rm': {
+        const target = operands[0];
+        if (!target) return { ok: false, output: 'rm: missing operand' };
+        return { ok: true, output: await deleteAgentPath(at(target)) };
+      }
+      case 'mv':
+      case 'cp': {
+        const [from, to] = operands;
+        if (!from || !to) return { ok: false, output: `${cmd}: needs <src> <dst>` };
+        const content = await readAgentFile(at(from), 4 * 1024 * 1024);
+        await writeAgentFile(at(to), content);
+        if (cmd === 'mv') await deleteAgentPath(at(from));
+        return { ok: true, output: `${cmd === 'mv' ? 'Moved' : 'Copied'} ${from} → ${to}` };
+      }
+      case 'find': {
+        const all = await walkAll(at(firstOp || '.'));
+        const pattern = operands[1];
+        const filtered = pattern ? all.filter((f) => f.includes(pattern.replace(/^["']|["']$/g, ''))) : all;
+        return { ok: true, output: filtered.slice(0, 400).join('\n') || '(no files)' };
+      }
+      case 'basename':
+        return { ok: true, output: at(firstOp).split('/').pop() ?? '' };
+      case 'dirname': {
+        const p = at(firstOp).split('/');
+        p.pop();
+        return { ok: true, output: p.join('/') || '.' };
+      }
+      case 'date':
+        return { ok: true, output: new Date().toString() };
+      case 'whoami':
+        return { ok: true, output: 'copper' };
+      case 'uname':
+        return { ok: true, output: `Copper-Sandbox ${executorStatus()} js` };
+      case 'env':
+        return {
+          ok: true,
+          output: `PWD=/${cwd === '.' ? '' : cwd}\nHOME=/(storage root: ${currentRoot().tier === 'granted' ? 'user-granted folder' : 'app sandbox'})\nSHELL=copper-sh\nEXECUTOR=${executorStatus()}`,
+        };
+      case 'which':
+        return {
+          ok: (SHELL_BUILTINS as readonly string[]).includes(firstOp),
+          output: (SHELL_BUILTINS as readonly string[]).includes(firstOp) ? `${firstOp}: shell builtin` : `${firstOp}: not found`,
+        };
+      case 'true':
+        return { ok: true, output: '' };
+      case 'false':
+        return { ok: false, output: '' };
+      case 'clear':
+        return { ok: true, output: '\u001bc' };
+      case 'help':
+        return {
+          ok: true,
+          output: [
+            'copper-sh — sandboxed shell over the app storage root.',
+            '',
+            '  navigation   cd  pwd  ls  tree  find  du  stat',
+            '  project      map [dir] [filter]   outline of files + symbols with line numbers',
+            '               sym <name> · deps [dir]   declaration search · import graph',
+            '  packages     pkg list|install|remove   bundled pure-JS tools (jq, bc, …)',
+            '  plugins      plugin list|create|reload|disable   aliases, syntax packs, chips',
+            '  files        cat  head  tail  wc  touch  write  mkdir  rm  mv  cp',
+            '  text         echo  grep  sort  uniq',
+            '  misc         date  whoami  uname  env  which  clear  help',
+            '',
+            '  sequencing   a && b     a ; b     a | wc -l',
+            '',
+            `Executor: ${executorStatus() === 'native' ? 'native (/system/bin/sh via the copper-exec module)' : 'built-in JS shell'}.`,
+            'Built-ins only — no package manager, no downloaded binaries (Android W^X).',
+          ].join('\n'),
+        };
+      case 'pkg': {
+        const sub = firstOp || 'list';
+        if (sub === 'install') return { ok: true, output: await pkgInstall(operands.slice(1)) };
+        if (sub === 'remove' || sub === 'rm') return { ok: true, output: await pkgRemove(operands.slice(1)) };
+        return { ok: true, output: await pkgList() };
+      }
+      case 'plugin': {
+        const sub = firstOp || 'list';
+        const plugins = await loadPlugins(sub === 'reload');
+        if (sub === 'reload') return { ok: true, output: `Reloaded ${plugins.length} plugin manifest(s) from .copper/plugins/.` };
+        if (sub === 'create') {
+          const name = operands[1];
+          if (!name) return { ok: false, output: 'plugin create <name>' };
+          const msg = await writeAgentFile(`.copper/plugins/${name}.json`, starterManifest(name));
+          return { ok: true, output: `${msg}\nEdit it (aliases, syntax pack, chips), then run \`plugin reload\`.` };
+        }
+        if (sub === 'disable' || sub === 'enable') {
+          const id = operands[1];
+          if (!id) return { ok: false, output: `plugin ${sub} <id>` };
+          await setPluginEnabled(id, sub === 'enable');
+          return { ok: true, output: `${id} ${sub}d.` };
+        }
+        if (!plugins.length) {
+          return { ok: true, output: 'No plugins yet. `plugin create mypack` writes a starter manifest in .copper/plugins/.' };
+        }
+        return {
+          ok: true,
+          output: plugins
+            .map((p) => {
+              const on = activePlugins(plugins).some((a) => a.id === p.id);
+              const m = p.manifest;
+              return `${on ? '[x]' : '[ ]'} ${p.id} — ${m.description ?? m.name}\n        aliases: ${Object.keys(m.aliases ?? {}).join(', ') || '-'} · syntax: ${m.syntax?.id ?? '-'} · chips: ${(m.chips ?? []).length}`;
+            })
+            .join('\n'),
+        };
+      }
+      case 'sym': {
+        if (!firstOp) return { ok: false, output: 'sym <name> — search declarations (functions, classes, types)' };
+        const hits = await searchSymbols(at('.'), firstOp);
+        if (!hits.length) return { ok: false, output: `sym: no declaration matches "${firstOp}"` };
+        return { ok: true, output: hits.map((h) => `${h.path}:${h.line}  ${h.name}`).join('\n') };
+      }
+      case 'deps': {
+        const edges = await importGraph(at(firstOp || '.'));
+        return { ok: true, output: edges.length ? edges.join('\n') : 'deps: no relative imports found under this path' };
+      }
+      default: {
+        const pkg = await pkgCommand(cmd);
+        if (pkg) {
+          try {
+            const out = await pkg.run(rest, { cwd, read: (r) => readAgentFile(at(r), 1024 * 1024) });
+            return { ok: true, output: out };
+          } catch (e) {
+            return { ok: false, output: `${cmd}: ${e instanceof Error ? e.message : String(e)}` };
+          }
+        }
+        return {
+          ok: false,
+          output: `${cmd}: command not found. Type \`help\` for built-ins, \`pkg list\` for installable tools.`,
+        };
+      }
+    }
+  } catch (e) {
+    return { ok: false, output: `${cmd}: ${(e as Error).message}` };
+  }
 }
 
 function tokenize(s: string): string[] {
@@ -366,21 +780,96 @@ function tokenize(s: string): string[] {
 
 async function walkAll(rel: string): Promise<string[]> {
   const files: string[] = [];
-  const walk = async (dir: string) => {
-    const listing = await listAgentDir(dir);
+  const walk = async (dir: string, depth = 0) => {
+    if (depth > 6) return;
+    let listing: string;
+    try {
+      listing = await listAgentDir(dir);
+    } catch {
+      return;
+    }
     for (const line of listing.split('\n').slice(1)) {
       const [kind, ...rest] = line.trim().split(/\s+/);
       const name = rest.join(' ');
       if (!name) continue;
       const child = dir === '.' || dir === '' ? name : `${dir}/${name}`;
-      if (kind === 'd') await walk(child);
+      if (kind === 'd') await walk(child, depth + 1);
       else files.push(child);
     }
   };
-  try {
-    await walk(safeRelPath(rel) || '.');
-  } catch {
-    /* root may be empty */
-  }
+  await walk(safeRelPath(rel) || '.');
   return files;
+}
+
+/* --------------------------------- zip_dir --------------------------------- */
+
+const ZIP_SKIP = new Set([
+  'node_modules', '.git', '.hg', 'dist', 'build', 'out', 'target', '.next',
+  '.expo', '.cache', '.gradle', '__pycache__', '.venv', 'coverage', '.turbo',
+  'Pods', 'vendor',
+]);
+const ZIP_MAX_FILES = 600;
+const ZIP_MAX_BYTES = 24 * 1024 * 1024;
+
+async function zipDirTool(dir: string, out: string | null): Promise<ToolResult> {
+  const root = (dir || '.').replace(/^\/+/, '') || '.';
+  const entries: ZipEntry[] = [];
+  let bytes = 0;
+  let stopped: string | null = null;
+
+  const visit = async (rel: string, depth: number): Promise<void> => {
+    if (stopped || depth > 8) return;
+    let listing;
+    try {
+      listing = await listAgentEntries(rel);
+    } catch (e) {
+      stopped = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    for (const e of listing) {
+      if (stopped) return;
+      const child = rel === '.' || rel === '' ? e.name : `${rel}/${e.name}`;
+      if (e.isDir) {
+        if (ZIP_SKIP.has(e.name) || e.name.startsWith('.')) continue;
+        entries.push({ name: `${child}/`, data: new Uint8Array(0) });
+        await visit(child, depth + 1);
+        continue;
+      }
+      if (entries.length >= ZIP_MAX_FILES) {
+        stopped = `stopped at ${ZIP_MAX_FILES} files`;
+        return;
+      }
+      try {
+        const data = await readAgentFileBytes(child, 4 * 1024 * 1024);
+        bytes += data.length;
+        if (bytes > ZIP_MAX_BYTES) {
+          stopped = `stopped at ${Math.round(ZIP_MAX_BYTES / 1024 / 1024)} MB`;
+          return;
+        }
+        entries.push({ name: child, data });
+      } catch (err) {
+        entries.push({ name: `${child}.unreadable.txt`, data: utf8Bytes(String(err)) });
+      }
+    }
+  };
+
+  await visit(root, 1);
+  if (!entries.length) {
+    return { ok: false, output: stopped ? `Nothing packed: ${stopped}` : `Nothing to pack under "${root}".` };
+  }
+
+  const folderName = root === '.' ? 'project' : root.split('/').pop() ?? 'project';
+  const outPath = (out ?? `${folderName}.zip`).replace(/^\/+/, '');
+  const archive = zipStore(entries);
+  const msg = await writeAgentFileBytes(outPath, archive);
+  return {
+    ok: true,
+    output: [
+      `${msg} (${entries.length} entries, ${Math.round(archive.length / 1024)} KB).`,
+      `The chat shows it as a downloadable file chip — the user taps it to save or share.`,
+      stopped ? `Note: ${stopped}.` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  };
 }

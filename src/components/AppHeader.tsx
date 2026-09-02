@@ -13,6 +13,7 @@ export function AppHeader({
   right,
   large,
   transparent,
+  tint,
 }: {
   title: string;
   subtitle?: string;
@@ -20,6 +21,8 @@ export function AppHeader({
   right?: React.ReactNode;
   large?: boolean;
   transparent?: boolean;
+  /** Section identity colour — gives each settings screen its own hue. */
+  tint?: string;
 }) {
   const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -47,8 +50,8 @@ export function AppHeader({
           <View style={{ width: 68, alignItems: 'flex-start' }}>
             {onBack ? (
               <PressableScale haptic="light" onPress={onBack} scale={0.9}>
-                <View style={[styles.backBtn, { backgroundColor: colors.surface2 }]}>
-                  <Ionicons name="chevron-back" size={22} color={colors.text} />
+                <View style={[styles.backBtn, { backgroundColor: tint ? `${tint}1A` : colors.surface2 }]}>
+                  <Ionicons name="chevron-back" size={22} color={tint ?? colors.text} />
                 </View>
               </PressableScale>
             ) : null}
@@ -65,6 +68,7 @@ export function AppHeader({
             >
               {title}
             </Text>
+            {tint ? <View style={[styles.tintBar, { backgroundColor: tint }]} /> : null}
             {subtitle ? (
               <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>
                 {subtitle}
@@ -96,4 +100,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tintBar: { width: 26, height: 3, borderRadius: 2, marginTop: 4, opacity: 0.9 },
 });

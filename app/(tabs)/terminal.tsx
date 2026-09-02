@@ -1,221 +1,216 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInLeft, FadeInRight, FadeInDown } from 'react-native-reanimated';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme, radius, spacing } from '@/src/theme';
-import { useChatsStore } from '@/src/store/chats';
-import { useTerminalStore } from '@/src/store/terminal';
-import { ToolEventCard } from '@/src/components/AgentPanels';
-import { Terminal, ArrowUp } from '@/src/components/Icons';
+import { Segmented } from '@/src/components/ui';
 import { PressableScale } from '@/src/components/PressableScale';
-import { executorStatus, runInteractiveCommand } from '@/src/agent/tools';
+import { TerminalView } from '@/src/components/TerminalView';
+import { ToolEventCard } from '@/src/components/AgentPanels';
+import { ConfirmSheet } from '@/src/components/ConfirmSheet';
+import { Terminal } from '@/src/components/Icons';
+import { useChatsStore } from '@/src/store/chats';
+import { useSettingsStore } from '@/src/store/settings';
+import { executorStatus, shellCwd } from '@/src/agent/tools';
+import { sessionAvailable } from '@/modules/copper-pty/src';
+import { currentRoot } from '@/src/agent/fs';
+import { haptic } from '@/src/utils/haptics';
 
-const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string;
+type Mode = 'shell' | 'agent';
 
-function StatusPill({ mode }: { mode: 'native' | 'builtin' }) {
+/**
+ * Terminal tab.
+ *
+ * Two views of the same sandbox:
+ *  - **Shell** — a real interactive REPL. You type, it runs, output streams
+ *    back. No Termux, no second app, no download: it uses the compiled-in
+ *    native executor when the device has it and a POSIX-flavoured JS shell
+ *    otherwise.
+ *  - **Agent** — the audit log of every command the agent ran on your behalf,
+ *    with the exact output and exit status it saw.
+ */
+export default function TerminalScreen() {
   const { colors } = useTheme();
-  const native = mode === 'native';
+  const insets = useSafeAreaInsets();
+  const [mode, setMode] = useState<Mode>('shell');
+  const conversations = useChatsStore((s) => s.conversations);
+  const createConversation = useChatsStore((s) => s.createConversation);
+
+  const events = useMemo(
+    () =>
+      conversations
+        .flatMap((c) =>
+          c.messages.flatMap((m) =>
+            (m.toolEvents ?? []).filter((e) => e.kind === 'command').map((event) => ({ event, chat: c.title }))
+          )
+        )
+        .sort((a, b) => b.event.ts - a.event.ts),
+    [conversations]
+  );
+
+  const native = executorStatus() === 'native';
+  const root = currentRoot();
+
+  const askAgent = useCallback(
+    (transcript: string) => {
+      const tail = transcript.length > 4000 ? transcript.slice(-4000) : transcript;
+      const conv = createConversation(useSettingsStore.getState().activeModel);
+      const prefill = `Here is my terminal session. Explain what happened and tell me the next command to run.\n\n\`\`\`\n${tail}\n\`\`\``;
+      haptic('send');
+      router.push({ pathname: '/chat/[id]', params: { id: conv.id, prefill } });
+    },
+    [createConversation]
+  );
+
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        alignSelf: 'flex-start',
-        borderRadius: radius.full,
-        paddingHorizontal: spacing(2.4),
-        paddingVertical: 3,
-        backgroundColor: native ? 'rgba(61,122,70,0.14)' : 'rgba(176,124,34,0.16)',
-        marginTop: 4,
-      }}
-    >
-      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: native ? colors.success : colors.warning }} />
-      <Text style={{ color: native ? colors.success : colors.warning, fontSize: 11.5, fontWeight: '800' }}>
-        {native ? 'NATIVE SHELL' : 'SANDBOXED BUILT-INS'}
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View
+        style={{
+          paddingTop: insets.top + spacing(4),
+          paddingHorizontal: spacing(5),
+          paddingBottom: spacing(3),
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ color: colors.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 }}>Terminal</Text>
+          <View style={{ flex: 1 }} />
+          <PressableScale haptic="select" scale={0.9} onPress={() => router.push('/settings/shell')}>
+            <View style={[styles.iconBtn, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+              <Ionicons name="settings-outline" size={18} color={colors.textSub} />
+            </View>
+          </PressableScale>
+        </View>
+
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing(2.5) }}>
+          <StatusChip
+            color={native ? colors.success : colors.warning}
+            icon={native ? 'hardware-chip-outline' : 'code-slash'}
+            label={native ? (sessionAvailable() ? 'native shell + sessions' : 'copper-exec · native shell') : 'built-in sandbox shell'}
+          />
+          <StatusChip
+            color={root.tier === 'sandbox' ? colors.textSub : root.tier === 'managed' ? colors.warning : colors.success}
+            icon={root.tier === 'managed' ? 'key-outline' : root.tier === 'granted' ? 'folder-open-outline' : 'shield-checkmark-outline'}
+            label={
+              root.tier === 'managed'
+                ? root.uri.replace('file://', '').replace(/^\/storage\//, '')
+                : root.tier === 'granted'
+                  ? 'your folder'
+                  : 'app sandbox'
+            }
+          />
+          <StatusChip color={colors.accent} icon="terminal-outline" label={`/${shellCwd() === '.' ? '' : shellCwd()}`} mono />
+        </View>
+      </View>
+
+      <View style={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2.5) }}>
+        <Segmented<Mode>
+          options={[
+            { value: 'shell', label: 'Shell' },
+            { value: 'agent', label: `Agent log${events.length ? ` · ${events.length}` : ''}` },
+          ]}
+          value={mode}
+          onChange={(m) => {
+            setMode(m);
+            haptic('navigate');
+          }}
+        />
+      </View>
+
+      {mode === 'shell' ? (
+        <Animated.View entering={FadeInLeft.duration(180)} style={{ flex: 1 }}>
+          <TerminalView onAskAgent={askAgent} />
+        </Animated.View>
+      ) : (
+        <Animated.View entering={FadeInRight.duration(180)} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing(4), paddingBottom: 130, gap: spacing(3) }}>
+            {!events.length ? (
+              <View style={[styles.empty, { borderColor: colors.border, backgroundColor: colors.bgElevated }]}>
+                <Terminal size={28} color={colors.accent} />
+                <Text style={{ color: colors.text, fontWeight: '700' }}>No agent commands yet</Text>
+                <Text style={{ color: colors.textFaint, textAlign: 'center', lineHeight: 19 }}>
+                  Every command the agent runs is logged here with its real output and exit status — nothing is
+                  paraphrased.{'\n\n'}Try the <Text style={{ color: colors.accent, fontWeight: '700' }}>Shell</Text> tab to
+                  drive the same sandbox yourself.
+                </Text>
+              </View>
+            ) : (
+              events.map(({ event, chat }, i) => (
+                <Animated.View key={event.id} entering={i < 12 ? FadeInDown.delay(i * 35).duration(220) : undefined}>
+                  <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 11, marginBottom: 5, fontWeight: '600' }}>
+                    {chat}
+                  </Text>
+                  <ToolEventCard ev={event} />
+                </Animated.View>
+              ))
+            )}
+          </ScrollView>
+        </Animated.View>
+      )}
+
+      {/* Shared with the agent loop — one confirmation surface, one rule set. */}
+      <ConfirmSheet />
+    </View>
+  );
+}
+
+function StatusChip({
+  color,
+  icon,
+  label,
+  mono,
+}: {
+  color: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  mono?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.statusChip, { borderColor: colors.border, backgroundColor: colors.surface2 }]}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color }} />
+      <Ionicons name={icon} size={11} color={colors.textSub} />
+      <Text
+        numberOfLines={1}
+        style={{
+          color: colors.textSub,
+          fontSize: 11,
+          fontWeight: '700',
+          fontFamily: mono ? Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) : undefined,
+        }}
+      >
+        {label}
       </Text>
     </View>
   );
 }
 
-export default function TerminalScreen() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const conversations = useChatsStore((s) => s.conversations);
-  const manual = useTerminalStore((s) => s.entries);
-  const addEntry = useTerminalStore((s) => s.addEntry);
-  const clearManual = useTerminalStore((s) => s.clear);
-
-  const [input, setInput] = useState('');
-  const [running, setRunning] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
-  const mode = useMemo(() => executorStatus(), []);
-
-  const agentEvents = useMemo(
-    () =>
-      conversations
-        .flatMap((c) =>
-          c.messages.flatMap((m) =>
-            (m.toolEvents ?? [])
-              .filter((e) => e.kind === 'command')
-              .map((event) => ({ event, chat: c.title }))
-          )
-        )
-        .sort((a, b) => b.event.ts - a.event.ts)
-        .slice(0, 50),
-    [conversations]
-  );
-
-  const run = useCallback(
-    async (raw?: string) => {
-      const cmd = (raw ?? input).trim();
-      if (!cmd || running) return;
-      setInput('');
-      setRunning(true);
-      const res = await runInteractiveCommand(cmd);
-      addEntry({ cmd, output: res.output, ok: res.ok, mode: res.mode, ms: res.ms });
-      setRunning(false);
-    },
-    [addEntry, input, running]
-  );
-
-  const hasAnything = manual.length > 0 || agentEvents.length > 0;
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* header */}
-      <View style={{ paddingTop: insets.top + spacing(4), paddingHorizontal: spacing(5), paddingBottom: spacing(2) }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(2) }}>
-          <Text style={{ color: colors.text, fontSize: 28, fontWeight: '800', flex: 1 }}>Terminal</Text>
-          {manual.length ? (
-            <PressableScale
-              haptic="light"
-              scale={0.9}
-              onPress={() => {
-                clearManual();
-              }}
-            >
-              <View style={{ backgroundColor: colors.surface2, borderRadius: radius.full, paddingHorizontal: spacing(2.6), paddingVertical: spacing(1.2) }}>
-                <Text style={{ color: colors.textSub, fontSize: 12, fontWeight: '700' }}>Clear mine</Text>
-              </View>
-            </PressableScale>
-          ) : null}
-        </View>
-        <Text style={{ color: colors.textFaint, marginTop: 2 }}>Run commands yourself, or watch the agent work.</Text>
-        <StatusPill mode={mode} />
-      </View>
-
-      {/* output */}
-      <ScrollView
-        ref={scrollRef}
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2), gap: spacing(2.5) }}
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        showsVerticalScrollIndicator={false}
-      >
-        {!hasAnything ? (
-          <View style={[styles.empty, { borderColor: colors.border, backgroundColor: colors.bgElevated }]}>
-            <Terminal size={26} color={colors.accent} />
-            <Text style={{ color: colors.text, fontWeight: '700' }}>Type a command below</Text>
-            <Text style={{ color: colors.textFaint, textAlign: 'center', lineHeight: 18 }}>
-              {mode === 'native'
-                ? 'A native executor is available — commands run through a real shell.'
-                : 'Runs through the sandboxed shell for now: ls, cat, pwd, echo, grep, head, tail, wc, touch, mkdir, rm, mv, cp, find, help.'}
-            </Text>
-          </View>
-        ) : null}
-
-        {manual.map((e) => (
-          <View key={e.id} style={[styles.block, { backgroundColor: colors.surface2, borderLeftColor: colors.borderStrong }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[styles.prompt, { color: colors.accent }]}>$</Text>
-              <Text style={[styles.cmd, { color: colors.text }]} selectable>
-                {e.cmd}
-              </Text>
-            </View>
-            {e.output ? (
-              <Text style={[styles.out, { color: e.ok ? colors.textSub : colors.danger }]} selectable>
-                {e.output}
-              </Text>
-            ) : null}
-            <Text style={{ color: colors.textFaint, fontSize: 10.5, marginTop: 4 }}>
-              {e.ok ? 'exit 0' : 'exit 1'} · {e.ms}ms · {e.mode === 'native' ? 'native' : 'builtin'}
-            </Text>
-          </View>
-        ))}
-
-        {manual.length > 0 && agentEvents.length > 0 ? (
-          <View style={{ marginTop: spacing(2) }}>
-            <Text style={[styles.sectionLabel, { color: colors.textFaint }]}>AGENT RUNS</Text>
-          </View>
-        ) : null}
-
-        {agentEvents.map(({ event, chat }) => (
-          <View key={event.id}>
-            <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 11, marginBottom: 5 }}>
-              {chat}
-            </Text>
-            <ToolEventCard ev={event} />
-          </View>
-        ))}
-      </ScrollView>
-
-      {/* input */}
-      <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder={running ? 'Running…' : 'Type a command…'}
-          placeholderTextColor={colors.textFaint}
-          editable={!running}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="send"
-          blurOnSubmit={false}
-          onSubmitEditing={() => run()}
-          style={[styles.input, { color: colors.text }]}
-          selectionColor={colors.accent}
-        />
-        <PressableScale haptic="medium" scale={0.88} onPress={() => run()} disabled={running || !input.trim()}>
-          <View style={[styles.sendBtn, { backgroundColor: input.trim() && !running ? colors.accent : colors.surface3 }]}>
-            <ArrowUp size={18} color={input.trim() && !running ? colors.onAccent : colors.textFaint} strokeWidth={2.2} />
-          </View>
-        </PressableScale>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  iconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  statusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing(2.5),
+    paddingVertical: spacing(1.4),
+    maxWidth: '100%',
+  },
   empty: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radius.lg,
     padding: spacing(8),
     alignItems: 'center',
     gap: spacing(2),
-    marginTop: spacing(6),
+    marginTop: spacing(8),
   },
-  block: {
-    borderRadius: radius.md,
-    paddingVertical: spacing(2.4),
-    paddingHorizontal: spacing(3),
-    borderLeftWidth: 3,
-  },
-  prompt: { fontSize: 13, fontWeight: '800', fontFamily: MONO },
-  cmd: { fontSize: 13.5, fontWeight: '700', fontFamily: MONO, flex: 1 },
-  out: { fontSize: 12.5, lineHeight: 18, marginTop: 6, fontFamily: MONO },
-  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
-  inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(2),
-    marginHorizontal: spacing(3),
-    marginBottom: spacing(2),
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingLeft: spacing(3),
-    paddingRight: spacing(2),
-    paddingVertical: spacing(1.6),
-  },
-  input: { flex: 1, fontSize: 14.5, fontFamily: MONO, paddingVertical: spacing(1.4) },
-  sendBtn: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 });

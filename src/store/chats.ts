@@ -60,6 +60,18 @@ export interface Conversation {
   systemPromptOverride?: string;
   /** Optional workspace used to group this conversation and its artifacts. */
   projectId?: string;
+  /** Structured Project Summary State produced by a context compaction. */
+  summary?: string;
+  /** Message id everything up to (and including) is covered by `summary`. */
+  compactedBefore?: string;
+  summaryAt?: number;
+  archivedCount?: number;
+}
+
+export interface CompactionPatch {
+  summary: string;
+  compactedBefore?: string;
+  archivedCount?: number;
 }
 
 export interface ChatsState {
@@ -72,6 +84,8 @@ export interface ChatsState {
   setConversationModel: (id: string, model: ActiveModel) => void;
   setConversationSystemPrompt: (id: string, prompt: string | undefined) => void;
   setConversationProject: (id: string, projectId: string | undefined) => void;
+  applyCompaction: (id: string, patch: CompactionPatch) => void;
+  clearCompaction: (id: string) => void;
   touchConversation: (id: string) => void;
 
   appendMessage: (convId: string, msg: Omit<ChatMessage, 'id' | 'createdAt'>) => ChatMessage;
@@ -79,6 +93,15 @@ export interface ChatsState {
   deleteMessage: (convId: string, msgId: string) => void;
   /** Remove every message strictly after `msgId` (for edit / regenerate flows). */
   dropMessagesAfter: (convId: string, msgId: string) => void;
+
+  /**
+   * Returns an existing untouched draft ("New chat", zero messages) or creates
+   * one. The Chat tab uses this so it always has a real conversation to render
+   * without piling up empty ones.
+   */
+  ensureDraftConversation: (model: ActiveModel) => Conversation;
+  /** Drop zero-message drafts except `keepId`. */
+  pruneEmptyDrafts: (keepId?: string | null) => void;
 
   clearAllChats: () => void;
   importConversations: (convs: Conversation[]) => void;
@@ -135,6 +158,28 @@ export const useChatsStore = create<ChatsState>()(
           conversations: s.conversations.map((c) => c.id === id ? { ...c, projectId, updatedAt: Date.now() } : c),
         })),
 
+      applyCompaction: (id, patch) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  summary: patch.summary,
+                  compactedBefore: patch.compactedBefore,
+                  archivedCount: patch.archivedCount ?? c.archivedCount,
+                  summaryAt: Date.now(),
+                }
+              : c
+          ),
+        })),
+
+      clearCompaction: (id) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === id ? { ...c, summary: undefined, compactedBefore: undefined, archivedCount: undefined } : c
+          ),
+        })),
+
       touchConversation: (id) =>
         set((s) => ({
           conversations: s.conversations.map((c) =>
@@ -180,6 +225,28 @@ export const useChatsStore = create<ChatsState>()(
             const idx = c.messages.findIndex((m) => m.id === msgId);
             return idx === -1 ? c : { ...c, messages: c.messages.slice(0, idx + 1) };
           }),
+        })),
+
+      ensureDraftConversation: (model) => {
+        const existing = get().conversations.find(
+          (c) => c.messages.length === 0 && !c.pinned && c.title === 'New chat'
+        );
+        if (existing) {
+          if (model && JSON.stringify(existing.model) !== JSON.stringify(model)) {
+            set((s) => ({
+              conversations: s.conversations.map((c) => (c.id === existing.id ? { ...c, model } : c)),
+            }));
+          }
+          return existing;
+        }
+        return get().createConversation(model);
+      },
+
+      pruneEmptyDrafts: (keepId) =>
+        set((s) => ({
+          conversations: s.conversations.filter(
+            (c) => c.messages.length > 0 || c.pinned || c.id === keepId
+          ),
         })),
 
       clearAllChats: () => set({ conversations: [] }),

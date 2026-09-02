@@ -7,6 +7,8 @@ import { useTheme } from '@/src/theme';
 import { radius, spacing } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { haptics } from '@/src/utils/haptics';
+import { HighlightedCode, MONO_FONT } from '@/src/components/CodeHighlight';
+import { langLabel } from '@/src/utils/highlight';
 
 function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   const { colors } = useTheme();
@@ -44,7 +46,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
         }}
       >
         <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-          {lang || 'code'}
+          {langLabel(lang)}
         </Text>
         <PressableScale haptic="none" onPress={copy} scale={0.9}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -55,25 +57,16 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           </View>
         </PressableScale>
       </View>
-      <Text
-        selectable
-        style={{
-          color: colors.text,
-          fontFamily: Platform_fontMono,
-          fontSize: 13,
-          lineHeight: 20,
-          padding: spacing(3),
-        }}
-      >
-        {code.replace(/\n$/, '')}
-      </Text>
+      <View style={{ padding: spacing(3) }}>
+        <HighlightedCode
+          code={code.replace(/\n$/, '')}
+          lang={lang}
+          style={{ fontSize: 13, lineHeight: 20 }}
+        />
+      </View>
     </View>
   );
 }
-
-// System mono stack across platforms (SF Mono on iOS, Roboto Mono-ish on Android,
-// ui-monospace on web) — no font loading required.
-const Platform_fontMono: string | undefined = undefined;
 
 export function Markdown({ children: text }: { children: string }) {
   const { colors, scheme } = useTheme();
@@ -106,7 +99,7 @@ export function Markdown({ children: text }: { children: string }) {
       code_inline: {
         color: colors.accent,
         backgroundColor: colors.accentSoft,
-        fontFamily: Platform_fontMono,
+        fontFamily: MONO_FONT,
         fontSize: 13.5,
         borderRadius: 5,
         paddingHorizontal: 5,

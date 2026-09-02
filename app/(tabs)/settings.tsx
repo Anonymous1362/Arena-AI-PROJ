@@ -1,241 +1,269 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme, radius, spacing } from '@/src/theme';
+import { useTheme, radius, spacing, SECTION_TINTS } from '@/src/theme';
+import { enterStagger, isReducedMotion } from '@/src/theme/motion';
 import { useSettingsStore } from '@/src/store/settings';
-import { SectionHeader } from '@/src/components/ui';
+import { useChatsStore } from '@/src/store/chats';
+import { useProjectsStore } from '@/src/store/projects';
+import { Card, ListNavItem } from '@/src/components/ui';
 import { PressableScale } from '@/src/components/PressableScale';
+import { contextUsageFor } from '@/src/ai/context';
+import { formatContext, modelMeta, prettyModelName, thinkingLabel } from '@/src/ai/catalog';
+import { executorStatus } from '@/src/agent/tools';
+import { githubReady } from '@/src/agent/github';
 
-/* Accent palette that gives each settings row its own recognizable colour. */
-const TINT = {
-  agent: '#C15F3C',
-  providers: '#2F6FED',
-  generation: '#C2456D',
-  appearance: '#7C5CE0',
-  usage: '#1E9E6A',
-  data: '#C07A1F',
-  about: '#4C7FB4',
-} as const;
-
-function GroupCard({ children }: { children: React.ReactNode }) {
-  const { colors } = useTheme();
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderRadius: radius.lg,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: colors.border,
-        overflow: 'hidden',
-        paddingHorizontal: spacing(2),
-        marginHorizontal: -spacing(0.5),
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-function SettingRow({
-  icon,
-  tint,
-  label,
-  sublabel,
-  badge,
-  onPress,
-  last,
-}: {
+interface Row {
   icon: keyof typeof Ionicons.glyphMap;
   tint: string;
   label: string;
-  sublabel: string;
+  sub: string;
+  to: string;
   badge?: string | number;
-  onPress: () => void;
-  last?: boolean;
-}) {
-  const { colors } = useTheme();
-  return (
-    <PressableScale haptic="light" scale={0.99} opacityOnPress={0.8} onPress={onPress}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-          paddingVertical: spacing(3),
-          paddingHorizontal: spacing(1),
-          borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <View
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 11,
-            backgroundColor: `${tint}1F`,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Ionicons name={icon} size={17} color={tint} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.text, fontSize: 14.5, fontWeight: '700' }}>{label}</Text>
-          <Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>
-            {sublabel}
-          </Text>
-        </View>
-        {badge !== undefined ? (
-          <View style={{ backgroundColor: `${tint}1F`, borderRadius: radius.full, paddingHorizontal: 9, paddingVertical: 3 }}>
-            <Text style={{ color: tint, fontSize: 12, fontWeight: '800' }}>{String(badge)}</Text>
-          </View>
-        ) : null}
-        <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
-      </View>
-    </PressableScale>
-  );
+  value?: string;
+}
+
+interface Group {
+  title: string;
+  tint: string;
+  rows: Row[];
 }
 
 export default function SettingsScreen() {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const reduced = isReducedMotion();
+
   const profiles = useSettingsStore((s) => s.profiles);
   const activeModel = useSettingsStore((s) => s.activeModel);
+  const appearance = useSettingsStore((s) => s.appearance);
+  const generation = useSettingsStore((s) => s.generation);
+  const agentScope = useSettingsStore((s) => s.agentScope);
+  const contextCfg = useSettingsStore((s) => s.context);
+  const github = useSettingsStore((s) => s.github);
+  const conversationCount = useChatsStore((s) => s.conversations.length);
+  const projectCount = useProjectsStore((s) => s.projects.length);
 
-  const activeName = activeModel ? (profiles.find((x) => x.id === activeModel.profileId)?.name ?? 'Provider') : 'No model connected';
-  const activeModelId = activeModel?.model ?? null;
+  const profile = profiles.find((p) => p.id === activeModel?.profileId);
+  const meta = modelMeta(activeModel?.model ?? '');
+
+  const latest = useChatsStore((s) =>
+    [...s.conversations].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+  );
+  const usage = useMemo(() => contextUsageFor(latest, latest?.systemPromptOverride ?? generation.systemPrompt), [latest, generation.systemPrompt]);
+
+  const groups: Group[] = [
+    {
+      title: 'Model',
+      tint: SECTION_TINTS.models,
+      rows: [
+        {
+          icon: 'cube-outline',
+          tint: SECTION_TINTS.models,
+          label: 'Models & thinking',
+          sub: `${thinkingLabel(generation.thinking)} thinking · ${formatContext(meta.contextWindow)} window`,
+          to: '/settings/models',
+          value: activeModel?.model ? prettyModelName(activeModel.model) : undefined,
+        },
+        {
+          icon: 'key-outline',
+          tint: SECTION_TINTS.providers,
+          label: 'Providers & keys',
+          sub: 'Gemini, Claude, GPT, Grok, OpenRouter, Ollama…',
+          to: '/settings/api',
+          badge: profiles.length,
+        },
+        {
+          icon: 'options-outline',
+          tint: SECTION_TINTS.generation,
+          label: 'Generation',
+          sub: 'System prompt, temperature, output limit',
+          to: '/settings/generation',
+        },
+        {
+          icon: 'stats-chart-outline',
+          tint: SECTION_TINTS.usage,
+          label: 'Usage & limits',
+          sub: `${formatContext(usage.used)} used in the newest chat`,
+          to: '/settings/usage',
+        },
+      ],
+    },
+    {
+      title: 'Agent',
+      tint: SECTION_TINTS.agent,
+      rows: [
+        {
+          icon: 'hammer-outline',
+          tint: SECTION_TINTS.agent,
+          label: 'Agent & storage',
+          sub: agentScope.enabled ? 'Tools on · file access configured' : 'Tools off — chat only',
+          to: '/settings/agent',
+        },
+        {
+          icon: 'terminal-outline',
+          tint: SECTION_TINTS.shell,
+          label: 'Shell & sandbox',
+          sub: executorStatus() === 'native' ? 'Native executor detected' : 'Built-in sandboxed shell',
+          to: '/settings/shell',
+        },
+        {
+          icon: 'git-branch-outline',
+          tint: SECTION_TINTS.github,
+          label: 'GitHub connector',
+          sub: github.login ? `@${github.login} · ${github.owner}/${github.repo}` : 'Connect a token to commit to your repo',
+          to: '/settings/github',
+          badge: githubReady() && agentScope.githubTools ? 'on' : undefined,
+        },
+      ],
+    },
+    {
+      title: 'Experience',
+      tint: SECTION_TINTS.motion,
+      rows: [
+        {
+          icon: 'color-palette-outline',
+          tint: SECTION_TINTS.appearance,
+          label: 'Appearance',
+          sub: `${appearance.theme === 'system' ? 'System' : appearance.theme} theme · ${appearance.accent} accent`,
+          to: '/settings/appearance',
+        },
+        {
+          icon: 'pulse-outline',
+          tint: SECTION_TINTS.motion,
+          label: 'Motion & haptics',
+          sub: `${appearance.motion} motion · ${appearance.haptics} haptics`,
+          to: '/settings/motion',
+        },
+      ],
+    },
+    {
+      title: 'Data',
+      tint: SECTION_TINTS.data,
+      rows: [
+        {
+          icon: 'server-outline',
+          tint: SECTION_TINTS.data,
+          label: 'Data & privacy',
+          sub: `${conversationCount} chats · ${projectCount} projects`,
+          to: '/settings/data',
+        },
+        {
+          icon: 'information-circle-outline',
+          tint: SECTION_TINTS.about,
+          label: 'About Copper',
+          sub: 'Version, credits, licenses',
+          to: '/settings/about',
+        },
+      ],
+    },
+  ];
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: insets.top + spacing(4), paddingBottom: spacing(14) }}
+      contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: insets.top + spacing(4), paddingBottom: spacing(28) }}
       showsVerticalScrollIndicator={false}
+      keyboardDismissMode="on-drag"
     >
-      <Text style={{ color: colors.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.4 }}>
-        Settings
-      </Text>
-      <Text style={{ color: colors.textFaint, fontSize: 13.5, marginTop: 2, marginBottom: spacing(3) }}>
-        Model, tools, appearance and privacy — all on-device.
-      </Text>
+      <Animated.View entering={reduced ? undefined : FadeInDown.duration(280)}>
+        <Text style={{ color: colors.text, fontSize: 28, fontWeight: '800', letterSpacing: -0.6 }}>Settings</Text>
+        <Text style={{ color: colors.textFaint, fontSize: 13, marginTop: 4, marginBottom: spacing(4) }}>
+          Ten sections · everything stays on this device
+        </Text>
+      </Animated.View>
 
-      {/* active engine card */}
-      <PressableScale haptic="light" scale={0.985} opacityOnPress={0.92} onPress={() => router.push('/settings/api')}>
-        <LinearGradient
-          colors={[colors.userBubbleFrom, colors.userBubbleTo, colors.accent2]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ borderRadius: radius.lg, padding: spacing(4.5), marginBottom: spacing(2) }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3) }}>
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                backgroundColor: 'rgba(255,255,255,0.22)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Ionicons name={activeModel ? 'sparkles' : 'cloud-offline-outline'} size={20} color="#FFFFFF" />
+      {/* hero: the active brain */}
+      <Animated.View entering={reduced ? undefined : enterStagger(0, 0)}>
+        <PressableScale haptic="select" scale={0.99} onPress={() => router.push('/settings/models')}>
+          <LinearGradient
+            colors={[colors.userBubbleFrom, colors.userBubbleTo]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroTop}>
+              <View style={styles.heroIcon}>
+                <Ionicons name="sparkles" size={19} color={colors.userBubbleFrom} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' }}>
+                  Active brain
+                </Text>
+                <Text numberOfLines={1} style={{ color: '#FFFFFF', fontSize: 19, fontWeight: '800', marginTop: 2, letterSpacing: -0.3 }}>
+                  {activeModel?.model ? prettyModelName(activeModel.model) : 'No model selected'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontWeight: '700', letterSpacing: 0.4 }}>
-                ACTIVE ENGINE
-              </Text>
-              <Text numberOfLines={1} style={{ color: '#FFFFFF', fontSize: 17, fontWeight: '800', marginTop: 2 }}>
-                {activeName}
-              </Text>
-              <Text numberOfLines={1} style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12.5, marginTop: 1 }}>
-                {activeModelId ?? 'Connect a provider to start chatting'}
-              </Text>
+            <View style={styles.heroChips}>
+              <HeroChip label={profile?.name ?? 'no provider'} />
+              <HeroChip label={`${thinkingLabel(generation.thinking)} thinking`} />
+              <HeroChip label={`${formatContext(meta.contextWindow)} window`} />
+              <HeroChip label={agentScope.enabled ? 'agent on' : 'agent off'} />
+              {contextCfg.autoCompact ? <HeroChip label={`compact @${contextCfg.compactAtPct}%`} /> : null}
             </View>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.9)" />
+          </LinearGradient>
+        </PressableScale>
+      </Animated.View>
+
+      {groups.map((g, gi) => (
+        <Animated.View key={g.title} entering={reduced ? undefined : enterStagger(gi + 1, 60)}>
+          <View style={styles.groupHead}>
+            <View style={[styles.groupDot, { backgroundColor: g.tint }]} />
+            <Text style={[styles.groupTitle, { color: colors.textSub }]}>{g.title}</Text>
+            <View style={[styles.groupRule, { backgroundColor: colors.border }]} />
           </View>
-        </LinearGradient>
-      </PressableScale>
+          <Card style={{ paddingVertical: spacing(1), borderLeftWidth: 2.5, borderLeftColor: g.tint }}>
+            {g.rows.map((r, i) => (
+              <ListNavItem
+                key={r.to}
+                icon={r.icon}
+                iconColor={r.tint}
+                label={r.label}
+                sublabel={r.sub}
+                value={r.value}
+                badge={r.badge}
+                last={i === g.rows.length - 1}
+                onPress={() => router.push(r.to as never)}
+              />
+            ))}
+          </Card>
+        </Animated.View>
+      ))}
 
-      {/* agent & models */}
-      <SectionHeader title="Agent & models" />
-      <GroupCard>
-        <SettingRow
-          icon="hammer-outline"
-          tint={TINT.agent}
-          label="Agent & storage"
-          sublabel="Tools, terminal, file access"
-          onPress={() => router.push('/settings/agent')}
-        />
-        <SettingRow
-          icon="key-outline"
-          tint={TINT.providers}
-          label="Providers & models"
-          sublabel={profiles.length ? 'Gemini, Claude, GPT, Grok, DeepSeek…' : 'No providers yet'}
-          badge={profiles.length || undefined}
-          onPress={() => router.push('/settings/api')}
-          last
-        />
-      </GroupCard>
-
-      {/* chat */}
-      <SectionHeader title="Chat" />
-      <GroupCard>
-        <SettingRow
-          icon="chatbubble-ellipses-outline"
-          tint={TINT.generation}
-          label="Generation"
-          sublabel="System prompt, temperature, limits"
-          onPress={() => router.push('/settings/generation')}
-        />
-        <SettingRow
-          icon="color-palette-outline"
-          tint={TINT.appearance}
-          label="Appearance"
-          sublabel="Theme, text size, haptics"
-          onPress={() => router.push('/settings/appearance')}
-          last
-        />
-      </GroupCard>
-
-      {/* app */}
-      <SectionHeader title="App" />
-      <GroupCard>
-        <SettingRow
-          icon="stats-chart-outline"
-          tint={TINT.usage}
-          label="Usage & limits"
-          sublabel="Rolling windows, tokens, activity"
-          onPress={() => router.push('/settings/usage')}
-        />
-        <SettingRow
-          icon="shield-checkmark-outline"
-          tint={TINT.data}
-          label="Data & privacy"
-          sublabel="Export, import, erase everything"
-          onPress={() => router.push('/settings/data')}
-          last
-        />
-      </GroupCard>
-
-      {/* about */}
-      <SectionHeader title="About" />
-      <GroupCard>
-        <SettingRow
-          icon="information-circle-outline"
-          tint={TINT.about}
-          label="About Copper"
-          sublabel="Version, credits, licenses"
-          onPress={() => router.push('/settings/about')}
-          last
-        />
-      </GroupCard>
-
-      <Text style={{ color: colors.textFaint, fontSize: 12, textAlign: 'center', marginTop: spacing(5), lineHeight: 18 }}>
-        Everything — chats, keys, files — stays on this device.{'\n'}No accounts. No telemetry.
-      </Text>
+      <View style={[styles.footer, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
+        <Ionicons name={scheme === 'dark' ? 'moon-outline' : 'sunny-outline'} size={15} color={colors.textFaint} />
+        <Text style={{ color: colors.textFaint, fontSize: 11.5, flex: 1, lineHeight: 17 }}>
+          Chats, keys, files and the GitHub token are stored in on-device AsyncStorage and sent only to the endpoints
+          you configure. No accounts, no telemetry, no analytics.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
+
+function HeroChip({ label }: { label: string }) {
+  return (
+    <View style={styles.heroChip}>
+      <Text style={{ color: '#FFFFFF', fontSize: 10.5, fontWeight: '700' }}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  hero: { borderRadius: radius.xl, padding: spacing(4), gap: spacing(3.5), overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing(3) },
+  heroIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  heroChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  heroChip: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: radius.full, paddingHorizontal: 9, paddingVertical: 4 },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(6), marginBottom: spacing(2), paddingHorizontal: spacing(1) },
+  groupDot: { width: 8, height: 8, borderRadius: 4 },
+  groupTitle: { fontSize: 11.5, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  groupRule: { flex: 1, height: StyleSheet.hairlineWidth },
+  footer: { flexDirection: 'row', gap: 8, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: spacing(3.5), marginTop: spacing(6) },
+});

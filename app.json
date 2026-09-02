@@ -32,7 +32,6 @@
       "package": "com.copper.chat",
       "versionCode": 1,
       "usesCleartextTraffic": true,
-      "softwareKeyboardLayoutMode": "adjustResize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "monochromeImage": "./assets/adaptive-icon.png",
@@ -40,8 +39,11 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "RECORD_AUDIO"
-      ]
+        "RECORD_AUDIO",
+        "MANAGE_EXTERNAL_STORAGE"
+      ],
+      "softwareKeyboardLayoutMode": "resize",
+      "windowSoftInputMode": "adjustResize"
     },
     "web": {
       "bundler": "metro",

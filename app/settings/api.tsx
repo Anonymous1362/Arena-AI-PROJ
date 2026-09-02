@@ -117,8 +117,8 @@ function Editor({
       {testResult ? <Banner kind={testResult.ok ? 'success' : 'error'} text={testResult.msg} /> : null}
 
       <View style={{ flexDirection: 'row', gap: spacing(2), marginTop: spacing(2) }}>
-        <Button label="Test" variant="secondary" icon="pulse-outline" loading={testing} haptic="none" onPress={test} style={{ flex: 1 }} />
-        <Button label={existing ? 'Save' : 'Add'} icon="checkmark" haptic="none" onPress={save} style={{ flex: 1 }} />
+        <Button label="Test" variant="secondary" icon="pulse-outline" loading={testing} onPress={test} style={{ flex: 1 }} />
+        <Button label={existing ? 'Save' : 'Add'} icon="checkmark" onPress={save} style={{ flex: 1 }} />
       </View>
 
       {existing ? (

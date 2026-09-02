@@ -2,249 +2,63 @@ import { streamFetch } from '@/src/ai/net/fetch';
 import type { RemoteTarget, EngineRequest, EngineResult, AccumulatedToolCall } from '@/src/ai/types';
 import { StreamAssembler } from '@/src/ai/assembler';
 import type { RemoteProfile } from '@/src/store/settings';
+import {
+  PROVIDER_PRESETS,
+  chatCompletionsUrl,
+  modelListUrls,
+  modelsUrl,
+  normalizeBase,
+  cleanModelId,
+  isChatModel,
+  sortModelIds,
+  thinkingFields,
+  presetForBaseUrl,
+  fallbackChainFor,
+} from '@/src/ai/catalog';
 
-/* ------------------------------ provider presets ----------------------------- */
-
-export type Pricing = 'free' | 'freemium' | 'paid' | 'local';
-
-export interface RemotePreset {
-  id: string;
-  name: string;
-  baseUrl: string;
-  keyUrl?: string;
-  note?: string;
-  noKey?: boolean;
-  localNetwork?: boolean;
-  /** Free tier / freemium / pay-as-you-go / runs-on-your-machine. */
-  pricing: Pricing;
-  pricingNote?: string;
-  /** Model ids shown as quick picks in the model panel. */
-  suggestedModels?: string[];
-  /** Which capabilities this provider/preset family is known to support. */
-  caps?: ('tools' | 'vision' | 'reasoning')[];
-}
-
-export const PROVIDER_PRESETS: RemotePreset[] = [
-  {
-    pricing: 'paid',
-    pricingNote: 'Pay per token. No free tier.',
-    id: 'anthropic',
-    name: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    note: 'Claude models via the native Messages-compatible gateway (OpenAI-compatible base).',
-    suggestedModels: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
-    caps: ['tools', 'vision', 'reasoning'],
-  },
-  {
-    pricing: 'paid',
-    pricingNote: 'Pay per token.',
-    id: 'openai',
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    suggestedModels: ['gpt-5', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o', 'o4-mini'],
-    caps: ['tools', 'vision', 'reasoning'],
-  },
-  {
-    pricing: 'free',
-    pricingNote: 'Generous free tier at AI Studio — best first pick.',
-    id: 'google',
-    name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    keyUrl: 'https://aistudio.google.com/app/apikey',
-    note: 'Gemini via Google’s official OpenAI-compatible endpoint. 2.5/3.x models reason by default; thinking appears in the “Thought” panel.',
-    suggestedModels: [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-3-flash-preview',
-      'gemini-3.1-flash-lite-preview',
-      'gemini-3.1-pro-preview',
-    ],
-    caps: ['tools', 'vision', 'reasoning'],
-  },
-  {
-    pricing: 'free',
-    pricingNote: 'Free tier with generous rate limits, very fast.',
-    id: 'groq',
-    name: 'Groq',
-    baseUrl: 'https://api.groq.com/openai/v1',
-    keyUrl: 'https://console.groq.com/keys',
-    note: 'Very fast inference, generous free tier.',
-    suggestedModels: ['llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct'],
-    caps: ['tools'],
-  },
-  {
-    pricing: 'freemium',
-    pricingNote: 'Free models available; premium models pay-per-token.',
-    id: 'openrouter',
-    name: 'OpenRouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    keyUrl: 'https://openrouter.ai/keys',
-    note: 'Hundreds of models behind one key, incl. free tiers. Great for xAI/Grok & Claude too.',
-    suggestedModels: [
-      'anthropic/claude-sonnet-4.5',
-      'openai/gpt-5-mini',
-      'google/gemini-2.5-flash',
-      'x-ai/grok-4',
-      'deepseek/deepseek-chat-v3.1',
-    ],
-    caps: ['tools', 'vision', 'reasoning'],
-  },
-  {
-    pricing: 'paid',
-    pricingNote: 'Trial credits for new accounts, then pay-per-token.',
-    id: 'together',
-    name: 'Together AI',
-    baseUrl: 'https://api.together.xyz/v1',
-    keyUrl: 'https://api.together.ai/settings/api-keys',
-    suggestedModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen2.5-7B-Instruct-Turbo'],
-    caps: ['tools'],
-  },
-  {
-    pricing: 'freemium',
-    pricingNote: 'Free tier on La Plateforme with rate limits.',
-    id: 'mistral',
-    name: 'Mistral',
-    baseUrl: 'https://api.mistral.ai/v1',
-    keyUrl: 'https://console.mistral.ai/api-keys',
-    suggestedModels: ['mistral-large-latest', 'mistral-small-latest'],
-    caps: ['tools'],
-  },
-  {
-    pricing: 'paid',
-    pricingNote: 'Very cheap per token.',
-    id: 'deepseek',
-    name: 'DeepSeek',
-    baseUrl: 'https://api.deepseek.com/v1',
-    keyUrl: 'https://platform.deepseek.com/api_keys',
-    suggestedModels: ['deepseek-chat', 'deepseek-reasoner'],
-    caps: ['tools', 'reasoning'],
-  },
-  {
-    pricing: 'paid',
-    pricingNote: 'Pay per token; trial credits vary.',
-    id: 'xai',
-    name: 'xAI (Grok)',
-    baseUrl: 'https://api.x.ai/v1',
-    keyUrl: 'https://console.x.ai',
-    suggestedModels: ['grok-4', 'grok-4-mini', 'grok-4-fast', 'grok-3'],
-    caps: ['tools', 'vision'],
-  },
-  {
-    pricing: 'free',
-    pricingNote: 'Free API tier, extremely fast inference.',
-    id: 'cerebras',
-    name: 'Cerebras',
-    baseUrl: 'https://api.cerebras.ai/v1',
-    keyUrl: 'https://cloud.cerebras.ai',
-    note: 'Wafer-scale speed. Free tier with high rate limits.',
-    suggestedModels: ['llama-3.3-70b', 'qwen-3-32b', 'gpt-oss-120b'],
-    caps: ['tools'],
-  },
-  {
-    pricing: 'local',
-    pricingNote: 'Free — runs on your own computer.',
-    id: 'ollama',
-    name: 'Ollama (your computer)',
-    baseUrl: 'http://localhost:11434/v1',
-    noKey: true,
-    localNetwork: true,
-    note: 'Models running on your own computer. Enable OLLAMA_HOST=0.0.0.0 and use your PC’s LAN IP on mobile.',
-    suggestedModels: ['qwen3', 'llama3.2', 'mistral'],
-    caps: ['tools'],
-  },
-  {
-    pricing: 'local',
-    pricingNote: 'Free — runs on your own computer.',
-    id: 'lmstudio',
-    name: 'LM Studio (your computer)',
-    baseUrl: 'http://192.168.1.10:1234/v1',
-    noKey: true,
-    localNetwork: true,
-    note: 'Start the local server in LM Studio, then point this at your PC’s LAN IP.',
-    caps: ['tools'],
-  },
-  {
-    pricing: 'paid',
-    id: 'custom',
-    name: 'Custom / self-hosted',
-    baseUrl: '',
-    note: 'Any OpenAI-compatible endpoint: vLLM, LiteLLM, TGI, Gin…',
-    caps: ['tools'],
-  },
-];
-
-/* -------------------------------- url plumbing ------------------------------- */
-
-/**
- * Normalises any OpenAI-compatible base URL to a bare endpoint *root* (no
- * trailing slash, no /chat/completions or /models suffix).
- *
- * Recognised shapes:
- *   https://api.openai.com/v1            → versioned root
- *   https://api.groq.com/openai/v1       → versioned root
- *   https://api.anthropic.com/v1         → versioned root (OpenAI-compat layer)
- *   https://generativelanguage.googleapis.com/v1beta/openai  → Google OpenAI-compat root
- *   https://generativelanguage.googleapis.com/v1beta/open    → legacy Google root
- *   https://host.example.com             → unversioned host (gets /v1)
- */
-function endpointRoot(baseUrl: string): string {
-  let b = baseUrl.trim().replace(/\/+$/, '');
-  b = b.replace(/\/chat\/completions$/, '').replace(/\/models$/, '');
-  return b;
-}
-
-/** True when the root already carries its own API version / compat marker. */
-function isVersionedRoot(b: string): boolean {
-  if (!b) return false;
-  // Google's OpenAI-compat endpoints: .../v1beta/open, .../v1beta/openai
-  if (/\/v\d+beta\/openai?$/i.test(b)) return true;
-  // Versioned OpenAI roots: /v1, /v1.5, /v2 …
-  return /\/v\d+(\.\d+)?$/i.test(b);
-}
-
-export function chatCompletionsUrl(baseUrl: string): string {
-  const b = endpointRoot(baseUrl);
-  if (!b) return baseUrl;
-  return isVersionedRoot(b) ? `${b}/chat/completions` : `${b}/v1/chat/completions`;
-}
-
-export function modelsUrl(baseUrl: string): string {
-  const b = endpointRoot(baseUrl);
-  if (!b) return baseUrl;
-  return isVersionedRoot(b) ? `${b}/models` : `${b}/v1/models`;
-}
-
-function buildHeaders(target: Pick<RemoteTarget, 'apiKey' | 'headers'>): Record<string, string> {
-  const h: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(target.headers ?? {}),
-  };
-  if (target.apiKey && target.apiKey.trim()) h.Authorization = `Bearer ${target.apiKey.trim()}`;
-  return h;
-}
+/* Re-exported so existing imports (`@/src/ai/remote`) keep working. */
+export { PROVIDER_PRESETS, chatCompletionsUrl, modelsUrl, normalizeBase };
+export type { RemotePreset, Pricing, ApiStyle } from '@/src/ai/catalog';
 
 /* --------------------------------- api errors -------------------------------- */
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Machine-readable provider code when the response carried one. */
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
-async function errorFromResponse(res: Response): Promise<ApiError> {
+function buildHeaders(target: Pick<RemoteTarget, 'apiKey' | 'headers' | 'baseUrl'>): Record<string, string> {
+  const h: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(target.headers ?? {}),
+  };
+  const key = target.apiKey?.trim();
+  if (key) {
+    h.Authorization = `Bearer ${key}`;
+    // Google's native REST surface also accepts (and sometimes prefers) this.
+    if (/generativelanguage\.googleapis\.com/i.test(target.baseUrl ?? '')) h['x-goog-api-key'] = key;
+  }
+  return h;
+}
+
+/** Turns a raw response into a helpful, actionable message. */
+async function errorFromResponse(res: Response, url: string, model?: string): Promise<ApiError> {
   let detail = `${res.status} ${res.statusText || 'Request failed'}`;
+  let code: string | undefined;
   try {
     const text = await res.text();
     if (text) {
       try {
         const json = JSON.parse(text);
         detail = json?.error?.message ?? json?.message ?? json?.error ?? text;
+        code = json?.error?.code ?? json?.error?.type ?? json?.code;
       } catch {
         detail = text.slice(0, 400);
       }
@@ -252,10 +66,25 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
   } catch {
     /* keep default */
   }
-  if (res.status === 401) detail = `Unauthorized — check your API key. (${detail})`;
-  if (res.status === 404) detail = `Not found — check the base URL. (${detail})`;
-  if (res.status === 429) detail = `Rate limited / quota exceeded. (${detail})`;
-  return new ApiError(res.status, detail);
+  if (typeof detail !== 'string') detail = JSON.stringify(detail);
+
+  if (res.status === 401 || res.status === 403) {
+    detail = `Auth failed (${res.status}). Check the API key — ${detail}`;
+  } else if (res.status === 404) {
+    const isModels = /\/models(\?|$)/.test(url);
+    if (isModels) {
+      detail = `Model list not found at ${url}. The base URL may be wrong — ${detail}`;
+    } else if (model) {
+      detail = `Model “${model}” was not found on this provider (${res.status}). Open the model picker and choose one from the live list. ${detail}`;
+    } else {
+      detail = `Not found (${res.status}). Check the base URL — ${detail}`;
+    }
+  } else if (res.status === 429) {
+    detail = `Rate limited / quota exceeded (429). ${detail}`;
+  } else if (res.status === 400) {
+    detail = `The provider rejected the request (400). ${detail}`;
+  }
+  return new ApiError(res.status, detail, code);
 }
 
 /* ------------------------------ tool-call deltas ----------------------------- */
@@ -281,19 +110,38 @@ function finalizeToolCalls(acc: Map<number, ToolCallAccum>): AccumulatedToolCall
   return [...acc.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, tc]) => ({
-      id: tc.id,
+      id: tc.id || `call_${Math.random().toString(36).slice(2, 9)}`,
       name: tc.name,
       arguments: tc.arguments || '{}',
       raw: { id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.arguments || '{}' } },
-    }));
+    }))
+    .filter((tc) => tc.name);
 }
 
 /* ---------------------------------- streaming -------------------------------- */
 
+interface PostOptions {
+  target: RemoteTarget;
+  body: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+async function postChat({ target, body, signal }: PostOptions): Promise<Response> {
+  return streamFetch(chatCompletionsUrl(target.baseUrl), {
+    method: 'POST',
+    headers: buildHeaders(target),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
 /**
  * Streams a chat completion from any OpenAI-compatible endpoint, with tool
- * calling. Falls back to a non-streaming request if the runtime cannot
- * provide a response body stream.
+ * calling and provider-native thinking control.
+ *
+ * Resilience: if a provider rejects an optional vendor extension (Gemini's
+ * `extra_body` thinking config, `reasoning_effort` on models that don't
+ * reason), we strip it and retry once so the request still succeeds.
  */
 export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest): Promise<EngineResult> {
   const started = Date.now();
@@ -305,27 +153,51 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     },
   });
 
-  const body: Record<string, unknown> = {
+  const p = req.params;
+  const base: Record<string, unknown> = {
     model: target.model,
     messages: req.messages,
     stream: true,
-    temperature: req.params.temperature,
-    top_p: req.params.topP,
-    max_tokens: req.params.maxTokens,
+    temperature: p.temperature,
+    top_p: p.topP,
+    max_tokens: p.maxTokens,
   };
   if (req.tools?.length) {
-    body.tools = req.tools;
-    body.tool_choice = 'auto';
+    base.tools = req.tools;
+    base.tool_choice = 'auto';
   }
-
-  const res = await streamFetch(chatCompletionsUrl(target.baseUrl), {
-    method: 'POST',
-    headers: buildHeaders(target),
-    body: JSON.stringify(body),
-    signal: req.signal,
+  const thinking = thinkingFields(target.model, p.thinking ?? 'auto', {
+    includeThoughts: p.showThinking !== false,
   });
 
-  if (!res.ok) throw await errorFromResponse(res);
+  let body: Record<string, unknown> = { ...base, ...thinking };
+  let res = await postChat({ target, body, signal: req.signal });
+
+  // ---- automatic model failover (404 retired model, 429 rate limit, 503) ----
+  if (res.status === 404 || res.status === 429 || res.status === 503) {
+    for (const next of fallbackChainFor(target.baseUrl, target.model)) {
+      req.handlers.onModelFallback?.(next, res.status);
+      body = { ...base, model: next, ...thinking };
+      res = await postChat({ target: { ...target, model: next }, body, signal: req.signal });
+      if (res.status !== 404 && res.status !== 429 && res.status !== 503) break;
+    }
+  }
+
+  // Vendor-extension rejection → drop the extras and try again.
+  if (res.status === 400 && Object.keys(thinking).length) {
+    const text = await res.clone().text().catch(() => '');
+    const mentionsExtras = /(extra_body|reasoning_effort|thinking|unsupported|unknown|invalid)/i.test(text);
+    if (mentionsExtras) {
+      body = { ...base };
+      res = await postChat({ target, body, signal: req.signal });
+    }
+  }
+  // A 404 on the completion URL usually means the base URL shape is wrong.
+  if (res.status === 404 && !/\/chat\/completions$/.test(chatCompletionsUrl(target.baseUrl))) {
+    /* nothing sensible to retry — surface the error below */
+  }
+
+  if (!res.ok) throw await errorFromResponse(res, chatCompletionsUrl(target.baseUrl), target.model);
 
   const anyRes = res as any;
   if (!anyRes.body || typeof anyRes.body.getReader !== 'function') {
@@ -339,6 +211,7 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
   let usage: any = null;
   let sawDone = false;
   let finishReason: string | undefined;
+  let streamError: ApiError | null = null;
   const toolAcc = new Map<number, ToolCallAccum>();
 
   const handleLine = (raw: string) => {
@@ -356,13 +229,24 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     } catch {
       return; // tolerate keep-alives / malformed fragments
     }
-    if (json?.error) throw new ApiError(0, json.error?.message ?? 'Stream error');
+    if (json?.error) {
+      streamError = new ApiError(0, json.error?.message ?? 'Stream error', json.error?.code);
+      return;
+    }
     if (json?.usage) usage = json.usage;
     const choice = json?.choices?.[0];
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     const delta = choice?.delta ?? {};
-    if (delta.reasoning_content) assembler.feed(delta.reasoning_content);
-    else if (delta.reasoning) assembler.feed(delta.reasoning);
+    // Reasoning / thought summaries arrive under several keys depending on the
+    // provider — Gemini (include_thoughts), DeepSeek, Groq, OpenAI o-series.
+    const thought =
+      delta.reasoning_content ??
+      delta.reasoning ??
+      (delta.thought_summary && typeof delta.thought_summary === 'string' ? delta.thought_summary : undefined) ??
+      (Array.isArray(delta.thoughts)
+        ? delta.thoughts.map((t: any) => t?.text ?? '').join('') || undefined
+        : undefined);
+    if (thought) assembler.feedReasoning(thought);
     if (delta.content) assembler.feed(delta.content);
     if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
       mergeToolCallDelta(toolAcc, delta.tool_calls);
@@ -390,15 +274,21 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     }
   }
 
+  if (streamError) throw streamError;
+
   const final = assembler.flush();
   const approxTokens = Math.ceil(final.content.length / 4);
   const toolCalls = finalizeToolCalls(toolAcc);
-  const tokensOut = usage?.completion_tokens ?? (sawDone || final.content ? approxTokens : 0);
+  const tokensOut =
+    usage?.completion_tokens ??
+    usage?.output_tokens ??
+    (sawDone || final.content ? approxTokens : 0);
+  const tokensIn = usage?.prompt_tokens ?? usage?.input_tokens;
 
   const result: EngineResult = {
     content: final.content,
     reasoning: final.reasoning || undefined,
-    tokensIn: usage?.prompt_tokens,
+    tokensIn,
     tokensOut,
     ms: Date.now() - started,
     tps: tokensOut && Date.now() - started > 0 ? tokensOut / ((Date.now() - started) / 1000) : undefined,
@@ -411,7 +301,7 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
 
 function nonStreamingResponse(req: EngineRequest, json: any, started: number): EngineResult {
   const msg = json?.choices?.[0]?.message ?? {};
-  const content: string = msg.content ?? '';
+  const content: string = typeof msg.content === 'string' ? msg.content : '';
   const reasoning: string = msg.reasoning_content ?? msg.reasoning ?? '';
   req.handlers.onContent?.(content);
   if (reasoning) req.handlers.onReasoning?.(reasoning);
@@ -422,11 +312,11 @@ function nonStreamingResponse(req: EngineRequest, json: any, started: number): E
     arguments: tc.function?.arguments ?? '{}',
     raw: tc,
   }));
-  const tokensOut = json?.usage?.completion_tokens;
+  const tokensOut = json?.usage?.completion_tokens ?? json?.usage?.output_tokens;
   const result: EngineResult = {
     content,
     reasoning: reasoning || undefined,
-    tokensIn: json?.usage?.prompt_tokens,
+    tokensIn: json?.usage?.prompt_tokens ?? json?.usage?.input_tokens,
     tokensOut,
     ms: Date.now() - started,
     tps: tokensOut ? tokensOut / ((Date.now() - started) / 1000) : undefined,
@@ -442,26 +332,61 @@ function nonStreamingResponse(req: EngineRequest, json: any, started: number): E
 export interface ListModelsResult {
   models: string[];
   error?: string;
+  /** Which URL actually answered (useful for debugging a wrong base URL). */
+  url?: string;
 }
 
+/**
+ * Lists models from a profile. Tries every plausible `/models` URL for the base
+ * and understands both shapes:
+ *  - OpenAI:      `{ data: [{ id }] }`
+ *  - Gemini REST: `{ models: [{ name: "models/gemini-3.7-flash" }] }`
+ */
 export async function listRemoteModels(profile: RemoteProfile): Promise<ListModelsResult> {
-  if (!profile.baseUrl?.trim()) return { models: [], error: 'No base URL configured.' };
-  try {
-    const res = await streamFetch(modelsUrl(profile.baseUrl), {
-      method: 'GET',
-      headers: buildHeaders(profile),
-    });
-    if (!res.ok) throw await errorFromResponse(res);
-    const json: any = await res.json();
-    const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
-    const models = data
-      .map((m: any) => (typeof m === 'string' ? m : m?.id))
-      .filter((id: unknown): id is string => typeof id === 'string')
-      .sort((a: string, b: string) => a.localeCompare(b));
-    return { models };
-  } catch (e) {
-    return { models: [], error: e instanceof Error ? e.message : String(e) };
+  const base = normalizeBase(profile.baseUrl ?? '');
+  if (!base) return { models: [], error: 'No base URL configured.' };
+
+  const urls = modelListUrls(profile.baseUrl);
+  let lastError = '';
+  for (const url of urls) {
+    try {
+      const res = await streamFetch(url, { method: 'GET', headers: buildHeaders({ ...profile, baseUrl: base }) });
+      if (!res.ok) {
+        const e = await errorFromResponse(res, url);
+        lastError = e.message;
+        // 401/403 will not improve on the next URL — stop early with a clear message.
+        if (e.status === 401 || e.status === 403) return { models: [], error: e.message, url };
+        continue;
+      }
+      const json: any = await res.json();
+      const raw = Array.isArray(json?.data)
+        ? json.data
+        : Array.isArray(json?.models)
+          ? json.models
+          : Array.isArray(json)
+            ? json
+            : [];
+      const models = sortModelIds(
+        raw
+          .map((m: any) => (typeof m === 'string' ? m : m?.id ?? m?.name))
+          .filter((id: unknown): id is string => typeof id === 'string')
+          .map(cleanModelId)
+          .filter((id: string) => id && isChatModel(id))
+      );
+      if (models.length) return { models, url };
+      lastError = `Endpoint returned no models (${url}).`;
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
   }
+
+  // Nothing answered. Give the user the curated list for a known provider so a
+  // transient /models failure doesn't leave the picker empty.
+  const preset = presetForBaseUrl(base);
+  if (preset?.suggestedModels?.length) {
+    return { models: [...preset.suggestedModels], error: lastError || undefined, url: urls[0] };
+  }
+  return { models: [], error: lastError || 'Could not reach the model list.', url: urls[0] };
 }
 
 /** Quick connectivity test used by the API-settings screen. */

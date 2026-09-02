@@ -27,7 +27,7 @@ export async function shareJson(filename: string, data: unknown): Promise<void> 
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(fileUri, {
       mimeType: 'application/json',
-      dialogTitle: 'Export Aurora data',
+      dialogTitle: 'Export Copper data',
       UTI: 'public.json',
     });
   }

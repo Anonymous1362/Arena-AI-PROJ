@@ -2,12 +2,16 @@ import { create } from 'zustand';
 import type { ChatMessage, Conversation, MessageAttachment } from '@/src/store/chats';
 import { useChatsStore } from '@/src/store/chats';
 import { useSettingsStore } from '@/src/store/settings';
-import { resolveRemoteTarget, buildWireMessages, describeModel } from '@/src/ai/engine';
+import { resolveRemoteTarget, buildWireMessages, describeModel, effectiveWindow } from '@/src/ai/engine';
+import { liveMessages, maybeAutoCompact, summaryBlock } from '@/src/ai/context';
 import { streamRemoteChat } from '@/src/ai/remote';
 import type { WireMessage } from '@/src/ai/types';
 import { runAgentTurn } from '@/src/agent/loop';
 import { buildSystemPrompt } from '@/src/agent/prompts';
 import { currentRoot } from '@/src/agent/fs';
+import { executorStatus } from '@/src/agent/tools';
+import { projectDirFor } from '@/src/agent/workspace';
+import { toast } from '@/src/store/toast';
 import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
 import { useUsageStore } from '@/src/store/usage';
@@ -101,7 +105,11 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   // 2) build the request
   const fresh = useChatsStore.getState().conversations.find((c) => c.id === convId);
   const msgs = fresh?.messages ?? [];
-  const history = msgs.filter((m) => m.id !== assistant.id && m.done && !m.error && m.content);
+  // Only the live tail goes on the wire; anything older is represented by the
+  // Project Summary State appended to the system prompt.
+  const history = liveMessages(fresh ?? conv).filter(
+    (m) => m.id !== assistant.id && m.done && !m.error && m.content
+  );
 
   // Per-chat system prompt override wins over the global setting when set.
   const effectiveUserSystemPrompt =
@@ -110,20 +118,27 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
       : settings.generation.systemPrompt;
 
   const system = buildSystemPrompt({
-    userSystemPrompt: effectiveUserSystemPrompt,
+    userSystemPrompt: (effectiveUserSystemPrompt ?? '') + summaryBlock(fresh ?? conv),
     scopeLabel:
-      settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
-        ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
-        : currentRoot().tier === 'granted'
-          ? 'user-granted storage root'
-          : 'app sandbox',
-    executorReal: false,
+      currentRoot().tier === 'managed'
+        ? `all-files storage root “${currentRoot().uri.replace('file://', '')}”`
+        : settings.agentScope.storageEnabled && settings.agentScope.safRootLabel
+          ? `user-granted storage root “${settings.agentScope.safRootLabel}”`
+          : currentRoot().tier === 'granted'
+            ? 'user-granted storage root'
+            : 'app sandbox',
+    executorReal: executorStatus() === 'native',
+    rootUri: currentRoot().uri,
+    projectDir: projectDirFor(fresh ?? conv),
+    githubConnected: settings.agentScope.githubTools && (settings.github?.token ?? '').trim().length > 8,
+    githubRepo: settings.github?.repo ? `${settings.github.owner ?? ''}/${settings.github.repo}`.replace(/^\//, '') : undefined,
   });
 
   let wire: WireMessage[] = buildWireMessages(
     history.map((m) => ({ role: m.role, content: m.content })),
     system,
-    settings.generation.maxTokens
+    settings.generation.maxTokens,
+    effectiveWindow(model, settings)
   );
 
   // replay the last agent transcript tail (tool calls/results) for continuity
@@ -202,6 +217,8 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         maxTokens: settings.generation.maxTokens,
         autoContinue: settings.behavior.autoContinue,
         confirmDangerous: settings.agentScope.confirmDangerous,
+        thinking: settings.generation.thinking,
+        showThinking: settings.generation.showThinking,
         signal: abort.signal,
         callbacks: {
           onText: paintContent,
@@ -221,7 +238,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
               },
             });
             useUsageStore.getState().record({ profileId: model.profileId, model: model.model, tokensIn, tokensOut });
-            haptics.light();
+            haptics.arrive();
           },
           onError: (err) => {
             haptics.error();
@@ -239,6 +256,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         signal: abort.signal,
         handlers: {
           onContent: paintContent,
+          onModelFallback: (model, status) => {
+            toast(
+              `${status === 429 ? 'Rate-limited' : status === 404 ? 'Model unavailable' : 'Provider overloaded'} — switched to ${model}`,
+              'warn'
+            );
+          },
         },
       });
       useChatsStore.getState().updateMessage(convId, assistant.id, {
@@ -259,7 +282,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
       });
-      haptics.light();
+      haptics.arrive();
     }
   } catch (e) {
     const err = e as Error;
@@ -288,6 +311,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
     useStreamingStore.getState().end(convId);
     useChatsStore.getState().touchConversation(convId);
     maybeAutoTitle(convId, model);
+    maybeAutoCompact(convId);
   }
 }
 
@@ -340,7 +364,7 @@ async function maybeAutoTitle(convId: string, model: Conversation['model']): Pro
         { role: 'system', content: 'Create a short conversation title (3–6 words). Reply with the title only, no quotes, no punctuation at the end.' },
         { role: 'user', content: truncate(firstUser.content || 'image conversation', 500) },
       ],
-      params: { temperature: 0.3, topP: 0.9, maxTokens: 24, systemPrompt: '' },
+      params: { temperature: 0.3, topP: 0.9, maxTokens: 24, systemPrompt: '', thinking: 'minimal', showThinking: false },
       handlers: {},
     });
     const title = result.content.trim().replace(/^["'“”]+|["'“”.]+$/g, '');

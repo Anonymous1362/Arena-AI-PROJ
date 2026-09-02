@@ -30,7 +30,7 @@ The APK is a release build signed with the generated debug keystore (fine for pe
 ```bash
 pkg update
 pkg install nodejs-lts openjdk-17 git a-binutils
-git clone https://github.com/Anonymous1362/Arena-AI-PROJ.git aurora && cd aurora
+git clone https://github.com/Anonymous1362/Arena-AI-PROJ.git copper && cd copper
 npm install
 npx expo prebuild -p android
 cd android && ./gradlew assembleRelease

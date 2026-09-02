@@ -11,11 +11,13 @@
  *  - Emits everything through callbacks so the UI stays pure.
  */
 import type { WireMessage, PlanStep, ToolEvent } from '@/src/ai/types';
+import type { ThinkingLevel } from '@/src/store/settings';
 import { streamRemoteChat, ApiError } from '@/src/ai/remote';
 import type { RemoteTarget } from '@/src/ai/types';
 import { dispatchTool, openAITools } from '@/src/agent/tools';
 import { CONTINUE_NUDGE } from '@/src/agent/prompts';
 import { useConfirmStore } from '@/src/agent/confirm';
+import { classifyTool, dangerHeadline } from '@/src/agent/danger';
 import { haptics } from '@/src/utils/haptics';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -59,6 +61,12 @@ export interface LoopOptions {
   autoContinue?: boolean;
   /** Ask the user before destructive tools (delete etc.). */
   confirmDangerous?: boolean;
+  /** Reasoning / thinking level, mapped per provider. */
+  thinking?: ThinkingLevel;
+  /** Stream provider thought summaries into the thinking panel. */
+  showThinking?: boolean;
+  /** Tools the model may call (defaults to the built-in registry). */
+  tools?: unknown[];
 }
 
 interface ParsedTurn {
@@ -98,6 +106,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     maxTokens = 4096,
     signal,
     callbacks,
+    thinking = 'auto',
+    showThinking = true,
   } = opts;
   const maxToolCalls = opts.maxToolCalls ?? 25;
   const maxTurns = opts.maxTurns ?? 8;
@@ -125,10 +135,16 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     if (m && steps.length) {
       const idx = Number(m[1]) - 1;
       const prevDoneCount = steps.filter((s) => s.state === 'done').length;
-      steps = steps.map((s, i) => ({
-        ...s,
-        state: i < idx ? 'done' : i === idx ? 'active' : s.state === 'done' ? 'done' : 'pending',
-      }));
+      const now = Date.now();
+      steps = steps.map((s, i): PlanStep => {
+        const next: PlanStep['state'] = i < idx ? 'done' : i === idx ? 'active' : s.state === 'done' ? 'done' : 'pending';
+        return {
+          ...s,
+          state: next,
+          startedAt: s.startedAt ?? (next === 'active' || next === 'done' ? now : undefined),
+          doneAt: next === 'done' ? (s.doneAt ?? now) : undefined,
+        };
+      });
       const newDoneCount = steps.filter((s) => s.state === 'done').length;
       // Fire a haptic for each newly-completed step.
       if (newDoneCount > prevDoneCount) haptics.success();
@@ -152,8 +168,10 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
               topP,
               maxTokens,
               systemPrompt,
+              thinking,
+              showThinking,
             },
-            tools: openAITools(),
+            tools: (opts.tools ?? openAITools()) as any[],
             signal,
             handlers: {
               onContent: (content) => {
@@ -234,16 +252,16 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
           /* keep empty */
         }
 
-        // Confirmation gate for destructive actions.
-        if (opts.confirmDangerous && (fnName === 'delete_path' || (isCommand && /\brm\s+-rf?\b/.test(String(parsedArgs.command ?? ''))))) {
+        // Confirmation gate for destructive actions. The classifier is shared
+        // with the interactive terminal, so both surfaces agree on what counts
+        // as dangerous (rm, git reset --hard, force-push, delete_path, …).
+        const danger = opts.confirmDangerous ? classifyTool(fnName, parsedArgs) : null;
+        if (danger) {
           const allowed = await new Promise<boolean>((resolve) => {
             useConfirmStore.getState().push({
               id: uid(),
               toolName: fnName,
-              summary:
-                fnName === 'delete_path'
-                  ? `The agent wants to delete “${parsedArgs.path ?? '?'}”`
-                  : `The agent wants to run: ${parsedArgs.command ?? '?'}`,
+              summary: dangerHeadline(danger, fnName),
               argsPreview: args,
               resolve,
             });
@@ -272,7 +290,11 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
           id: uid(),
           kind: isCommand ? 'command' : 'tool',
           title: isCommand ? (parsedArgs.command ?? 'command') : fnName,
-          detail: isCommand ? '$ ' : String(parsedArgs.path ?? parsedArgs.name ?? ''),
+          detail: isCommand
+            ? '$ '
+            : fnName === 'zip_dir'
+              ? String(parsedArgs.out ?? `${String(parsedArgs.path ?? 'project').replace(/\/+$/, '') || 'project'}.zip`)
+              : String(parsedArgs.path ?? parsedArgs.name ?? ''),
           output: '',
           ok: true,
           running: true,
@@ -298,7 +320,13 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
       // continue looping — the model now sees tool outputs
     }
 
-    const finalSteps = steps.map((s) => ({ ...s, state: s.state === 'active' ? 'done' : s.state } as PlanStep));
+    const finalAt = Date.now();
+    const finalSteps = steps.map((s) => ({
+      ...s,
+      state: s.state === 'active' ? 'done' : s.state,
+      startedAt: s.startedAt ?? (s.state !== 'pending' ? finalAt : undefined),
+      doneAt: s.state === 'done' ? (s.doneAt ?? finalAt) : s.state === 'active' ? finalAt : undefined,
+    }));
     // If the plan had steps and they're all done, fire a completion haptic.
     if (finalSteps.length > 0 && finalSteps.every((s) => s.state === 'done')) {
       haptics.success();
