@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  typecheck:
+    name: TypeScript typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  web-bundle-smoke:
+    name: Web bundle smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Expo export (web)
+        run: npx expo export --platform web --output-dir dist-ci
+        env:
+          CI: true
+
+      - name: Verify index.html exists
+        run: test -f dist-ci/index.html
+
+  android-bundle-smoke:
+    name: Android bundle smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Metro bundle (Android)
+        run: |
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file node_modules/expo-router/entry.js \
+            --bundle-output /tmp/android-bundle.js \
+            --assets-dest /tmp/android-assets
+        env:
+          CI: true
+          NODE_ENV: production
+
+      - name: Verify bundle exists
+        run: test -f /tmp/android-bundle.js
