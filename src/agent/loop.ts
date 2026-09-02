@@ -272,7 +272,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
           id: uid(),
           kind: isCommand ? 'command' : 'tool',
           title: isCommand ? (parsedArgs.command ?? 'command') : fnName,
-          detail: isCommand ? '$ ' : '',
+          detail: isCommand ? '$ ' : String(parsedArgs.path ?? parsedArgs.name ?? ''),
           output: '',
           ok: true,
           running: true,

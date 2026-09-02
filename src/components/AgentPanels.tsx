@@ -120,6 +120,30 @@ export function PlanPanel({ steps, running }: { steps: PlanStep[]; running: bool
   );
 }
 
+/* ------------------------------- artifacts ---------------------------------- */
+
+export function ArtifactPanel({ events }: { events: ToolEvent[] }) {
+  const { colors } = useTheme();
+  const artifacts = events.filter((e) => e.title === 'write_file' && e.ok && !e.running);
+  if (!artifacts.length) return null;
+  return (
+    <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.md, overflow: 'hidden', marginBottom: spacing(2), backgroundColor: colors.bgElevated }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: spacing(3), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+        <Ionicons name="sparkles-outline" size={15} color={colors.accent} />
+        <Text style={{ color: colors.text, fontWeight: '800', flex: 1 }}>Artifacts</Text>
+        <Text style={{ color: colors.textFaint, fontSize: 12 }}>{artifacts.length}</Text>
+      </View>
+      {artifacts.map((event) => (
+        <View key={event.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: spacing(3), paddingVertical: spacing(2.5) }}>
+          <Ionicons name="document-text-outline" size={16} color={colors.accent} />
+          <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: colors.textSub, fontWeight: '700' }}>{event.detail || 'Generated file'}</Text><Text numberOfLines={1} style={{ color: colors.textFaint, fontSize: 11 }}>{event.output}</Text></View>
+          <PressableScale haptic="light" onPress={() => Clipboard.setStringAsync(event.detail || event.output)}><Ionicons name="copy-outline" size={15} color={colors.textFaint}/></PressableScale>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /* ------------------------------- tool event card ----------------------------- */
 
 function previewLines(output: string, n = 7): string {

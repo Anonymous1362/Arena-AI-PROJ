@@ -58,6 +58,8 @@ export interface Conversation {
    * generation.systemPrompt for this conversation only.
    */
   systemPromptOverride?: string;
+  /** Optional workspace used to group this conversation and its artifacts. */
+  projectId?: string;
 }
 
 export interface ChatsState {
@@ -69,6 +71,7 @@ export interface ChatsState {
   togglePin: (id: string) => void;
   setConversationModel: (id: string, model: ActiveModel) => void;
   setConversationSystemPrompt: (id: string, prompt: string | undefined) => void;
+  setConversationProject: (id: string, projectId: string | undefined) => void;
   touchConversation: (id: string) => void;
 
   appendMessage: (convId: string, msg: Omit<ChatMessage, 'id' | 'createdAt'>) => ChatMessage;
@@ -125,6 +128,11 @@ export const useChatsStore = create<ChatsState>()(
           conversations: s.conversations.map((c) =>
             c.id === id ? { ...c, systemPromptOverride: prompt } : c
           ),
+        })),
+
+      setConversationProject: (id, projectId) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) => c.id === id ? { ...c, projectId, updatedAt: Date.now() } : c),
         })),
 
       touchConversation: (id) =>

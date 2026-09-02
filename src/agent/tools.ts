@@ -178,6 +178,9 @@ function nativeExecutor(): ((cmd: string, timeoutMs: number) => Promise<{ stdout
   if (Platform.OS !== 'android') return null;
   const g = globalThis as any;
   const exec =
+    g.CopperExec?.exec ??
+    g.expo?.modules?.CopperExec?.exec ??
+    // Legacy bridge name retained so existing development builds keep working.
     g.AuroraExec?.exec ??
     g.expo?.modules?.AuroraExec?.exec ??
     g.expo?.modules?.ExpoFileSystem?.exec ??
