@@ -33,7 +33,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     baseUrl: 'https://api.anthropic.com/v1',
     keyUrl: 'https://console.anthropic.com/settings/keys',
     note: 'Claude models via the native Messages-compatible gateway (OpenAI-compatible base).',
-    suggestedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
+    suggestedModels: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5'],
     caps: ['tools', 'vision', 'reasoning'],
   },
   {
@@ -53,9 +53,16 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     name: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyUrl: 'https://aistudio.google.com/app/apikey',
-    note: 'Gemini via the OpenAI-compatible endpoint. Generous free tier.',
-    suggestedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
-    caps: ['tools', 'vision'],
+    note: 'Gemini via Google’s official OpenAI-compatible endpoint. 2.5/3.x models reason by default; thinking appears in the “Thought” panel.',
+    suggestedModels: [
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite-preview',
+      'gemini-3.1-pro-preview',
+    ],
+    caps: ['tools', 'vision', 'reasoning'],
   },
   {
     pricing: 'free',
@@ -122,7 +129,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     name: 'xAI (Grok)',
     baseUrl: 'https://api.x.ai/v1',
     keyUrl: 'https://console.x.ai',
-    suggestedModels: ['grok-4', 'grok-3-mini'],
+    suggestedModels: ['grok-4', 'grok-4-mini', 'grok-4-fast', 'grok-3'],
     caps: ['tools', 'vision'],
   },
   {
@@ -171,18 +178,43 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
 
 /* -------------------------------- url plumbing ------------------------------- */
 
+/**
+ * Normalises any OpenAI-compatible base URL to a bare endpoint *root* (no
+ * trailing slash, no /chat/completions or /models suffix).
+ *
+ * Recognised shapes:
+ *   https://api.openai.com/v1            → versioned root
+ *   https://api.groq.com/openai/v1       → versioned root
+ *   https://api.anthropic.com/v1         → versioned root (OpenAI-compat layer)
+ *   https://generativelanguage.googleapis.com/v1beta/openai  → Google OpenAI-compat root
+ *   https://generativelanguage.googleapis.com/v1beta/open    → legacy Google root
+ *   https://host.example.com             → unversioned host (gets /v1)
+ */
+function endpointRoot(baseUrl: string): string {
+  let b = baseUrl.trim().replace(/\/+$/, '');
+  b = b.replace(/\/chat\/completions$/, '').replace(/\/models$/, '');
+  return b;
+}
+
+/** True when the root already carries its own API version / compat marker. */
+function isVersionedRoot(b: string): boolean {
+  if (!b) return false;
+  // Google's OpenAI-compat endpoints: .../v1beta/open, .../v1beta/openai
+  if (/\/v\d+beta\/openai?$/i.test(b)) return true;
+  // Versioned OpenAI roots: /v1, /v1.5, /v2 …
+  return /\/v\d+(\.\d+)?$/i.test(b);
+}
+
 export function chatCompletionsUrl(baseUrl: string): string {
-  const b = baseUrl.trim().replace(/\/+$/, '');
-  if (b.endsWith('/chat/completions')) return b;
-  if (/\/v\d+$/.test(b)) return `${b}/chat/completions`;
-  return `${b}/v1/chat/completions`;
+  const b = endpointRoot(baseUrl);
+  if (!b) return baseUrl;
+  return isVersionedRoot(b) ? `${b}/chat/completions` : `${b}/v1/chat/completions`;
 }
 
 export function modelsUrl(baseUrl: string): string {
-  const b = baseUrl.trim().replace(/\/+$/, '');
-  if (b.endsWith('/chat/completions')) return `${b.replace(/\/chat\/completions$/, '')}/models`;
-  if (/\/v\d+$/.test(b)) return `${b}/models`;
-  return `${b}/v1/models`;
+  const b = endpointRoot(baseUrl);
+  if (!b) return baseUrl;
+  return isVersionedRoot(b) ? `${b}/models` : `${b}/v1/models`;
 }
 
 function buildHeaders(target: Pick<RemoteTarget, 'apiKey' | 'headers'>): Record<string, string> {
