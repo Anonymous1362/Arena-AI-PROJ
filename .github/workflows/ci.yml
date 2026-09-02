@@ -228,11 +228,15 @@ jobs:
           profile: pixel_5
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
+          # The emulator action executes each script line with /bin/sh. Run the
+          # Gradle pipeline inside Bash so pipefail preserves an actual test
+          # failure rather than masking it behind tee.
           script: |
+            bash -e -o pipefail <<'BASH'
             cd android
-            set -o pipefail
             chmod +x gradlew
             ./gradlew :copper-exec:connectedDebugAndroidTest --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-native-pty-test.log"
+            BASH
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
