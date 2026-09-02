@@ -11,11 +11,13 @@
  *  - Emits everything through callbacks so the UI stays pure.
  */
 import type { WireMessage, PlanStep, ToolEvent } from '@/src/ai/types';
+import type { ThinkingLevel } from '@/src/store/settings';
 import { streamRemoteChat, ApiError } from '@/src/ai/remote';
 import type { RemoteTarget } from '@/src/ai/types';
 import { dispatchTool, openAITools } from '@/src/agent/tools';
 import { CONTINUE_NUDGE } from '@/src/agent/prompts';
 import { useConfirmStore } from '@/src/agent/confirm';
+import { classifyTool, dangerHeadline } from '@/src/agent/danger';
 import { haptics } from '@/src/utils/haptics';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -59,6 +61,12 @@ export interface LoopOptions {
   autoContinue?: boolean;
   /** Ask the user before destructive tools (delete etc.). */
   confirmDangerous?: boolean;
+  /** Reasoning / thinking level, mapped per provider. */
+  thinking?: ThinkingLevel;
+  /** Stream provider thought summaries into the thinking panel. */
+  showThinking?: boolean;
+  /** Tools the model may call (defaults to the built-in registry). */
+  tools?: unknown[];
 }
 
 interface ParsedTurn {
@@ -98,6 +106,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     maxTokens = 4096,
     signal,
     callbacks,
+    thinking = 'auto',
+    showThinking = true,
   } = opts;
   const maxToolCalls = opts.maxToolCalls ?? 25;
   const maxTurns = opts.maxTurns ?? 8;
@@ -152,8 +162,10 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
               topP,
               maxTokens,
               systemPrompt,
+              thinking,
+              showThinking,
             },
-            tools: openAITools(),
+            tools: (opts.tools ?? openAITools()) as any[],
             signal,
             handlers: {
               onContent: (content) => {
@@ -234,16 +246,16 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
           /* keep empty */
         }
 
-        // Confirmation gate for destructive actions.
-        if (opts.confirmDangerous && (fnName === 'delete_path' || (isCommand && /\brm\s+-rf?\b/.test(String(parsedArgs.command ?? ''))))) {
+        // Confirmation gate for destructive actions. The classifier is shared
+        // with the interactive terminal, so both surfaces agree on what counts
+        // as dangerous (rm, git reset --hard, force-push, delete_path, …).
+        const danger = opts.confirmDangerous ? classifyTool(fnName, parsedArgs) : null;
+        if (danger) {
           const allowed = await new Promise<boolean>((resolve) => {
             useConfirmStore.getState().push({
               id: uid(),
               toolName: fnName,
-              summary:
-                fnName === 'delete_path'
-                  ? `The agent wants to delete “${parsedArgs.path ?? '?'}”`
-                  : `The agent wants to run: ${parsedArgs.command ?? '?'}`,
+              summary: dangerHeadline(danger, fnName),
               argsPreview: args,
               resolve,
             });

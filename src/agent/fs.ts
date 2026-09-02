@@ -275,3 +275,49 @@ function formatKB(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
+
+/* --------------------------- structured listing ---------------------------- */
+
+export interface AgentEntry {
+  name: string;
+  isDir: boolean;
+  /** Bytes, when the tier can report them cheaply (sandbox tier only). */
+  size: number;
+}
+
+/**
+ * Directory listing as data (rather than pre-formatted text) — used by the repo
+ * mapper, which needs to walk the tree itself. Works on both storage tiers.
+ */
+export async function listAgentEntries(rel: string): Promise<AgentEntry[]> {
+  const path = safeRelPath(rel);
+  const root = currentRoot();
+
+  if (root.tier === 'granted' && SAF) {
+    const uri = path ? await safResolve(path) : root.uri;
+    const entries = await SAF.readDirectoryAsync(uri);
+    return entries.map((e) => ({ name: nameOf(e), isDir: looksLikeDir(e), size: 0 }));
+  }
+
+  const raw = `${root.uri}${path}`;
+  const dirUri = raw.endsWith('/') ? raw : `${raw}/`;
+  const info = await FileSystem.getInfoAsync(dirUri);
+  if (!info.exists) throw new Error(`Directory not found: ${path || '.'}`);
+  if (!(info as { isDirectory?: boolean }).isDirectory) throw new Error(`Not a directory: ${path}`);
+  const items = await FileSystem.readDirectoryAsync(dirUri);
+  const out: AgentEntry[] = [];
+  for (const n of items) {
+    const child = await FileSystem.getInfoAsync(`${dirUri}${n}`).catch(() => null);
+    out.push({
+      name: n,
+      isDir: !!(child as { isDirectory?: boolean } | null)?.isDirectory,
+      size: (child as { size?: number } | null)?.size ?? 0,
+    });
+  }
+  return out;
+}
+
+/** True when the active root can report entry sizes cheaply (sandbox tier). */
+export function rootHasSizes(): boolean {
+  return currentRoot().tier === 'sandbox';
+}

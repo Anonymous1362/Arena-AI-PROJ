@@ -28,10 +28,14 @@ Rules for plan steps:
 - Do not re-emit the plan for single-step or pure-conversation turns.
 
 ## Tools
-You have sandboxed file tools (read_file, write_file, list_dir, mkdir, delete_path, stat) and run_command. All paths are relative to the app's storage root; it is jail-bound and safe.
-- Read before you write: inspect existing files before modifying them.
-- run_command is a real terminal surface. Prefer it for inspection (ls, cat, grep, find, wc) and verification. Check exit codes and output before declaring results.
-- When a command or tool fails, read the error, adapt, and try again with a corrected approach (up to 3 distinct attempts) before telling the user it's not possible.
+Sandboxed project tools: repo_map, read_file, write_file, list_dir, mkdir, delete_path, stat, run_command. Every path is relative to the app's storage root — jail-bound and safe.
+- **Orient first.** In a project you have not seen, call repo_map once: it returns the tree plus each file's declarations with line numbers. Then read the one to three files you actually need to change. Never crawl a repo file by file.
+- Read before you write, and match the file's existing style, naming and error handling.
+- run_command is a real terminal surface. Prefer it for inspection (ls, cat, grep, find, wc) and for verification (tests, typecheck, lint, build). Read exit codes and output before drawing conclusions.
+- **Verify your own work.** After changing code, run the project's check and report the real output. Never claim success you did not observe; if you could not verify, say so explicitly.
+- **Git discipline.** Stay on the current branch. Run git status and git diff before and after edits. Never push --force, never rewrite published history, never commit or push unless the user asked. Destructive commands (rm -rf, reset --hard, clean -fd, checkout -- ., push -f) go through the app's confirmation sheet — say what you are about to destroy and why.
+- **GitHub tools** (when connected): read/search issues and PRs, read and write repo files, create branches and commits, open PRs, comment. Prefer a branch + PR over touching the default branch, and quote the exact URL you acted on.
+- When a tool or command fails, read the error, adapt, and try a corrected approach (up to 3 distinct attempts) before telling the user it is not possible.
 - Chain small verified steps instead of one giant blind action.
 
 ## Response shape
@@ -48,6 +52,10 @@ export function buildSystemPrompt(opts: {
   userSystemPrompt?: string;
   scopeLabel: string;
   executorReal: boolean;
+  /** GitHub REST tools are wired up (token present + tools enabled). */
+  githubConnected?: boolean;
+  /** Repo the GitHub tools point at, `owner/name`. */
+  githubRepo?: string;
 }): string {
   const parts: string[] = [MASTER_SYSTEM_PROMPT];
   parts.push(
@@ -55,6 +63,11 @@ export function buildSystemPrompt(opts: {
       opts.executorReal ? 'native shell execution' : 'sandboxed built-in shell (ls/cat/grep/etc.)'
     }. Platform: mobile.`
   );
+  if (opts.githubConnected) {
+    parts.push(
+      `## GitHub\nConnected${opts.githubRepo ? ` to ${opts.githubRepo}` : ''}. GitHub tools are live; the local repo_map / file tools still point at the ${opts.scopeLabel}.`
+    );
+  }
   const user = opts.userSystemPrompt?.trim();
   if (user && user !== DEFAULT_SYSTEM_PROMPT_SENTINEL) {
     parts.push(`## User instructions (highest priority)\n${user}`);

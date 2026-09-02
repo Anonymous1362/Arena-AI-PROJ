@@ -1,5 +1,5 @@
-import type { GenerationSettings } from '@/src/store/settings';
 import type { Role } from '@/src/store/chats';
+import type { ThinkingLevel } from '@/src/store/settings';
 
 export interface WireMessage {
   role: Role;
@@ -41,9 +41,25 @@ export interface EngineResult {
   finishReason?: string;
 }
 
+/**
+ * Wire-level generation parameters. `GenerationSettings` is assignable to this;
+ * the extra fields are optional so lightweight calls (auto-titling, summaries)
+ * don't have to carry the whole settings object.
+ */
+export interface EngineParams {
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+  /** Reasoning / thinking level, mapped per provider by `catalog.thinkingFields`. */
+  thinking?: ThinkingLevel;
+  /** Ask the provider to stream thought summaries into the thinking panel. */
+  showThinking?: boolean;
+  systemPrompt?: string;
+}
+
 export interface EngineRequest {
   messages: WireMessage[];
-  params: GenerationSettings;
+  params: EngineParams;
   signal?: AbortSignal;
   handlers: EngineHandlers;
   /** OpenAI-format tools array (agent mode). */

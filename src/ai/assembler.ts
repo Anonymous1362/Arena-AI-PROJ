@@ -36,6 +36,19 @@ export class StreamAssembler {
     this.schedule();
   }
 
+  /**
+   * Feed a provider-native reasoning delta (Gemini thought summaries, OpenAI
+   * `reasoning_content`, DeepSeek/Groq chains). These bypass the `<think>` tag
+   * scanner entirely — the provider already told us it is thinking.
+   */
+  feedReasoning(delta: string): void {
+    if (!delta) return;
+    // Anything held back in the content buffer stays content; reasoning is a
+    // separate stream so we never interleave the two.
+    this.reasoning += delta;
+    this.schedule();
+  }
+
   /** Force-emit current state (call when the stream completes). */
   flush(): { content: string; reasoning: string } {
     this.process(true);

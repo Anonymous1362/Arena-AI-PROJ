@@ -40,7 +40,9 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "RECORD_AUDIO"
-      ]
+      ],
+      "softwareKeyboardLayoutMode": "resize",
+      "windowSoftInputMode": "adjustResize"
     },
     "web": {
       "bundler": "metro",

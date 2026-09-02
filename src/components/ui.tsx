@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } fr
 import { useTheme } from '@/src/theme';
 import { radius, spacing, typeScale } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
-import { Spring } from '@/src/theme/motion';
+import { Durations, Ease, Spring } from '@/src/theme/motion';
 import { haptics } from '@/src/utils/haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -103,6 +103,49 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   const { colors } = useTheme();
+  const activeIndex = Math.max(0, options.findIndex((o) => o.value === value));
+
+  const pillX = useSharedValue(0);
+  const pillW = useSharedValue(0);
+  const shown = useSharedValue(0);
+  /** Measured layout of each segment, keyed by index. */
+  const measured = React.useRef<{ x: number; width: number }[]>([]);
+
+  const moveTo = React.useCallback(
+    (index: number, animate: boolean) => {
+      const l = measured.current[index];
+      if (!l) return;
+      if (animate) {
+        pillX.value = withSpring(l.x, Spring.glide);
+        pillW.value = withSpring(l.width, Spring.glide);
+      } else {
+        pillX.value = l.x;
+        pillW.value = l.width;
+      }
+      shown.value = withTiming(1, { duration: Durations.fast, easing: Ease.out });
+    },
+    [pillX, pillW, shown]
+  );
+
+  const measure = React.useCallback(
+    (index: number, layout: { x: number; width: number }) => {
+      measured.current[index] = { x: layout.x, width: layout.width };
+      // First paint of the active segment lands without a flight across the row.
+      if (index === activeIndex) moveTo(index, shown.value > 0);
+    },
+    [activeIndex, moveTo, shown]
+  );
+
+  React.useEffect(() => {
+    moveTo(activeIndex, true);
+  }, [activeIndex, moveTo]);
+
+  const pillStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: pillX.value }],
+    width: pillW.value,
+    opacity: shown.value,
+  }));
+
   return (
     <View
       style={{
@@ -113,34 +156,72 @@ export function Segmented<T extends string>({
         gap: 3,
       }}
     >
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <PressableScale
-            key={o.value}
-            haptic="selection"
-            scale={0.96}
-            onPress={() => onChange(o.value)}
-            style={{ flex: 1 }}
-          >
-            <View
-              style={{
-                paddingVertical: spacing(1.8),
-                borderRadius: radius.sm + 2,
-                alignItems: 'center',
-                backgroundColor: active ? colors.surface : 'transparent',
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: active ? colors.border : 'transparent',
-              }}
-            >
-              <Text style={{ color: active ? colors.text : colors.textSub, fontSize: 13.5, fontWeight: active ? '700' : '500' }}>
-                {o.label}
-              </Text>
-            </View>
-          </PressableScale>
-        );
-      })}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          pillStyle,
+          {
+            position: 'absolute',
+            top: 3,
+            bottom: 3,
+            left: 0,
+            backgroundColor: colors.surface,
+            borderRadius: radius.sm + 2,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.border,
+          },
+        ]}
+      />
+      {options.map((o, i) => (
+        <SegmentItem
+          key={o.value}
+          label={o.label}
+          active={i === activeIndex}
+          onLayout={(x, width) => measure(i, { x, width })}
+          onPress={() => onChange(o.value)}
+        />
+      ))}
     </View>
+  );
+}
+
+/**
+ * One segment. Split out so the animated/text styles stay inside a component
+ * that mounts once per option — hooks never run inside a `.map()` body.
+ */
+function SegmentItem({
+  label,
+  active,
+  onPress,
+  onLayout,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  onLayout: (x: number, width: number) => void;
+}) {
+  const { colors } = useTheme();
+  const mix = useSharedValue(active ? 1 : 0);
+  React.useEffect(() => {
+    mix.value = withTiming(active ? 1 : 0, { duration: Durations.fast, easing: Ease.out });
+  }, [active, mix]);
+  const labelStyle = useAnimatedStyle(() => ({ opacity: 0.55 + 0.45 * mix.value }));
+
+  return (
+    <PressableScale
+      haptic="select"
+      scale={0.98}
+      flat
+      onPress={onPress}
+      style={{ flex: 1 }}
+      onLayout={(e) => onLayout(e.nativeEvent.layout.x, e.nativeEvent.layout.width)}
+    >
+      <View style={{ paddingVertical: spacing(1.8), borderRadius: radius.sm + 2, alignItems: 'center' }}>
+        <Animated.Text style={[{ color: active ? colors.text : colors.textSub, fontSize: 13.5, fontWeight: active ? '700' : '500' }, labelStyle]}>
+          {label}
+        </Animated.Text>
+      </View>
+    </PressableScale>
   );
 }
 
