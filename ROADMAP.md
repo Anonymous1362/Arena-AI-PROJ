@@ -61,8 +61,14 @@
 - [x] New-message entry animation (FadeInDown), smoother springs/easing presets, sheet + overlay polish
 - [x] Settings regrouped into color-coded sections (Agent & models / Chat / App / About) with gradient active-engine card
 - [x] Chats tab: prominent gradient “New chat”, empty-state CTA, tab cross-fade, keyboard-aware tab bar
-- [ ] Built-in real Linux terminal (Termux-class) — not feasible inside a sandboxed APK without bundling a Linux userspace or a remote shell; see notes
-- [ ] GitHub connector (clone/repo-aware coding from a repo) — design + OAuth/PAT flow documented, pending implementation
+- [x] Interactive Terminal tab — type commands yourself + agent run history, same executor the agent uses (native when copper-exec is present, sandboxed built-ins otherwise)
+
+## Phase 6 — Embedded Linux core (no Termux app) — design approved, build pending
+- [ ] Native executor module in the APK (`copper-exec` bridge the JS already probes for)
+- [ ] Linux userspace bundled in the APK **or** downloaded on first launch (~100–400 MB) via proot + Alpine/Debian rootfs
+- [ ] Pre-seed python3 / node / git / gcc / curl so it works with zero commands
+- [ ] Agent `run_command` + Terminal tab both exec into the embedded userspace
+- [ ] GitHub connector (clone/repo-aware coding from a repo) — design documented, pending implementation
 
 ## Your calls still open
 - Name "Copper" — keep or rename (one-line change + assets)
