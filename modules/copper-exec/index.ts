@@ -32,6 +32,30 @@ export interface NativeCommandResult {
   cwd: string;
 }
 
+export type CopperRuntimeState =
+  | 'bundle_missing'
+  | 'not_installed'
+  | 'ready'
+  | 'repair_required'
+  | 'package_mismatch';
+
+/** Native package/runtime state. A `bundle_missing` state intentionally means
+ * this APK has no verified Copper-prefix bootstrap and cannot act as Termux. */
+export interface CopperRuntimeStatus {
+  state: CopperRuntimeState;
+  ready: boolean;
+  bundleAvailable: boolean;
+  supportedAbi: string;
+  runtimePrefix: string;
+  runtimeHome: string;
+  persistentBytes: number;
+  quotaBytes: number;
+  remainingBytes: number;
+  freeDeviceBytes: number;
+  packageName: string;
+  expectedPackageName: string;
+}
+
 type NativeCopperExec = {
   getStorageInfo(): Promise<ExternalStorageInfo>;
   getExternalFilesDir(): Promise<ExternalStorageInfo>;
@@ -40,6 +64,10 @@ type NativeCopperExec = {
   requestAllFilesAccess(): Promise<boolean>;
   getTerminalStartDirectory(): Promise<string | null>;
   resolveSharedDirectory(target: string, workingDirectory: string | null): Promise<string>;
+  getRuntimeStatus(): Promise<CopperRuntimeStatus>;
+  installCopperRuntime(replaceExisting: boolean): Promise<CopperRuntimeStatus>;
+  repairCopperRuntime(): Promise<CopperRuntimeStatus>;
+  removeCopperRuntime(preserveHome: boolean): Promise<CopperRuntimeStatus>;
   /** Shares an external file or user-granted SAF URI without a cache copy. */
   shareUri(uri: string, mimeType: string, title: string | null): Promise<boolean>;
   /** Runs an agent command in Copper's automatic external workspace. */
@@ -79,6 +107,24 @@ export const CopperExec = {
   resolveSharedDirectory: async (target: string, workingDirectory: string | null): Promise<string> => {
     if (!native) throw new Error('The manual terminal is available only in a Copper Android build.');
     return native.resolveSharedDirectory(target, workingDirectory);
+  },
+
+  getRuntimeStatus: async (): Promise<CopperRuntimeStatus | null> =>
+    native ? native.getRuntimeStatus() : null,
+
+  installCopperRuntime: async (replaceExisting = false): Promise<CopperRuntimeStatus> => {
+    if (!native) throw new Error('Copper Runtime installation is available only in a Copper Android build.');
+    return native.installCopperRuntime(replaceExisting);
+  },
+
+  repairCopperRuntime: async (): Promise<CopperRuntimeStatus> => {
+    if (!native) throw new Error('Copper Runtime repair is available only in a Copper Android build.');
+    return native.repairCopperRuntime();
+  },
+
+  removeCopperRuntime: async (preserveHome = false): Promise<CopperRuntimeStatus> => {
+    if (!native) throw new Error('Copper Runtime removal is available only in a Copper Android build.');
+    return native.removeCopperRuntime(preserveHome);
   },
 
   shareUri: async (uri: string, mimeType: string, title: string | null): Promise<boolean> => {

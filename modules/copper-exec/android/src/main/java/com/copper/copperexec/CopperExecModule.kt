@@ -97,6 +97,27 @@ class CopperExecModule : Module() {
       runShell(command, resolveSharedTerminalDirectory(workingDirectory, null), timeoutMs.toLong())
     }
 
+    /** Copper Runtime bootstrap/package storage status. No runtime is faked
+     * when a build does not contain the verified Copper-prefix bootstrap asset. */
+    AsyncFunction("getRuntimeStatus") {
+      CopperRuntimeInstaller.status(context)
+    }
+
+    /** Install a verified bundled Copper Runtime bootstrap atomically. */
+    AsyncFunction("installCopperRuntime") { replaceExisting: Boolean ->
+      CopperRuntimeInstaller.install(context, replaceExisting)
+    }
+
+    /** Reinstall the executable package prefix while preserving shell settings. */
+    AsyncFunction("repairCopperRuntime") {
+      CopperRuntimeInstaller.repair(context)
+    }
+
+    /** Remove the runtime; callers explicitly choose whether $HOME is retained. */
+    AsyncFunction("removeCopperRuntime") { preserveHome: Boolean ->
+      CopperRuntimeInstaller.remove(context, preserveHome)
+    }
+
     /**
      * Shares an external file or SAF content URI directly, without first
      * copying it to an internal cache. File URIs are converted through this

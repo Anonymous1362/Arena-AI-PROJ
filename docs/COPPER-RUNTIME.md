@@ -16,7 +16,7 @@ This document intentionally calls it **Copper Runtime**, not Termux. Termux is t
 | Executable runtime, `pkg`/APT database, Bash, Node/Python/Git/compiler packages, libraries, sockets, symlinks, shell settings | Copper's private app directory, headed by `/data/data/com.copper.chat/files/usr` and `/data/data/com.copper.chat/files/home` | Android's shared and removable storage is `noexec` and does not provide the Unix filesystem features the runtime needs. |
 | Future temporary build mirror | Private app storage, only when a user opts in to a build that needs executable project dependencies | It is synced back to the SD project and deleted after success, failure, or cancellation. It is not enabled by default. |
 
-The initial product budget is **2 GiB maximum persistent runtime data**. This is a cap, not an initial download: a minimal architecture-specific bootstrap is much smaller, then usage grows when a user installs tools. Copper must show the exact package/cache/tool breakdown before and after installs, warn near the cap, and refuse an install that would cross it. `pkg uninstall` and runtime-cache cleanup must reclaim space.
+The initial product budget is a **2 GiB managed persistent-runtime cap**. This is not an initial download: a minimal architecture-specific bootstrap is much smaller, then usage grows when a user installs tools. Copper must show the exact package/cache/tool breakdown before and after installs, warn near the cap, and stop managed package operations that would cross it. Android does not expose a normal unrooted per-directory filesystem quota, so this must be communicated as a managed cap (preflight plus process monitoring), not a false kernel-level guarantee. `pkg uninstall` and runtime-cache cleanup must reclaim space.
 
 A normal unrooted Android device cannot run a complete Termux-like runtime wholly under `/storage/...`, including removable SD cards. A portable SD card is therefore the project/data drive, not the executable Unix root.
 
@@ -109,8 +109,8 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 - [x] Add a static APT repository assembler that generates `Packages`, `Release`, immutable by-hash indexes, and refuses publishing without an offline-provided GPG archive key (`runtime:repo`).
 - [ ] Run the bootstrap builder successfully and retain its verified output/manifest as a CI artifact.
 - [ ] Establish a Copper-controlled HTTPS package endpoint, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
-- [ ] Add atomic first-run bootstrap installation, validation, repair, and removal.
-- [ ] Add 2 GiB runtime quota accounting and install preflight checks.
+- [x] Add the native atomic installer/validator/repair/removal manager and bootstrap-size quota preflight. It stays unavailable until a verified Copper bootstrap asset is added; it never falls back to a Termux binary.
+- [ ] Add ongoing 2 GiB runtime quota monitoring and package-install preflight checks for live PTY sessions. Android has no ordinary unrooted per-directory hard quota, so enforcement must be an honest managed cap (preflight plus process monitoring), not a false kernel guarantee.
 
 ### R2 — Actual terminal sessions
 
