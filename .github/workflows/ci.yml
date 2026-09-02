@@ -143,6 +143,32 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
+      - name: Surface native compiler diagnostics on failure
+        # The retained log is authoritative. These concise annotations also
+        # make compiler failures visible when an environment cannot download
+        # GitHub Actions' artifact blob directly.
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/copper-native-build.log"
+          if [ ! -f "$LOG" ]; then
+            echo "::error title=Copper native compilation::Gradle failed before its build log was created."
+            exit 0
+          fi
+          mapfile -t diagnostics < <(
+            grep -E '(^|[[:space:]])(e:|error:|FAILURE:|Execution failed|What went wrong|BUILD FAILED)' "$LOG" | tail -20 || true
+          )
+          if [ "${#diagnostics[@]}" -eq 0 ]; then
+            mapfile -t diagnostics < <(tail -20 "$LOG")
+          fi
+          for line in "${diagnostics[@]}"; do
+            line="${line//'%'/'%25'}"
+            line="${line//$'\r'/'%0D'}"
+            line="${line//$'\n'/'%0A'}"
+            echo "::error title=Copper native compilation::$line"
+          done
+
       - name: Upload native build log on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
