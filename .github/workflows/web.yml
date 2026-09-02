@@ -21,6 +21,8 @@ jobs:
   build:
     name: Export & patch web dist
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,19 +34,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Try to configure Pages; mark as optional so missing Pages config
+      # doesn't block the JS-bundle build step.
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
         with:
-          # Auto-enables Pages the first time if not already enabled
           enablement: true
+        continue-on-error: true
+
+      - name: Determine base path
+        id: basepath
+        run: |
+          # Use the output from configure-pages if it succeeded; fall back
+          # to the hard-coded repo name so the export always works.
+          BASE="${{ steps.pages.outputs.base_path }}"
+          if [ -z "$BASE" ]; then
+            BASE="/Arena-AI-PROJ"
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "Using base path: $BASE"
 
       - name: expo export --platform web
         run: npx expo export --platform web --output-dir dist
         env:
           CI: true
-          # Injects the repo base path (e.g. /Arena-AI-PROJ) into app.config.js
-          WEB_BASE_PATH: /Arena-AI-PROJ
+          WEB_BASE_PATH: ${{ steps.basepath.outputs.base }}
 
       - name: node scripts/patch-web-dist.mjs dist
         run: node scripts/patch-web-dist.mjs dist
@@ -59,6 +74,9 @@ jobs:
     name: Deploy to GitHub Pages
     needs: build
     runs-on: ubuntu-latest
+    # Only deploy when Pages was reachable (configure-pages succeeded).
+    # When Pages hasn't been enabled yet this job is skipped, not failed.
+    if: ${{ needs.build.result == 'success' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
