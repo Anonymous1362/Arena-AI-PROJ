@@ -68,6 +68,15 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+function commandFailureDetails(result) {
+  const details = [
+    result.error ? `${result.error.name}: ${result.error.message}` : '',
+    result.stdout?.trim() ?? '',
+    result.stderr?.trim() ?? '',
+  ].filter(Boolean).join('\n');
+  return details || `exit status ${result.status ?? 'unknown'}`;
+}
+
 try {
   if (!hasOnlyKnownFlags()) usage('Unknown or incomplete argument.');
   const workspace = resolve(takeFlag('--workspace'));
@@ -167,12 +176,26 @@ try {
   const archiveSize = statSync(expectedArchive).size;
   if (archiveSize < 1_000_000) throw new Error(`Bootstrap archive is unexpectedly small (${archiveSize} bytes). Refusing to publish an invalid runtime input.`);
 
-  const verify = spawnSync('unzip', ['-t', expectedArchive], { encoding: 'utf8' });
-  if (verify.status !== 0) throw new Error(`Bootstrap integrity verification failed:\n${verify.stdout}\n${verify.stderr}`);
-  const listing = spawnSync('unzip', ['-Z1', expectedArchive], { encoding: 'utf8' });
-  if (listing.status !== 0) throw new Error('Could not inspect bootstrap archive contents.');
+  // A full `unzip -t` prints one line for every file. A complete Termux-style
+  // bootstrap easily exceeds Node's 1 MiB spawnSync output buffer even when
+  // every archive member is valid. Test quietly, then query each required
+  // entry individually so validation stays bounded and actionable.
+  const verify = spawnSync('unzip', ['-tqq', expectedArchive], {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (verify.status !== 0 || verify.error) {
+    throw new Error(`Bootstrap integrity verification failed:\n${commandFailureDetails(verify)}`);
+  }
   for (const requiredFile of config.bootstrap.requiredFiles) {
-    if (!listing.stdout.split(/\r?\n/).includes(requiredFile)) {
+    const entry = spawnSync('unzip', ['-Z1', expectedArchive, requiredFile], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    if (entry.status !== 0 || entry.error) {
+      throw new Error(`Could not inspect required runtime entry ${requiredFile}:\n${commandFailureDetails(entry)}`);
+    }
+    if (!entry.stdout.split(/\r?\n/).includes(requiredFile)) {
       throw new Error(`Bootstrap is missing required runtime entry: ${requiredFile}`);
     }
   }
