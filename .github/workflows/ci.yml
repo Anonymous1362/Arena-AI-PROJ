@@ -134,7 +134,7 @@ jobs:
               # Include component lines following Gradle's SDK-install header;
               # without this context an annotation hides the actionable names.
               grep -Ei --no-group-separator -A6 'failed to install the following sdk components' "$LOG" || true
-              grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
+              grep -Ei 'no space left|out of (disk|memory)|no rule to make target|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
             } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then

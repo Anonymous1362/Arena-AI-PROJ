@@ -17,8 +17,85 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A manual full bootstrap must obey the same device-level PTY gate as the
+  # marker-driven CI path. This runs on its own runner before the package job
+  # reclaims that runner's Android payload for Docker source compilation.
+  native-pty-preflight:
+    name: Copper Runtime native PTY validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Reclaim runner disk for Android PTY validation
+        run: |
+          set -euo pipefail
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell
+          sudo apt-get clean
+          AVAILABLE_BYTES="$(df -B1 --output=avail / | tail -1 | tr -d '[:space:]')"
+          REQUIRED_BYTES=$((12 * 1024 * 1024 * 1024))
+          df -h /
+          if [ "$AVAILABLE_BYTES" -lt "$REQUIRED_BYTES" ]; then
+            echo "::error title=Copper Android PTY capacity::Only $AVAILABLE_BYTES bytes are free after safe cleanup; at least $REQUIRED_BYTES bytes are required before downloading and booting the Android test image."
+            exit 1
+          fi
+
+      - name: Install dependencies and generate Android project
+        run: |
+          npm ci --ignore-scripts
+          npx expo prebuild --platform android --clean
+
+      - name: Compile Copper native module and PTY library
+        working-directory: android
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew :copper-exec:assembleDebug --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-native-build.log"
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Copper PTY transport on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          # This action evaluates each supplied script line separately with
+          # /bin/sh. Keep the command on one Bash line so cd and pipefail hold.
+          script: >-
+            bash -e -o pipefail -c 'cd "$GITHUB_WORKSPACE/android" && chmod +x gradlew && ./gradlew :copper-exec:connectedDebugAndroidTest --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-native-pty-test.log"'
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
   build-arm64-bootstrap:
     name: Build Copper-prefix arm64 bootstrap
+    needs: native-pty-preflight
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -102,7 +179,7 @@ jobs:
               # Include component lines following Gradle's SDK-install header;
               # without this context an annotation hides the actionable names.
               grep -Ei --no-group-separator -A6 'failed to install the following sdk components' "$LOG" || true
-              grep -Ei 'no space left|out of (disk|memory)|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
+              grep -Ei 'no space left|out of (disk|memory)|no rule to make target|(^|[^[:alpha:]])error:|(^|[^[:alpha:]])failure:|failed to (install|read or create install properties)|could not determine|build failed|copper runtime bootstrap build failed' "$LOG" || true
             } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then

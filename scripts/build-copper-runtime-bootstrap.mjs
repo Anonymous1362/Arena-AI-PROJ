@@ -85,8 +85,19 @@ try {
   }
 
   const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-  if (receipt.applicationId !== config.applicationId || receipt.runtimePrefix !== config.runtimePrefix || receipt.architecture !== config.architecture) {
+  if (receipt.buildName !== config.buildName || receipt.applicationId !== config.applicationId || receipt.runtimePrefix !== config.runtimePrefix || receipt.architecture !== config.architecture) {
     throw new Error('Copper patch receipt does not match runtime/copper-runtime.config.json. Re-run the patch step.');
+  }
+
+  // Fail before Docker/preflight if generated recipe argument splitting would
+  // turn any part of Copper's branding into an unintended make target.
+  const generatedInputCheck = spawnSync(process.execPath, [
+    resolve(root, 'scripts/verify-copper-runtime-generated-inputs.mjs'),
+    '--workspace',
+    workspace,
+  ], { stdio: 'inherit' });
+  if (generatedInputCheck.status !== 0) {
+    throw new Error(`Generated Copper recipe verification failed with exit code ${generatedInputCheck.status ?? 'unknown'}.`);
   }
 
   // termux-am is the Android Gradle sub-build required by termux-tools. Build

@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "displayName": "Copper Runtime",
+  "buildName": "Copper",
   "applicationId": "com.copper.chat",
   "runtimePrefix": "/data/data/com.copper.chat/files/usr",
   "runtimeHome": "/data/data/com.copper.chat/files/home",

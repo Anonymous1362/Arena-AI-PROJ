@@ -34,6 +34,8 @@ Before the first upstream source is imported, the Copper distribution must:
 
 The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtime/copper-runtime.lock.json), and the active build choices are in [`runtime/copper-runtime.config.json`](../runtime/copper-runtime.config.json). These records pin source revisions only; they do not vendor or redistribute upstream source yet.
 
+`displayName` remains **Copper Runtime** for people. The separate `buildName` is deliberately the whitespace-free **Copper** token: upstream `termux_step_make` expands recipe make arguments unquoted, so a value such as `Copper Runtime` becomes a `TERMUX__NAME=Copper` assignment plus an unintended `Runtime` make target. The generated-input verifier rejects any bare target before Docker or the package preflight starts.
+
 ## Reproducible R1 commands
 
 ```bash
@@ -43,12 +45,16 @@ npm run runtime:upstream -- --dir /absolute/path/copper-runtime-source
 # 2. Apply only the reviewed Copper-prefix package-build settings.
 npm run runtime:patch -- --workspace /absolute/path/copper-runtime-source
 
-# 3. Build and verify a real arm64 bootstrap with Docker.
+# 3. Confirm generated recipe arguments cannot add an unintended make target.
+npm run runtime:verify-inputs -- --workspace /absolute/path/copper-runtime-source
+
+# 4. Build and verify a real arm64 bootstrap with Docker. This runs the same
+# generated-input check again before the Android package preflight.
 npm run runtime:bootstrap -- \
   --workspace /absolute/path/copper-runtime-source \
   --out /absolute/path/copper-runtime-artifacts
 
-# 4. Assemble a signed static APT repository from Copper-built .deb files.
+# 5. Assemble a signed static APT repository from Copper-built .deb files.
 # The signing key must be supplied from a secure location, never committed.
 npm run runtime:repo -- \
   --packages /absolute/path/copper-runtime-source/termux-packages/output \

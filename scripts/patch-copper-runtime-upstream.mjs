@@ -67,8 +67,17 @@ try {
   assertCheckout(packagesRoot, lock.upstream.termuxPackages.revision);
   assertCheckout(resolve(workspace, 'termux-app'), lock.upstream.termuxApp.revision);
 
+  // termux_step_make expands TERMUX_PKG_EXTRA_MAKE_ARGS unquoted. Recipes
+  // such as termux-core transport TERMUX__NAME through that value, so this
+  // build-time identity must remain one shell word. The user-facing product
+  // display name remains config.displayName ("Copper Runtime"); the generated
+  // runtime/package identity is the Copper brand token.
+  if (!/^[A-Za-z0-9._-]+$/.test(config.buildName)) {
+    throw new Error(`runtime buildName must be a whitespace-free make-safe token, received ${JSON.stringify(config.buildName)}.`);
+  }
+
   let properties = readFileSync(propertiesPath, 'utf8');
-  properties = replaceExactly(properties, 'TERMUX__NAME="Termux"', 'TERMUX__NAME="Copper Runtime"', 'runtime name');
+  properties = replaceExactly(properties, 'TERMUX__NAME="Termux"', `TERMUX__NAME="${config.buildName}"`, 'runtime build name');
   properties = replaceExactly(
     properties,
     'TERMUX_APP__PACKAGE_NAME="com.termux"',
@@ -186,6 +195,7 @@ try {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     purpose: 'Copper-prefix bootstrap and package build input',
+    buildName: config.buildName,
     applicationId: config.applicationId,
     runtimePrefix: config.runtimePrefix,
     runtimeHome: config.runtimeHome,
@@ -195,7 +205,7 @@ try {
       termuxPackages: lock.upstream.termuxPackages.revision,
     },
     changes: [
-      'TERMUX__NAME=\"Copper Runtime\"',
+      `TERMUX__NAME=\"${config.buildName}\" (a whitespace-free build token; the user-facing product name is \"${config.displayName}\")`,
       `TERMUX_APP__PACKAGE_NAME=\"${config.applicationId}\"`,
       'TERMUX__PROJECT_SUBDIR=\"copper-runtime\"',
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
