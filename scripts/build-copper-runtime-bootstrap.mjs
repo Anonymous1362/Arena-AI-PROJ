@@ -187,16 +187,31 @@ try {
   if (verify.status !== 0 || verify.error) {
     throw new Error(`Bootstrap integrity verification failed:\n${commandFailureDetails(verify)}`);
   }
+
+  // The upstream bootstrap format deliberately removes every symlink before
+  // zipping, then records it as `target←./path` in SYMLINKS.txt for the Android
+  // installer to recreate. A runtime entry is therefore valid when it is a
+  // direct ZIP member *or* an explicitly recorded bootstrap symlink.
+  const symlinks = spawnSync('unzip', ['-p', expectedArchive, 'SYMLINKS.txt'], {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (symlinks.status !== 0 || symlinks.error) {
+    throw new Error(`Could not read bootstrap symlink manifest:\n${commandFailureDetails(symlinks)}`);
+  }
+  const recordedSymlinks = new Set(symlinks.stdout.split(/\r?\n/));
   for (const requiredFile of config.bootstrap.requiredFiles) {
     const entry = spawnSync('unzip', ['-Z1', expectedArchive, requiredFile], {
       encoding: 'utf8',
       maxBuffer: 1024 * 1024,
     });
-    if (entry.status !== 0 || entry.error) {
+    if (entry.error) {
       throw new Error(`Could not inspect required runtime entry ${requiredFile}:\n${commandFailureDetails(entry)}`);
     }
-    if (!entry.stdout.split(/\r?\n/).includes(requiredFile)) {
-      throw new Error(`Bootstrap is missing required runtime entry: ${requiredFile}`);
+    const isDirectArchiveEntry = entry.status === 0 && entry.stdout.split(/\r?\n/).includes(requiredFile);
+    const isRecordedSymlink = [...recordedSymlinks].some((line) => line.endsWith(`←./${requiredFile}`));
+    if (!isDirectArchiveEntry && !isRecordedSymlink) {
+      throw new Error(`Bootstrap is missing required runtime entry or symlink: ${requiredFile}`);
     }
   }
 
