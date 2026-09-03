@@ -145,6 +145,16 @@ try {
     'PACKAGES+=("libbz2") # Emits the bzip2 command subpackage.',
     'bootstrap bzip2 source recipe migration'
   );
+  // run-docker mounts the repository root with the hosted runner's checkout
+  // permissions. The package-builder has already proven output/ is writable
+  // by emitting every .deb there, while the mount root may not be writable at
+  // archive-finalization time. Export the finished ZIP beside those .debs.
+  bootstrapBuild = replaceExactly(
+    bootstrapBuild,
+    '\tmv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_PACKAGES_DIRECTORY/"',
+    '\tmv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"',
+    'bootstrap archive writable output destination'
+  );
   writeFileSync(bootstrapBuildPath, bootstrapBuild);
 
   // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
@@ -233,6 +243,7 @@ try {
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
       'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace before finish-build exits while retaining output .deb files, built-package markers, and shared toolchain cache.',
       'build-bootstraps.sh uses libbz2, the pinned source recipe that emits the bzip2 command subpackage, instead of the removed packages/bzip2 recipe.',
+      'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',

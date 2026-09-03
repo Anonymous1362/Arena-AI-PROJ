@@ -151,7 +151,10 @@ try {
     process.exit(0);
   }
 
-  const expectedArchive = resolve(packagesRoot, `bootstrap-${config.architecture}.zip`);
+  // The generated bootstrap patch exports the final ZIP to output/, the
+  // package-builder's proven writable bind-mounted directory. The repository
+  // root itself can be read-only to the container's builder user on CI.
+  const expectedArchive = resolve(packagesRoot, 'output', `bootstrap-${config.architecture}.zip`);
   rmSync(expectedArchive, { force: true });
   const run = spawnSync(command[0], command.slice(1), {
     cwd: packagesRoot,

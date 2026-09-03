@@ -58,6 +58,10 @@ try {
   }
 
   const bootstrapBuild = readFileSync(bootstrapBuildPath, 'utf8');
+  const expectedArchiveMove = 'mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"';
+  if (!bootstrapBuild.includes(expectedArchiveMove)) {
+    fail('Generated bootstrap must export its final ZIP to the package-builder output/ directory, not the potentially non-writable repository root.');
+  }
   const bootstrapPackages = [...bootstrapBuild.matchAll(/^\s*PACKAGES\+=\("([a-z0-9+_.-]+)"\)/gmi)].map((match) => match[1]);
   if (!bootstrapPackages.length) {
     fail('Could not find direct package entries in generated build-bootstraps.sh. Upstream changed; review the bootstrap package check deliberately.');
@@ -106,6 +110,7 @@ try {
   }
 
   console.log('Copper completed-package pruning verified before upstream finish-build exits its subshell.');
+  console.log('Copper bootstrap archive export verified: package-builder output/ is used instead of the repository root.');
   console.log(`Copper generated bootstrap recipes verified: ${bootstrapPackages.length} direct package entries map to pinned source recipes.`);
   console.log(`Copper generated termux-core make arguments verified: ${makeArguments.length} assignments, no bare make targets.`);
   console.log(`  TERMUX__NAME: ${config.buildName}`);
