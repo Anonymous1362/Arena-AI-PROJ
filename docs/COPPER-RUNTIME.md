@@ -34,7 +34,7 @@ Before the first upstream source is imported, the Copper distribution must:
 
 The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtime/copper-runtime.lock.json), and the active build choices are in [`runtime/copper-runtime.config.json`](../runtime/copper-runtime.config.json). These records pin source revisions only; they do not vendor or redistribute upstream source yet.
 
-`displayName` remains **Copper Runtime** for people. The separate `buildName` is deliberately the whitespace-free **Copper** token: upstream `termux_step_make` expands recipe make arguments unquoted, so a value such as `Copper Runtime` becomes a `TERMUX__NAME=Copper` assignment plus an unintended `Runtime` make target. The generated-input verifier rejects any bare target before Docker or the package preflight starts.
+`displayName` remains **Copper Runtime** for people. The separate `buildName` is deliberately the whitespace-free **Copper** token: upstream `termux_step_make` expands recipe make arguments unquoted, so a value such as `Copper Runtime` becomes a `TERMUX__NAME=Copper` assignment plus an unintended `Runtime` make target. The generated-input verifier rejects any bare target before Docker or the package preflight starts. It also verifies every direct bootstrap package name has a pinned source recipe; this caught the pinned upstream script's stale `bzip2` entry after that command became a `libbz2` subpackage.
 
 ## Reproducible R1 commands
 

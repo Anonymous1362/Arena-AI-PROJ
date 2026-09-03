@@ -33,6 +33,7 @@ const workspace = resolve(args[workspaceIndex + 1]);
 const packagesRoot = resolve(workspace, 'termux-packages');
 const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
+const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
@@ -108,22 +109,43 @@ try {
   // This remains opt-in at build time, leaving upstream's default behavior
   // unchanged for ordinary Termux package builds.
   let buildPackage = readFileSync(buildPackagePath, 'utf8');
-  const packageBuildComplete = '\t\ttermux_step_finish_build';
+  // termux_step_finish_build ends the package subshell with `exit 0`. The
+  // cleanup must therefore run immediately *before* that function, after the
+  // .deb and built-package markers have been created, rather than after it.
+  const packageBuildComplete = [
+    '\t\ttermux_add_package_to_built_packages_list "$TERMUX_PKG_NAME"',
+    '\t\ttermux_step_finish_build',
+  ].join('\n');
   const copperPerPackagePruning = [
-    packageBuildComplete,
+    '\t\ttermux_add_package_to_built_packages_list "$TERMUX_PKG_NAME"',
     '\t\tif [ "${COPPER_BOOTSTRAP_PRUNE_BUILD_TREES:-false}" = "true" ]; then',
-    '\t\t\t# The .deb, installed prefix, and shared _cache are retained.',
-    '\t\t\t# Only this completed package\'s private workspace is removed.',
+    '\t\t\t# output/*.deb, built-package markers, and shared _cache stay intact.',
+    '\t\t\t# Remove only this completed package\'s private source/build/cache tree.',
     '\t\t\trm -rf "$TERMUX_TOPDIR/$TERMUX_PKG_NAME"',
     '\t\tfi',
+    '\t\ttermux_step_finish_build',
   ].join('\n');
   buildPackage = replaceExactly(
     buildPackage,
     packageBuildComplete,
     copperPerPackagePruning,
-    'per-package intermediate build-tree pruning hook'
+    'per-package intermediate build-tree pruning hook before finish-build exit'
   );
   writeFileSync(buildPackagePath, buildPackage);
+
+  // The pinned termux-packages revision moved the bzip2 command into the
+  // libbz2 recipe as a subpackage, but build-bootstraps.sh still asks for a
+  // now-nonexistent packages/bzip2 recipe. Building libbz2 emits both libbz2
+  // and bzip2 .debs, so use the actual source recipe rather than falling back
+  // to an incompatible official-repository download.
+  let bootstrapBuild = readFileSync(bootstrapBuildPath, 'utf8');
+  bootstrapBuild = replaceExactly(
+    bootstrapBuild,
+    'PACKAGES+=("bzip2")',
+    'PACKAGES+=("libbz2") # Emits the bzip2 command subpackage.',
+    'bootstrap bzip2 source recipe migration'
+  );
+  writeFileSync(bootstrapBuildPath, bootstrapBuild);
 
   // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
   // build-tools 30.0.3. The pinned package-builder image intentionally ships
@@ -209,7 +231,8 @@ try {
       `TERMUX_APP__PACKAGE_NAME=\"${config.applicationId}\"`,
       'TERMUX__PROJECT_SUBDIR=\"copper-runtime\"',
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
-      'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace while retaining output .deb files, installed prefix, and shared toolchain cache.',
+      'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace before finish-build exits while retaining output .deb files, built-package markers, and shared toolchain cache.',
+      'build-bootstraps.sh uses libbz2, the pinned source recipe that emits the bzip2 command subpackage, instead of the removed packages/bzip2 recipe.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
