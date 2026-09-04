@@ -60,6 +60,7 @@
 - [x] Repair/remove controls, visible missing/ready/repair state, and runtime storage meter.
 - [x] Bootstrap extraction respects the managed 2 GiB cap and uses a linear-time quota check.
 - [x] Validate the exact successful arm64 artifact through the real Android installer in CI: [run `33914196546`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33914196546).
+- [x] Add a reusable verified-asset staging command that rejects mismatched ZIPs/manifests and refuses to stage the current non-publishable artifact as a release asset.
 - [x] Make the earlier full-source-build provenance visible as a separate CI success check before installer validation begins.
 
 ### Why a source-build row can say “skipped” while runtime validation passes

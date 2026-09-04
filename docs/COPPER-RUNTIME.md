@@ -59,7 +59,16 @@ npm run runtime:bootstrap -- \
   --workspace /absolute/path/copper-runtime-source \
   --out /absolute/path/copper-runtime-artifacts
 
-# 5. Assemble a signed static APT repository from Copper-built .deb files.
+# 5. Verify and atomically stage an existing bootstrap as Android module assets
+# for a temporary CI installer test. This does not download, publish, or make
+# an asset release-eligible.
+npm run runtime:stage-android-assets -- \
+  --archive /absolute/path/copper-runtime-bootstrap-aarch64.zip \
+  --manifest /absolute/path/copper-runtime-bootstrap-aarch64.zip.json \
+  --out /absolute/path/modules/copper-exec/android/src/main/assets/copper-runtime \
+  --mode ci-validation
+
+# 6. Assemble a signed static APT repository from Copper-built .deb files.
 # The signing key must be supplied from a secure location, never committed.
 npm run runtime:repo -- \
   --packages /absolute/path/copper-runtime-source/termux-packages/output \

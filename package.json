@@ -16,6 +16,7 @@
     "runtime:patch": "node scripts/patch-copper-runtime-upstream.mjs",
     "runtime:verify-inputs": "node scripts/verify-copper-runtime-generated-inputs.mjs",
     "runtime:bootstrap": "node scripts/build-copper-runtime-bootstrap.mjs",
+    "runtime:stage-android-assets": "node scripts/stage-copper-runtime-android-assets.mjs",
     "runtime:repo": "node scripts/build-copper-apt-repository.mjs"
   },
   "dependencies": {

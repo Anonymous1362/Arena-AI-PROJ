@@ -412,23 +412,14 @@ jobs:
           archive="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip' -print -quit)"
           manifest="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip.json' -print -quit)"
           test -n "$archive" && test -n "$manifest"
-          expected_sha="$(jq -r '.sha256' "$manifest")"
-          actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
-          test "$actual_sha" = "$expected_sha"
-          jq -e '
-            .product == "Copper Runtime" and
-            .architecture == "aarch64" and
-            .applicationId == "com.copper.chat" and
-            .runtimePrefix == "/data/data/com.copper.chat/files/usr" and
-            .file == "copper-runtime-bootstrap-aarch64.zip" and
-            (.sha256 | test("^[a-f0-9]{64}$"))
-          ' "$manifest" >/dev/null
-
           destination="$GITHUB_WORKSPACE/modules/copper-exec/android/src/main/assets/copper-runtime"
-          mkdir -p "$destination"
-          cp "$archive" "$destination/copper-runtime-bootstrap-aarch64.zip"
-          cp "$manifest" "$destination/copper-runtime-bootstrap-aarch64.zip.json"
-          echo "Copper bootstrap asset verified: $actual_sha"
+          npm run runtime:stage-android-assets -- \
+            --archive "$archive" \
+            --manifest "$manifest" \
+            --out "$destination" \
+            --mode ci-validation
+          test -f "$destination/copper-runtime-bootstrap-aarch64.zip"
+          test -f "$destination/copper-runtime-bootstrap-aarch64.zip.json"
           du -h "$destination/copper-runtime-bootstrap-aarch64.zip"
 
       - name: Generate Android project with temporary verified runtime asset
