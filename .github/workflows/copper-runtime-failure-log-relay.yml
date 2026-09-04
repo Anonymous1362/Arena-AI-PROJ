@@ -1,0 +1,99 @@
+name: Copper Runtime Failure Log Relay
+
+on:
+  # The path filter makes the initial relay run automatically when this
+  # diagnostics workflow is added or deliberately updated. It never starts an
+  # arm64 package build.
+  push:
+    paths:
+      - .github/workflows/copper-runtime-failure-log-relay.yml
+  workflow_dispatch:
+    inputs:
+      failed_run_id:
+        description: "Failed run ID whose copper-runtime-bootstrap-build-log artifact should be relayed"
+        required: true
+        default: "33846718528"
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  relay-failed-bootstrap-log:
+    name: Relay failed Copper bootstrap diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Push-triggered runs deliberately diagnose the incident that motivated
+      # this workflow. Manual invocations can choose any retained failed run.
+      COPPER_FAILED_RUN_ID: ${{ inputs.failed_run_id || '33846718528' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download retained failed bootstrap log
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$COPPER_FAILED_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Copper diagnostic input::failed_run_id must be a numeric GitHub Actions run ID."
+            exit 1
+          fi
+          destination="$RUNNER_TEMP/copper-failed-bootstrap-log"
+          gh run download "$COPPER_FAILED_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name copper-runtime-bootstrap-build-log \
+            --dir "$destination"
+          log="$(find "$destination" -maxdepth 2 -type f -name '*bootstrap*log*' -print -quit)"
+          if [ -z "$log" ]; then
+            echo "::error title=Copper diagnostic artifact::The retained artifact did not contain a bootstrap build log."
+            exit 1
+          fi
+          cp "$log" "$RUNNER_TEMP/copper-failed-bootstrap-log.txt"
+          echo "Retained failure log: $log"
+          wc -l -c "$log"
+
+      - name: Relay concise terminal failure context as check annotations
+        # The direct Azure artifact endpoint is occasionally unavailable from
+        # external clients. This job runs inside GitHub Actions, reads the
+        # retained artifact there, and emits a bounded ending excerpt through
+        # the Check Runs API so a real upstream error remains inspectable.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/copper-failed-bootstrap-log.txt" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8", errors="replace")
+          # Package build failures print their causal compiler/package-manager
+          # lines just before build-bootstraps and the Node wrapper return. Keep
+          # the final 14 KiB, which is enough surrounding context without
+          # exceeding GitHub annotation-size limits.
+          limit = 14_000
+          if len(text) > limit:
+              excerpt = "[Earlier build output omitted; final 14,000 characters follow.]\n" + text[-limit:]
+          else:
+              excerpt = text
+          print("----- Copper failed bootstrap log excerpt -----")
+          print(excerpt)
+          print("----- End excerpt -----")
+
+          chunk_size = 3_200
+          chunks = [excerpt[index:index + chunk_size] for index in range(0, len(excerpt), chunk_size)] or ["The failure log was empty."]
+          for index, chunk in enumerate(chunks, start=1):
+              # Escape workflow-command control characters rather than allowing
+              # any upstream build text to create a second command.
+              encoded = (chunk.replace("%", "%25")
+                              .replace("\r", "%0D")
+                              .replace("\n", "%0A"))
+              print(f"::error title=Copper failed bootstrap log ({index}/{len(chunks)})::{encoded}")
+          PY
+
+      - name: Upload bounded relay excerpt
+        uses: actions/upload-artifact@v6
+        with:
+          name: copper-runtime-failed-build-log-relay
+          path: ${{ runner.temp }}/copper-failed-bootstrap-log.txt
+          if-no-files-found: error
+          retention-days: 14
