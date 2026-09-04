@@ -35,6 +35,7 @@ const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
+const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
 
@@ -223,6 +224,20 @@ try {
   );
   writeFileSync(termuxAmRecipePath, termuxAmRecipe);
 
+  // The complete bootstrap failed only because the pinned attr source endpoint
+  // spent its entire retry budget returning 502/zero-byte responses. Keep the
+  // identical release and SHA-256 pin, but use Savannah's HTTPS mirror rather
+  // than the unavailable plain-HTTP endpoint. This is deliberately scoped to
+  // the exact pinned recipe, not a broad source-URL rewrite.
+  let attrRecipe = readFileSync(attrRecipePath, 'utf8');
+  attrRecipe = replaceExactly(
+    attrRecipe,
+    'TERMUX_PKG_SRCURL="http://download.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"',
+    'TERMUX_PKG_SRCURL="https://download-mirror.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"',
+    'attr 2.6.0 HTTPS source mirror'
+  );
+  writeFileSync(attrRecipePath, attrRecipe);
+
   const receipt = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -245,6 +260,7 @@ try {
       'build-bootstraps.sh uses libbz2, the pinned source recipe that emits the bzip2 command subpackage, instead of the removed packages/bzip2 recipe.',
       'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
+      'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
   };

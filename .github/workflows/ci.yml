@@ -138,7 +138,7 @@ jobs:
               # Do not grep broad words such as "error", "syntax error", or
               # "out of memory": package source text legitimately contains
               # them and previously produced misleading false positives.
-              grep -Ei -A4 'copper runtime bootstrap build failed:|bootstrap integrity verification failed:|bootstrap is missing required runtime entry|could not inspect required runtime entry|could not read bootstrap symlink manifest|build reported success but did not create|bootstrap archive is unexpectedly small|no space left on device|no rule to make target|failed to install the following sdk components|failed to read or create install properties' "$LOG" || true
+              grep -Ei -A4 'copper runtime bootstrap build failed:|bootstrap integrity verification failed:|bootstrap is missing required runtime entry|could not inspect required runtime entry|could not read bootstrap symlink manifest|build reported success but did not create|bootstrap archive is unexpectedly small|no space left on device|no rule to make target|failed to install the following sdk components|failed to read or create install properties|failed to download https?://|curl: \((22|28)\)' "$LOG" || true
             } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then

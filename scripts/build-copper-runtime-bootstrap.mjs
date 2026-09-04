@@ -152,11 +152,15 @@ try {
     throw new Error(`Generated Copper recipe verification failed with exit code ${generatedInputCheck.status ?? 'unknown'}.`);
   }
 
-  // termux-am is the Android Gradle sub-build required by termux-tools. Build
-  // it first, while the runner is still empty, so an SDK/package failure stops
-  // in minutes rather than after a full bootstrap dependency graph has built.
-  // Its emitted .deb and built-package marker are reused by build-bootstraps.
-  const preflightCommand = ['./scripts/run-docker.sh', './build-package.sh', '-a', config.architecture, 'termux-am'];
+  // Run focused, dependency-ordered package preflights before the large
+  // bootstrap graph. attr is deliberately first: a real bootstrap previously
+  // spent almost an hour before its pinned source host exhausted curl retries.
+  // termux-am remains the Android/Gradle gate required by termux-tools. Their
+  // emitted .debs and built-package markers are reused by build-bootstraps.
+  const preflightPackages = [
+    { name: 'attr', purpose: 'HTTPS Savannah source delivery and checksum' },
+    { name: 'termux-am', purpose: 'Android Gradle package build' },
+  ];
   const command = ['./scripts/run-docker.sh', './scripts/build-bootstraps.sh', '--architectures', config.architecture];
   if (extraPackages) {
     if (!/^[a-z0-9][a-z0-9+_.-]*(,[a-z0-9][a-z0-9+_.-]*)*$/i.test(extraPackages)) {
@@ -169,7 +173,10 @@ try {
   console.log(`Runtime prefix: ${config.runtimePrefix}`);
   console.log(`Architecture: ${config.architecture}`);
   console.log('Completed package build-tree pruning: enabled (output .debs and shared toolchain cache are retained).');
-  console.log(`Fast Android package preflight: (cd ${packagesRoot} && ${preflightCommand.join(' ')})`);
+  for (const preflightPackage of preflightPackages) {
+    const preflightCommand = ['./scripts/run-docker.sh', './build-package.sh', '-a', config.architecture, preflightPackage.name];
+    console.log(`Focused package preflight (${preflightPackage.purpose}): (cd ${packagesRoot} && ${preflightCommand.join(' ')})`);
+  }
   console.log(`Bootstrap command: (cd ${packagesRoot} && ${command.join(' ')})`);
 
   if (printCommand) {
@@ -190,16 +197,20 @@ try {
     // prefix, and the shared cross-toolchain cache remain available.
     COPPER_BOOTSTRAP_PRUNE_BUILD_TREES: 'true',
   };
-  const preflight = spawnSync(preflightCommand[0], preflightCommand.slice(1), {
-    cwd: packagesRoot,
-    stdio: 'inherit',
-    env: buildEnvironment,
-  });
-  if (preflight.status !== 0) {
-    throw new Error(`Copper Android package preflight failed with exit code ${preflight.status ?? 'unknown'}. The full bootstrap was not started.`);
+  for (const preflightPackage of preflightPackages) {
+    const preflightCommand = ['./scripts/run-docker.sh', './build-package.sh', '-a', config.architecture, preflightPackage.name];
+    const preflight = spawnSync(preflightCommand[0], preflightCommand.slice(1), {
+      cwd: packagesRoot,
+      stdio: 'inherit',
+      env: buildEnvironment,
+    });
+    if (preflight.status !== 0) {
+      throw new Error(`Copper ${preflightPackage.name} package preflight failed with exit code ${preflight.status ?? 'unknown'}. The full bootstrap was not started.`);
+    }
+    console.log(`Copper package preflight passed: ${preflightPackage.name} (${preflightPackage.purpose}).`);
   }
   if (preflightOnly) {
-    console.log('Copper Android package preflight passed; --preflight-only did not start the full bootstrap.');
+    console.log('Copper focused package preflights passed; --preflight-only did not start the full bootstrap.');
     process.exit(0);
   }
 
