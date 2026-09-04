@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val DOCUMENTS_AUTHORITY = "com.android.externalstorage.documents"
+private const val COPPER_PROJECTS_RELATIVE_PATH = "Download/COPPER Projects"
 private const val MAX_TIMEOUT_MS = 60_000L
 private const val MAX_OUTPUT_BYTES = 512 * 1024
 
@@ -73,9 +74,18 @@ class CopperExecModule : Module() {
       hasAllFilesAccess()
     }
 
-    /** Start manual Terminal sessions at the removable card root when present. */
+    /**
+     * Start manual sessions in the user's COPPER Projects directory when it is
+     * present on the preferred removable volume. The manual terminal remains
+     * free to navigate elsewhere under /storage/ after explicit approval.
+     */
     AsyncFunction("getTerminalStartDirectory") {
-      preferredExternalFilesDir()?.let(::volumeRootFor)?.absolutePath
+      preferredExternalFilesDir()?.let(::volumeRootFor)?.let { volumeRoot ->
+        File(volumeRoot, COPPER_PROJECTS_RELATIVE_PATH)
+          .takeIf { it.isDirectory }
+          ?.canonicalPath
+          ?: volumeRoot.absolutePath
+      }
     }
 
     /** Resolves a `cd` target while keeping the manual terminal on /storage. */

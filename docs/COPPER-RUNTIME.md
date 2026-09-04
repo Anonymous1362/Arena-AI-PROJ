@@ -111,25 +111,24 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 
 - [x] Add GPLv3 `LICENSE`, third-party notices, and source-release instructions.
 - [x] Add a reproducible upstream fetch workflow using the pinned revisions (`npm run runtime:upstream`).
-- [ ] Establish a Copper package namespace and prefix (`com.copper.chat`) in the Termux package build configuration.
-- [ ] Configure arm64-v8a-only debug/release builds and record expected bootstrap size.
+- [x] Establish Copper’s `com.copper.chat` application identity and private runtime prefix in the generated Termux package build configuration.
+- [x] Configure the runtime bootstrap for arm64-v8a and record a successful CI artifact (the compressed CI artifact envelope was 132.8 MiB in run `33871619836`). Android release packaging still needs to select this single ABI deliberately.
 
 ### R1 — Bootstrap and package distribution
 
 - [x] Add deterministic Copper-prefix source patching and an arm64 bootstrap build command (`runtime:patch`, `runtime:bootstrap`). The build is blocked locally until a Docker-enabled builder runs it; no upstream bootstrap binary is substituted.
 - [x] Add a static APT repository assembler that generates `Packages`, `Release`, immutable by-hash indexes, and refuses publishing without an offline-provided GPG archive key (`runtime:repo`).
-- [ ] Run the bootstrap builder successfully and retain its verified output/manifest as a CI artifact.
+- [x] Run the full arm64 bootstrap builder successfully and retain its verified ZIP plus JSON manifest as CI artifact `copper-runtime-bootstrap-aarch64` in run [`33871619836`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33871619836). This is build evidence, not yet a distributable app asset or package repository.
 - [ ] Establish a Copper-controlled HTTPS package endpoint, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
 - [x] Add the native atomic installer/validator/repair/removal manager and bootstrap-size quota preflight. It stays unavailable until a verified Copper bootstrap asset is added; it never falls back to a Termux binary.
 - [ ] Add ongoing 2 GiB runtime quota monitoring and package-install preflight checks for live PTY sessions. Android has no ordinary unrooted per-directory hard quota, so enforcement must be an honest managed cap (preflight plus process monitoring), not a false kernel guarantee.
 
 ### R2 — Actual terminal sessions
 
-- [x] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. `:copper-exec:assembleDebug` passed in Android CI at `ff8edc8`. The required Android emulator gate also ran successfully at `a52c28f`: it creates a real PTY, resizes it, sends stdin, receives stdout, observes process exit, and closes the descriptor against Android's `/system/bin/sh`. This validates the JNI PTY transport only—not Copper Bash or a package environment—because no verified Copper bootstrap asset exists yet.
-  - The workflow reruns that emulator gate before any arm64 source-bootstrap job. It preserves test logs and stops the expensive package build if the native/device gate fails.
-- [ ] Add managed 2 GiB package-operation preflight/monitoring, Ctrl-C, foreground/background session behavior, and scrollback limits.
-- [ ] Connect the React Native Terminal UI to sessions without putting raw terminal output into normal chat messages.
-- [ ] Expose a visible runtime status: missing, installing, ready, repairing, low storage, or error.
+- [x] Native source is in place for PTY creation, UTF-8 terminal I/O, resize, process-group hangup, session exit events, and a session manager. The required Android emulator gate creates a real PTY, resizes it, sends stdin, receives stdout, observes process exit, and closes the descriptor. It reruns before each source-bootstrap job.
+- [x] Connect the React Native Terminal screen to the persistent native Copper Bash session API. It displays only real runtime state, streams PTY output in the terminal pane, supports input and Ctrl-C, and does not use Android’s one-shot system shell as a fake package terminal. A full ANSI/alternate-screen renderer remains a later polish step.
+- [ ] Add managed 2 GiB package-operation preflight/monitoring, robust foreground/background session behavior, and richer terminal rendering/scrollback controls.
+- [x] Expose visible missing/install/ready/repair/package-mismatch state, runtime storage usage, and the Android shared-storage approval gate in the Terminal screen.
 
 ### R3 — SD projects and build ergonomics
 
