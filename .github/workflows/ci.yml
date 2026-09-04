@@ -411,21 +411,62 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
+      - name: Extract Android instrumentation failure detail
+        # Gradle's top-level error only says that a test failed. Convert its
+        # XML failure body into a small plain-text report while it is still on
+        # the runner, so the following annotation is useful even when external
+        # clients cannot reach Actions' Azure artifact blob endpoint.
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/copper-bundled-runtime-test-report.txt"
+          python3 - "$GITHUB_WORKSPACE/modules/copper-exec/android/build/outputs/androidTest-results" "$report" <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          results_root = Path(sys.argv[1])
+          report_path = Path(sys.argv[2])
+          lines = []
+          for path in sorted(results_root.rglob("*.xml")) if results_root.exists() else []:
+              try:
+                  suite = ET.parse(path).getroot()
+              except ET.ParseError as error:
+                  lines.append(f"Unreadable Android test XML {path}: {error}")
+                  continue
+              for case in suite.iter("testcase"):
+                  failure = case.find("failure")
+                  if failure is None:
+                      failure = case.find("error")
+                  if failure is None:
+                      continue
+                  label = f"{case.get('classname', '<unknown>')}.{case.get('name', '<unknown>')}"
+                  message = failure.get("message", "")
+                  detail = (failure.text or "").strip()
+                  lines.append(f"FAILED TEST: {label}\n{message}\n{detail}".strip())
+          report_path.write_text("\n\n".join(lines) if lines else "No Android instrumentation XML failure body was found.\n", encoding="utf-8")
+          PY
+          cat "$report"
+
       - name: Surface bundled runtime diagnostics on failure
         if: ${{ failure() }}
         shell: bash
         run: |
           set -euo pipefail
-          LOG="$RUNNER_TEMP/copper-bundled-runtime-validation.log"
-          if [ ! -f "$LOG" ]; then
-            echo "::error title=Copper bundled runtime validation::Validation failed before the Gradle/emulator log was created."
+          LOGS=(
+            "$RUNNER_TEMP/copper-bundled-runtime-validation.log"
+            "$RUNNER_TEMP/copper-bundled-runtime-test-report.txt"
+          )
+          if [ ! -f "${LOGS[0]}" ] && [ ! -f "${LOGS[1]}" ]; then
+            echo "::error title=Copper bundled runtime validation::Validation failed before Gradle, emulator, or Android test diagnostics were created."
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -E -A4 'Copper Runtime|Copper Bash|bootstrap|FAILURE:|Execution failed|BUILD FAILED|Tests? [0-9]+ failed|error:' "$LOG" | tail -30 || true
+            grep -E -A8 'FAILED TEST:|Copper Runtime|Copper Bash|bootstrap|FAILURE:|Execution failed|BUILD FAILED|Tests? [0-9]+ failed|error:' "${LOGS[@]}" 2>/dev/null | tail -40 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            echo "::error title=Copper bundled runtime validation::The real bundled-runtime test failed without a concise diagnostic; inspect the retained validation log."
+            echo "::error title=Copper bundled runtime validation::The real bundled-runtime test failed without a concise diagnostic; inspect the retained validation log and XML report."
             exit 0
           fi
           for line in "${diagnostics[@]}"; do
@@ -440,7 +481,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: copper-runtime-bundled-asset-validation-log
-          path: ${{ runner.temp }}/copper-bundled-runtime-validation.log
+          path: |
+            ${{ runner.temp }}/copper-bundled-runtime-validation.log
+            ${{ runner.temp }}/copper-bundled-runtime-test-report.txt
           if-no-files-found: warn
           retention-days: 14
 
