@@ -31,7 +31,7 @@
 - [x] **Read-aloud (approved)**: on-device TTS (expo-speech) — "Read aloud" / "Stop reading" in message actions + auto-read-every-reply toggle; markdown stripped before speaking
 
 ## Phase 2 — Distribution
-- [ ] Push CI workflows (local commit ready; needs GitHub reconnect with `workflows` permission)
+- [x] Push CI workflows and verify the TypeScript, Android bundle, web bundle, native PTY, and temporary runtime-asset installation gates on GitHub Actions
 - [ ] v1.0 tags → APK + unsigned IPA artifacts + PWA deploy
 - [ ] iOS install guide stays PWA-first; SideStore path documented (no TrollStore)
 
@@ -44,10 +44,12 @@
 ## Phase 4 — Copper Runtime (authorized; in progress)
 - [x] Confirm GPLv3-compatible Termux-derived approach, Copper branding, arm64-first target, 2 GiB persistent runtime cap, and SD-card projects
 - [x] Pin upstream source inputs and add reproducible source-preparation workflow
-- [ ] Rebuild the Termux bootstrap and packages for `com.copper.chat`; do not use `com.termux` binaries unchanged
-- [ ] Add GPL notices/source-release workflow for every bundled runtime/package artifact
-- [ ] Add runtime installer, package storage meter/cap, and cleanup controls
-- [ ] Replace the Android system-shell terminal with persistent PTY-backed Copper Runtime sessions
+- [x] Build a real arm64 bootstrap and packages for `com.copper.chat`; do not use unchanged `com.termux` binaries. The successful artifact is verified build evidence, not an end-user delivery channel yet.
+- [ ] Add GPL notices/source-release workflow for every distributed runtime/package artifact
+- [x] Add the atomic runtime installer/repair/removal controls, runtime storage meter, bootstrap quota enforcement, and an emulator validation gate using the exact verified artifact
+- [x] Replace the Android system-shell terminal with persistent PTY-backed Copper Runtime session wiring; a missing bundle is surfaced honestly instead of falling back to a fake package shell
+- [ ] Run the verified Copper Bash PTY test on an actual arm64 Android device; the x86_64 CI emulator validates installer behavior but cannot execute app-private arm64 ELF
+- [ ] Add managed live 2 GiB package-operation preflight/monitoring and cleanup controls for packages installed after bootstrap
 - [ ] Add optional temporary build mirror with guaranteed cleanup after builds
 - [ ] Add a distinct workspace-bound agent runner; never expose unrestricted manual terminal sessions to the AI
 
