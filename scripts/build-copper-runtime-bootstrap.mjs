@@ -87,6 +87,20 @@ function normalizedArchivePath(value) {
   return normalized;
 }
 
+function symlinkTargetArchivePath(linkPath, target) {
+  if (posix.isAbsolute(target)) {
+    // The upstream bootstrap legitimately contains absolute links below its
+    // final prefix (for example, termux-keyring's trusted-key link). Keep the
+    // final Copper prefix absolute after staging is promoted, but reject every
+    // absolute target outside that exact configured runtime root.
+    const runtimePrefix = posix.normalize(config.runtimePrefix).replace(/\/$/, '');
+    const absoluteTarget = posix.normalize(target);
+    if (!absoluteTarget.startsWith(`${runtimePrefix}/`)) return null;
+    return normalizedArchivePath(absoluteTarget.slice(runtimePrefix.length + 1));
+  }
+  return normalizedArchivePath(posix.join(posix.dirname(linkPath), target));
+}
+
 function parseBootstrapSymlinks(contents) {
   const symlinks = new Map();
   for (const line of contents.split(/\r?\n/)) {
@@ -97,7 +111,7 @@ function parseBootstrapSymlinks(contents) {
     }
     const link = normalizedArchivePath(line.slice(separator + 1));
     const target = line.slice(0, separator);
-    if (!link || target.startsWith('/')) {
+    if (!link || !symlinkTargetArchivePath(link, target)) {
       throw new Error(`Unsafe bootstrap symlink manifest entry: ${line}`);
     }
     if (symlinks.has(link)) throw new Error(`Duplicate bootstrap symlink manifest entry: ${link}`);
@@ -263,7 +277,7 @@ try {
       if (visited.has(linkedPath)) throw new Error(`Bootstrap symlink cycle reaches required runtime entry: ${normalizedRequiredFile}`);
       visited.add(linkedPath);
       const target = recordedSymlinks.get(linkedPath);
-      const targetPath = normalizedArchivePath(posix.join(posix.dirname(linkedPath), target));
+      const targetPath = symlinkTargetArchivePath(linkedPath, target);
       if (!targetPath) throw new Error(`Bootstrap symlink for ${linkedPath} has an unsafe target: ${target}`);
       if (directArchiveEntryExists(targetPath)) {
         console.log(`Copper required runtime entry verified through SYMLINKS.txt: ${normalizedRequiredFile} -> ${targetPath}`);

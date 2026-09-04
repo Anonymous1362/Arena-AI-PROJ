@@ -192,6 +192,7 @@ internal object CopperRuntimeInstaller {
   }
 
   private fun extractBootstrap(context: Context, asset: String, staging: File, home: File): Long {
+    val finalPrefix = layout(context).prefix
     val symlinks = mutableListOf<Symlink>()
     val seenEntries = mutableSetOf<String>()
     var extractedBytes = 0L
@@ -204,7 +205,7 @@ internal object CopperRuntimeInstaller {
           if (!seenEntries.add(name)) throw IllegalStateException("Bootstrap archive contains a duplicate entry: $name")
 
           if (name == "SYMLINKS.txt") {
-            parseSymlinks(zip, staging, symlinks)
+            parseSymlinks(zip, staging, finalPrefix, symlinks)
             zip.closeEntry()
             continue
           }
@@ -227,9 +228,16 @@ internal object CopperRuntimeInstaller {
 
     if (symlinks.isEmpty()) throw IllegalStateException("Bootstrap archive did not contain its required SYMLINKS.txt manifest.")
     for (symlink in symlinks) {
-      val targetPath = File(symlink.path.parentFile, symlink.target).canonicalFile
-      if (!isInside(staging, targetPath)) {
-        throw IllegalStateException("Bootstrap symlink escapes runtime staging: ${symlink.path.name}")
+      val targetPath = if (File(symlink.target).isAbsolute) {
+        File(symlink.target).canonicalFile
+      } else {
+        File(symlink.path.parentFile, symlink.target).canonicalFile
+      }
+      // Pinned upstream bootstraps contain both relative links and absolute
+      // links under the final TERMUX_PREFIX. The latter intentionally point to
+      // the promoted prefix rather than the temporary staging directory.
+      if (!isInside(staging, targetPath) && !isInside(finalPrefix, targetPath)) {
+        throw IllegalStateException("Bootstrap symlink escapes Copper Runtime: ${symlink.path.name}")
       }
       Os.symlink(symlink.target, symlink.path.absolutePath)
     }
@@ -237,7 +245,7 @@ internal object CopperRuntimeInstaller {
     return extractedBytes
   }
 
-  private fun parseSymlinks(input: InputStream, staging: File, symlinks: MutableList<Symlink>) {
+  private fun parseSymlinks(input: InputStream, staging: File, finalPrefix: File, symlinks: MutableList<Symlink>) {
     // Do not close this reader: it wraps the ZipInputStream used for the next
     // archive entry.
     val reader = BufferedReader(InputStreamReader(input, StandardCharsets.UTF_8))
@@ -248,7 +256,12 @@ internal object CopperRuntimeInstaller {
         throw IllegalStateException("Malformed bootstrap symlink entry.")
       }
       val target = line.substring(0, separator)
-      if (File(target).isAbsolute) throw IllegalStateException("Bootstrap symlink target must be relative.")
+      if (File(target).isAbsolute) {
+        val absoluteTarget = File(target).canonicalFile
+        if (absoluteTarget == finalPrefix.canonicalFile || !isInside(finalPrefix, absoluteTarget)) {
+          throw IllegalStateException("Bootstrap symlink target escapes Copper Runtime.")
+        }
+      }
       val link = safeChild(staging, line.substring(separator + 1))
       val parent = link.parentFile ?: throw IllegalStateException("Bootstrap symlink has no parent.")
       require(parent.mkdirs() || parent.isDirectory) { "Could not create bootstrap symlink parent." }
