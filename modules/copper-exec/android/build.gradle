@@ -8,10 +8,19 @@ version = '1.0.0'
 
 android {
   namespace "com.copper.copperexec"
+  buildFeatures {
+    // Production is always arm64-only. The CI asset-validation job explicitly
+    // enables a foreign-ABI test harness only on API 35's ARM-translation
+    // emulator, so it can execute the real arm64 bootstrap before device QA.
+    buildConfig true
+  }
+
   defaultConfig {
     versionCode 1
     versionName "1.0.0"
     testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    def allowForeignRuntimeAbiForTest = project.findProperty("copperRuntimeAllowForeignAbiForTest") == "true"
+    buildConfigField "boolean", "COPPER_RUNTIME_ALLOW_FOREIGN_ABI_FOR_TEST", allowForeignRuntimeAbiForTest ? "true" : "false"
     externalNativeBuild {
       cmake {
         cppFlags "-std=c11"

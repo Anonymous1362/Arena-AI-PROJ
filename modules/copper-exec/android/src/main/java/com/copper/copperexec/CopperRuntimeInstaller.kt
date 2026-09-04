@@ -159,7 +159,11 @@ internal object CopperRuntimeInstaller {
 
   private fun bootstrapAssetForCurrentAbi(context: Context): BootstrapAsset? {
     val isArm64 = Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
-    if (!isArm64) return null
+    // API-35 x86_64 emulators provide ARM native-bridge translation, but their
+    // advertised ABI remains x86_64. A validation-only BuildConfig permits
+    // that specific CI harness to install and execute the exact arm64 asset.
+    // Normal production builds have this false and remain strictly arm64-only.
+    if (!isArm64 && !BuildConfig.COPPER_RUNTIME_ALLOW_FOREIGN_ABI_FOR_TEST) return null
     return try {
       context.assets.open(BOOTSTRAP_ASSET_AARCH64).close()
       val manifest = context.assets.open(BOOTSTRAP_MANIFEST_AARCH64)

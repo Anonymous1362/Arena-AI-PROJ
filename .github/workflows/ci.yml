@@ -177,7 +177,7 @@ jobs:
     name: Copper Runtime native PTY validation
     # Run independently on direct native changes and as a required, fast gate
     # before every expensive source bootstrap build.
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-bootstrap]')) }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-asset-validation]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -294,7 +294,157 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 5. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 5. Validate installation of the successful arm64 bootstrap ───────────
+  # This deliberate, non-publishing gate turns the retained full-build artifact
+  # into a temporary Gradle asset and proves that Copper's real Android
+  # installer and Bash PTY work together. It never substitutes an upstream
+  # Termux archive and it never uploads the runtime to Git.
+  copper-runtime-bundled-asset-validation:
+    name: Copper Runtime bundled arm64 installation validation
+    needs: copper-native-runtime-compile
+    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-asset-validation]') && needs.copper-native-runtime-compile.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      actions: read
+      contents: read
+    env:
+      COPPER_BOOTSTRAP_RUN_ID: '33871619836'
+      COPPER_BOOTSTRAP_ARTIFACT_ID: '9939259618'
+      COPPER_BOOTSTRAP_ARTIFACT_DIGEST: 'sha256:e1ded88255b22637683e2a32592ccbb0647e66ab86cc3b9ae6f9a769aa6b76de'
+      COPPER_BOOTSTRAP_HEAD_SHA: 'effec23f6e6ead349c65e2b5b7f489efd46105d4'
+      COPPER_BOOTSTRAP_ARTIFACT_NAME: copper-runtime-bootstrap-aarch64
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Reclaim runner disk for bundled runtime validation
+        run: |
+          set -euo pipefail
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/.ghcup \
+            /usr/share/swift \
+            /usr/local/share/boost \
+            /usr/local/share/chromium \
+            /usr/local/share/powershell
+          sudo apt-get clean
+          AVAILABLE_BYTES="$(df -B1 --output=avail / | tail -1 | tr -d '[:space:]')"
+          REQUIRED_BYTES=$((14 * 1024 * 1024 * 1024))
+          df -h /
+          if [ "$AVAILABLE_BYTES" -lt "$REQUIRED_BYTES" ]; then
+            echo "::error title=Copper bundled runtime capacity::Only $AVAILABLE_BYTES bytes are free; at least $REQUIRED_BYTES bytes are required for the emulator and temporary arm64 asset."
+            exit 1
+          fi
+
+      - name: Fetch and verify the exact successful Copper runtime artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$COPPER_BOOTSTRAP_ARTIFACT_ID")"
+          test "$(jq -r '.name' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_NAME"
+          test "$(jq -r '.digest' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_DIGEST"
+          test "$(jq -r '.workflow_run.id' <<<"$metadata")" = "$COPPER_BOOTSTRAP_RUN_ID"
+          test "$(jq -r '.workflow_run.head_sha' <<<"$metadata")" = "$COPPER_BOOTSTRAP_HEAD_SHA"
+          test "$(jq -r '.expired' <<<"$metadata")" = false
+
+          download="$RUNNER_TEMP/copper-runtime-artifact"
+          gh run download "$COPPER_BOOTSTRAP_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$COPPER_BOOTSTRAP_ARTIFACT_NAME" \
+            --dir "$download"
+          archive="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip' -print -quit)"
+          manifest="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip.json' -print -quit)"
+          test -n "$archive" && test -n "$manifest"
+          expected_sha="$(jq -r '.sha256' "$manifest")"
+          actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+          test "$actual_sha" = "$expected_sha"
+          jq -e '
+            .product == "Copper Runtime" and
+            .architecture == "aarch64" and
+            .applicationId == "com.copper.chat" and
+            .runtimePrefix == "/data/data/com.copper.chat/files/usr" and
+            .file == "copper-runtime-bootstrap-aarch64.zip" and
+            (.sha256 | test("^[a-f0-9]{64}$"))
+          ' "$manifest" >/dev/null
+
+          destination="$GITHUB_WORKSPACE/modules/copper-exec/android/src/main/assets/copper-runtime"
+          mkdir -p "$destination"
+          cp "$archive" "$destination/copper-runtime-bootstrap-aarch64.zip"
+          cp "$manifest" "$destination/copper-runtime-bootstrap-aarch64.zip.json"
+          echo "Copper bootstrap asset verified: $actual_sha"
+          du -h "$destination/copper-runtime-bootstrap-aarch64.zip"
+
+      - name: Generate Android project with temporary verified runtime asset
+        run: |
+          npm ci --ignore-scripts
+          npx expo prebuild --platform android --clean
+
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install bootstrap and execute Copper Bash on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: >-
+            bash -e -o pipefail -c 'cd "$GITHUB_WORKSPACE/android" && chmod +x gradlew && ./gradlew :copper-exec:connectedDebugAndroidTest -PcopperRuntimeAllowForeignAbiForTest=true --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-bundled-runtime-validation.log"'
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Surface bundled runtime diagnostics on failure
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/copper-bundled-runtime-validation.log"
+          if [ ! -f "$LOG" ]; then
+            echo "::error title=Copper bundled runtime validation::Validation failed before the Gradle/emulator log was created."
+            exit 0
+          fi
+          mapfile -t diagnostics < <(
+            grep -E -A4 'Copper Runtime|Copper Bash|bootstrap|FAILURE:|Execution failed|BUILD FAILED|Tests? [0-9]+ failed|error:' "$LOG" | tail -30 || true
+          )
+          if [ "${#diagnostics[@]}" -eq 0 ]; then
+            echo "::error title=Copper bundled runtime validation::The real bundled-runtime test failed without a concise diagnostic; inspect the retained validation log."
+            exit 0
+          fi
+          for line in "${diagnostics[@]}"; do
+            line="${line//'%'/'%25'}"
+            line="${line//$'\r'/'%0D'}"
+            line="${line//$'\n'/'%0A'}"
+            echo "::error title=Copper bundled runtime validation::$line"
+          done
+
+      - name: Upload bundled runtime validation log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: copper-runtime-bundled-asset-validation-log
+          path: ${{ runner.temp }}/copper-bundled-runtime-validation.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── 6. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest

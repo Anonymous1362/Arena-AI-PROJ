@@ -3,9 +3,13 @@ package com.copper.copperexec
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -19,6 +23,68 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class CopperPtyNativeInstrumentedTest {
+  /**
+   * Runs only in the asset-validation workflow, which fetches the exact
+   * successful Copper bootstrap and supplies it as a Gradle asset. Ordinary
+   * native CI intentionally has no runtime payload and reports this as skipped
+   * rather than pretending Android's system shell is Copper Bash.
+   */
+  @Test(timeout = 120_000)
+  fun installsVerifiedCopperBootstrapAndRunsCopperBashWhenBundled() {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val bundled = CopperRuntimeInstaller.status(context)
+    assumeTrue(
+      "This validation requires the verified Copper arm64 bootstrap asset.",
+      bundled["bundleAvailable"] == true
+    )
+
+    CopperRuntimeInstaller.remove(context, preserveHome = false)
+    try {
+      val installed = CopperRuntimeInstaller.install(context, replaceExisting = false)
+      assertEquals("ready", installed["state"])
+      assertTrue("The installed prefix must be ready.", installed["ready"] == true)
+
+      val prefix = File(context.filesDir, "usr")
+      assertTrue("Copper Bash must be executable.", File(prefix, "bin/bash").canExecute())
+      assertTrue("Copper apt must be executable.", File(prefix, "bin/apt").canExecute())
+      assertTrue("Copper pkg must be executable.", File(prefix, "bin/pkg").canExecute())
+      assertTrue("The termux-exec compatibility library must resolve.", File(prefix, "lib/libtermux-exec.so").isFile)
+
+      val receivedOutput = StringBuilder()
+      val receivedPrompt = CountDownLatch(1)
+      val cwd = context.cacheDir.apply { mkdirs() }
+      val session = CopperRuntimeSessions.start(context, cwd, rows = 24, columns = 80) { event, body ->
+        if (event == "runtimeOutput") {
+          synchronized(receivedOutput) {
+            receivedOutput.append(body["data"] as? String ?: "")
+            if (receivedOutput.contains("copper-runtime-bash-ok:")) receivedPrompt.countDown()
+          }
+        }
+      }
+      val sessionId = session["id"] as String
+      try {
+        assertTrue(
+          "Copper Bash must receive input through its PTY.",
+          CopperRuntimeSessions.write(sessionId, "printf 'copper-runtime-bash-ok:%s\\n' \"\$PREFIX\"\n") > 0
+        )
+        assertTrue(
+          "Copper Bash output was: $receivedOutput",
+          receivedPrompt.await(20, TimeUnit.SECONDS)
+        )
+        synchronized(receivedOutput) {
+          assertTrue(
+            "Copper Bash must use Copper's private prefix, output was: $receivedOutput",
+            receivedOutput.contains("copper-runtime-bash-ok:${prefix.absolutePath}")
+          )
+        }
+      } finally {
+        CopperRuntimeSessions.close(sessionId)
+      }
+    } finally {
+      CopperRuntimeInstaller.remove(context, preserveHome = false)
+    }
+  }
+
   @Test(timeout = 15_000)
   fun createsInteractivePtyAndReturnsChildExit() {
     val context = InstrumentationRegistry.getInstrumentation().targetContext

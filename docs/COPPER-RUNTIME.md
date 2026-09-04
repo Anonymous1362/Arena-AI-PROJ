@@ -1,6 +1,6 @@
 # Copper Runtime — Android terminal implementation plan
 
-**Status:** design/source inputs are pinned, and Copper now has an Android-compiled native PTY/session bridge plus an atomic bootstrap installer. Copper does **not** yet bundle a verified Termux-derived Copper Runtime archive or operate a Copper package repository. The existing visible Terminal tab still runs Android's small system shell and must not be described as a full Linux/package environment until it is connected to a successfully installed verified runtime.
+**Status:** design/source inputs are pinned, and Copper has an Android-compiled native PTY/session bridge, an atomic bootstrap installer, and a Terminal tab wired exclusively to persistent Copper Bash sessions. Copper does **not** yet package a verified Termux-derived Copper Runtime archive into an end-user APK or operate a Copper package repository. Until a build contains that verified asset, the visible Terminal reports `bundle_missing` and refuses to mislabel Android's system shell as a Copper package terminal.
 
 ## Product decision
 
@@ -119,6 +119,7 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 - [x] Add deterministic Copper-prefix source patching and an arm64 bootstrap build command (`runtime:patch`, `runtime:bootstrap`). The build is blocked locally until a Docker-enabled builder runs it; no upstream bootstrap binary is substituted.
 - [x] Add a static APT repository assembler that generates `Packages`, `Release`, immutable by-hash indexes, and refuses publishing without an offline-provided GPG archive key (`runtime:repo`).
 - [x] Run the full arm64 bootstrap builder successfully and retain its verified ZIP plus JSON manifest as CI artifact `copper-runtime-bootstrap-aarch64` in run [`33871619836`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33871619836). This is build evidence, not yet a distributable app asset or package repository.
+- [ ] Run the opt-in `[runtime-asset-validation]` CI gate against that exact temporary artifact. The gate checks the GitHub enclosing-artifact identity, validates the contained ZIP against its JSON manifest, materializes both only in the runner's Android module assets, then uses API-35's ARM native-bridge emulator to exercise the atomic installer and a Copper Bash PTY command. It is not release packaging, and its locked temporary artifact must be renewed before expiration.
 - [ ] Establish a Copper-controlled HTTPS package endpoint, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
 - [x] Add the native atomic installer/validator/repair/removal manager and bootstrap-size quota preflight. It stays unavailable until a verified Copper bootstrap asset is added; it never falls back to a Termux binary.
 - [ ] Add ongoing 2 GiB runtime quota monitoring and package-install preflight checks for live PTY sessions. Android has no ordinary unrooted per-directory hard quota, so enforcement must be an honest managed cap (preflight plus process monitoring), not a false kernel guarantee.
