@@ -1,5 +1,6 @@
 package com.copper.copperexec
 
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
@@ -24,13 +25,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CopperPtyNativeInstrumentedTest {
   /**
-   * Runs only in the asset-validation workflow, which fetches the exact
-   * successful Copper bootstrap and supplies it as a Gradle asset. Ordinary
-   * native CI intentionally has no runtime payload and reports this as skipped
-   * rather than pretending Android's system shell is Copper Bash.
+   * Runs in the asset-validation workflow, which fetches the exact successful
+   * Copper bootstrap and supplies it as a temporary Gradle asset. The API-35
+   * x86_64 emulator can prove the real Android installer, archive digest,
+   * restored symlinks, modes, and prefix layout, but cannot execute an app's
+   * arm64 ELF from private storage through its native bridge.
    */
   @Test(timeout = 120_000)
-  fun installsVerifiedCopperBootstrapAndRunsCopperBashWhenBundled() {
+  fun installsVerifiedCopperBootstrapWhenBundled() {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
     val bundled = CopperRuntimeInstaller.status(context)
     assumeTrue(
@@ -45,11 +47,37 @@ class CopperPtyNativeInstrumentedTest {
       assertTrue("The installed prefix must be ready.", installed["ready"] == true)
 
       val prefix = File(context.filesDir, "usr")
-      assertTrue("Copper Bash must be executable.", File(prefix, "bin/bash").canExecute())
-      assertTrue("Copper apt must be executable.", File(prefix, "bin/apt").canExecute())
-      assertTrue("Copper pkg must be executable.", File(prefix, "bin/pkg").canExecute())
+      assertTrue("Copper Bash must have execute mode.", File(prefix, "bin/bash").canExecute())
+      assertTrue("Copper apt must have execute mode.", File(prefix, "bin/apt").canExecute())
+      assertTrue("Copper pkg must have execute mode.", File(prefix, "bin/pkg").canExecute())
       assertTrue("The termux-exec compatibility library must resolve.", File(prefix, "lib/libtermux-exec.so").isFile)
+    } finally {
+      CopperRuntimeInstaller.remove(context, preserveHome = false)
+    }
+  }
 
+  /**
+   * A true runtime execution test: it remains skipped in x86 CI rather than
+   * claiming native-bridge support that Android refused for private ELF exec.
+   * It runs automatically in an arm64 instrumented build with the same
+   * verified asset and Copper package identity.
+   */
+  @Test(timeout = 150_000)
+  fun runsCopperBashThroughPtyOnArm64WhenBundled() {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    assumeTrue(
+      "Copper Bash execution requires an arm64 Android device.",
+      Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a"
+    )
+    assumeTrue(
+      "This validation requires the verified Copper arm64 bootstrap asset.",
+      CopperRuntimeInstaller.status(context)["bundleAvailable"] == true
+    )
+
+    CopperRuntimeInstaller.remove(context, preserveHome = false)
+    try {
+      CopperRuntimeInstaller.install(context, replaceExisting = false)
+      val prefix = File(context.filesDir, "usr")
       val receivedOutput = StringBuilder()
       val receivedPrompt = CountDownLatch(1)
       val cwd = context.cacheDir.apply { mkdirs() }

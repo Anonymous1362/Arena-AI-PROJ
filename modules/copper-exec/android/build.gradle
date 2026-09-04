@@ -10,8 +10,9 @@ android {
   namespace "com.copper.copperexec"
   buildFeatures {
     // Production is always arm64-only. The CI asset-validation job explicitly
-    // enables a foreign-ABI test harness only on API 35's ARM-translation
-    // emulator, so it can execute the real arm64 bootstrap before device QA.
+    // enables a foreign-ABI harness only to validate Android asset integrity
+    // and atomic extraction on x86_64; executable arm64 runtime QA stays on
+    // a real arm64 device.
     buildConfig true
   }
 
