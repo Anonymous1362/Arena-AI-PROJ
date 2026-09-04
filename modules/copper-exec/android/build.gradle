@@ -19,6 +19,10 @@ android {
     versionCode 1
     versionName "1.0.0"
     testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    // The runtime's binary prefix is compiled for this exact application ID.
+    // Library instrumentation tests must therefore use Copper's identity, not
+    // AGP's default com.copper.copperexec.test identity.
+    testApplicationId "com.copper.chat"
     def allowForeignRuntimeAbiForTest = project.findProperty("copperRuntimeAllowForeignAbiForTest") == "true"
     buildConfigField "boolean", "COPPER_RUNTIME_ALLOW_FOREIGN_ABI_FOR_TEST", allowForeignRuntimeAbiForTest ? "true" : "false"
     externalNativeBuild {
