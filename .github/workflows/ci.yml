@@ -407,7 +407,7 @@ jobs:
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: >-
-            bash -e -o pipefail -c 'cd "$GITHUB_WORKSPACE/android" && chmod +x gradlew && ./gradlew :copper-exec:connectedDebugAndroidTest -PcopperRuntimeAllowForeignAbiForTest=true --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-bundled-runtime-validation.log"'
+            bash -o pipefail -c 'cd "$GITHUB_WORKSPACE/android" && chmod +x gradlew && ./gradlew :copper-exec:connectedDebugAndroidTest -PcopperRuntimeAllowForeignAbiForTest=true --no-daemon 2>&1 | tee "$RUNNER_TEMP/copper-bundled-runtime-validation.log"; test_status=${PIPESTATUS[0]}; if [ "$test_status" -ne 0 ]; then adb logcat -d -v threadtime > "$RUNNER_TEMP/copper-bundled-runtime-validation-logcat.txt" || true; fi; exit "$test_status"'
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
@@ -421,19 +421,24 @@ jobs:
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/copper-bundled-runtime-test-report.txt"
-          python3 - "$GITHUB_WORKSPACE/modules/copper-exec/android/build/outputs/androidTest-results" "$report" <<'PY'
+          python3 - "$GITHUB_WORKSPACE" "$report" <<'PY'
           from pathlib import Path
           import sys
           import xml.etree.ElementTree as ET
 
-          results_root = Path(sys.argv[1])
+          workspace = Path(sys.argv[1])
           report_path = Path(sys.argv[2])
-          lines = []
-          for path in sorted(results_root.rglob("*.xml")) if results_root.exists() else []:
+          # AGP has moved this output between module-local and generated-app
+          # paths across plugin releases. Discover only Android test result XML
+          # under build directories instead of assuming one fragile location.
+          candidates = sorted({path for path in workspace.glob("**/build/**/androidTest-results/**/*.xml") if path.is_file()})
+          lines = [f"Android test XML candidates: {len(candidates)}"]
+          for path in candidates:
+              lines.append(f"RESULT XML: {path.relative_to(workspace)}")
               try:
                   suite = ET.parse(path).getroot()
               except ET.ParseError as error:
-                  lines.append(f"Unreadable Android test XML {path}: {error}")
+                  lines.append(f"Unreadable Android test XML: {error}")
                   continue
               for case in suite.iter("testcase"):
                   failure = case.find("failure")
@@ -445,7 +450,7 @@ jobs:
                   message = failure.get("message", "")
                   detail = (failure.text or "").strip()
                   lines.append(f"FAILED TEST: {label}\n{message}\n{detail}".strip())
-          report_path.write_text("\n\n".join(lines) if lines else "No Android instrumentation XML failure body was found.\n", encoding="utf-8")
+          report_path.write_text("\n\n".join(lines) + "\n", encoding="utf-8")
           PY
           cat "$report"
 
@@ -457,13 +462,14 @@ jobs:
           LOGS=(
             "$RUNNER_TEMP/copper-bundled-runtime-validation.log"
             "$RUNNER_TEMP/copper-bundled-runtime-test-report.txt"
+            "$RUNNER_TEMP/copper-bundled-runtime-validation-logcat.txt"
           )
-          if [ ! -f "${LOGS[0]}" ] && [ ! -f "${LOGS[1]}" ]; then
+          if [ ! -f "${LOGS[0]}" ] && [ ! -f "${LOGS[1]}" ] && [ ! -f "${LOGS[2]}" ]; then
             echo "::error title=Copper bundled runtime validation::Validation failed before Gradle, emulator, or Android test diagnostics were created."
             exit 0
           fi
           mapfile -t diagnostics < <(
-            grep -E -A8 'FAILED TEST:|Copper Runtime|Copper Bash|bootstrap|FAILURE:|Execution failed|BUILD FAILED|Tests? [0-9]+ failed|error:' "${LOGS[@]}" 2>/dev/null | tail -40 || true
+            grep -E -A12 'Android test XML candidates:|RESULT XML:|FAILED TEST:|Copper Runtime|Copper Bash|bootstrap|AssertionError|IllegalStateException|SecurityException|UnsatisfiedLinkError|FATAL EXCEPTION|FAILURE:|Execution failed|BUILD FAILED|Tests? [0-9]+ failed|error:' "${LOGS[@]}" 2>/dev/null | tail -60 || true
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
             echo "::error title=Copper bundled runtime validation::The real bundled-runtime test failed without a concise diagnostic; inspect the retained validation log and XML report."
@@ -484,6 +490,7 @@ jobs:
           path: |
             ${{ runner.temp }}/copper-bundled-runtime-validation.log
             ${{ runner.temp }}/copper-bundled-runtime-test-report.txt
+            ${{ runner.temp }}/copper-bundled-runtime-validation-logcat.txt
           if-no-files-found: warn
           retention-days: 14
 
