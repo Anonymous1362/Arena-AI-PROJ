@@ -36,6 +36,8 @@ The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtim
 
 `displayName` remains **Copper Runtime** for people. The separate `buildName` is deliberately the whitespace-free **Copper** token: upstream `termux_step_make` expands recipe make arguments unquoted, so a value such as `Copper Runtime` becomes a `TERMUX__NAME=Copper` assignment plus an unintended `Runtime` make target. The generated-input verifier rejects any bare target before Docker or the package preflight starts. It also verifies every direct bootstrap package name has a pinned source recipe; this caught the pinned upstream script's stale `bzip2` entry after that command became a `libbz2` subpackage. The verifier also requires the final ZIP to be exported to the package-builder writable `output/` bind-mounted directory instead of the repository root, whose permissions caused the prior final-move failure.
 
+The pinned `termux-exec` 2.x package does **not** provide the obsolete `bin/termux-exec` command. Copper validates its real `bin/termux-exec-ld-preload-lib` helper and the `lib/libtermux-exec.so` preload-library compatibility symlink instead. Bootstrap archives deliberately represent symlinks in `SYMLINKS.txt`; CI follows each required manifest link to a real ZIP member, while the Android installer restores it and verifies its target before reporting the runtime ready.
+
 ## Reproducible R1 commands
 
 ```bash

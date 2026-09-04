@@ -286,11 +286,29 @@ internal object CopperRuntimeInstaller {
   }
 
   private fun verifyPrefix(prefix: File) {
-    val required = listOf("bin/bash", "bin/apt", "bin/pkg", "bin/termux-setup-storage", "bin/termux-exec")
-    for (relativePath in required) {
+    // termux-exec 2.x intentionally provides an LD_PRELOAD helper/library,
+    // not the obsolete bin/termux-exec command. Keep this device-side check
+    // aligned with the CI bootstrap contract so a valid archive cannot install
+    // successfully and then be silently reported as never-ready.
+    val requiredExecutables = listOf(
+      "bin/bash",
+      "bin/apt",
+      "bin/pkg",
+      "bin/termux-setup-storage",
+      "bin/termux-exec-ld-preload-lib"
+    )
+    for (relativePath in requiredExecutables) {
       val entry = File(prefix, relativePath)
       if (!entry.isFile) throw IllegalStateException("Copper Runtime bootstrap is missing $relativePath.")
       if (!entry.canExecute()) throw IllegalStateException("Copper Runtime bootstrap entry is not executable: $relativePath.")
+    }
+
+    // isFile() follows the bootstrap-restored libtermux-exec.so symlink and
+    // therefore proves its target exists too. Shared libraries need not have
+    // executable permission, unlike the shell and helper commands above.
+    val preloadLibrary = File(prefix, "lib/libtermux-exec.so")
+    if (!preloadLibrary.isFile) {
+      throw IllegalStateException("Copper Runtime bootstrap is missing the termux-exec preload library.")
     }
   }
 

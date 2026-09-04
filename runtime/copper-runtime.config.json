@@ -28,7 +28,8 @@
       "bin/apt",
       "bin/pkg",
       "bin/termux-setup-storage",
-      "bin/termux-exec",
+      "bin/termux-exec-ld-preload-lib",
+      "lib/libtermux-exec.so",
       "SYMLINKS.txt"
     ]
   },

@@ -18,7 +18,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, posix, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -75,6 +75,35 @@ function commandFailureDetails(result) {
     result.stderr?.trim() ?? '',
   ].filter(Boolean).join('\n');
   return details || `exit status ${result.status ?? 'unknown'}`;
+}
+
+function normalizedArchivePath(value) {
+  // ZIP paths are always relative to the bootstrap prefix. Do not let an
+  // upstream-format change turn a manifest path into an ambiguous traversal.
+  const normalized = posix.normalize(value.replace(/^\.\//, ''));
+  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../') || normalized.startsWith('/')) {
+    return null;
+  }
+  return normalized;
+}
+
+function parseBootstrapSymlinks(contents) {
+  const symlinks = new Map();
+  for (const line of contents.split(/\r?\n/)) {
+    if (!line) continue;
+    const separator = line.indexOf('←');
+    if (separator <= 0 || separator !== line.lastIndexOf('←') || separator === line.length - 1) {
+      throw new Error(`Malformed bootstrap symlink manifest entry: ${line}`);
+    }
+    const link = normalizedArchivePath(line.slice(separator + 1));
+    const target = line.slice(0, separator);
+    if (!link || target.startsWith('/')) {
+      throw new Error(`Unsafe bootstrap symlink manifest entry: ${line}`);
+    }
+    if (symlinks.has(link)) throw new Error(`Duplicate bootstrap symlink manifest entry: ${link}`);
+    symlinks.set(link, target);
+  }
+  return symlinks;
 }
 
 try {
@@ -199,19 +228,52 @@ try {
   if (symlinks.status !== 0 || symlinks.error) {
     throw new Error(`Could not read bootstrap symlink manifest:\n${commandFailureDetails(symlinks)}`);
   }
-  const recordedSymlinks = new Set(symlinks.stdout.split(/\r?\n/));
-  for (const requiredFile of config.bootstrap.requiredFiles) {
-    const entry = spawnSync('unzip', ['-Z1', expectedArchive, requiredFile], {
+  const recordedSymlinks = parseBootstrapSymlinks(symlinks.stdout);
+  const directEntryCache = new Map();
+  const directArchiveEntryExists = (archivePath) => {
+    if (directEntryCache.has(archivePath)) return directEntryCache.get(archivePath);
+    const entry = spawnSync('unzip', ['-Z1', expectedArchive, archivePath], {
       encoding: 'utf8',
       maxBuffer: 1024 * 1024,
     });
     if (entry.error) {
-      throw new Error(`Could not inspect required runtime entry ${requiredFile}:\n${commandFailureDetails(entry)}`);
+      throw new Error(`Could not inspect required runtime entry ${archivePath}:\n${commandFailureDetails(entry)}`);
     }
-    const isDirectArchiveEntry = entry.status === 0 && entry.stdout.split(/\r?\n/).includes(requiredFile);
-    const isRecordedSymlink = [...recordedSymlinks].some((line) => line.endsWith(`←./${requiredFile}`));
-    if (!isDirectArchiveEntry && !isRecordedSymlink) {
-      throw new Error(`Bootstrap is missing required runtime entry or symlink: ${requiredFile}`);
+    const exists = entry.status === 0 && entry.stdout.split(/\r?\n/).includes(archivePath);
+    directEntryCache.set(archivePath, exists);
+    return exists;
+  };
+
+  for (const requiredFile of config.bootstrap.requiredFiles) {
+    const normalizedRequiredFile = normalizedArchivePath(requiredFile);
+    if (!normalizedRequiredFile) throw new Error(`Unsafe configured required runtime entry: ${requiredFile}`);
+
+    if (directArchiveEntryExists(normalizedRequiredFile)) {
+      console.log(`Copper required runtime entry verified: ${normalizedRequiredFile}`);
+      continue;
+    }
+
+    // Follow a bounded manifest-only chain and require its final target to be
+    // a direct archive member. This validates the actual link destination,
+    // rather than accepting a dangling SYMLINKS.txt line.
+    let linkedPath = normalizedRequiredFile;
+    const visited = new Set();
+    let resolved = false;
+    while (recordedSymlinks.has(linkedPath)) {
+      if (visited.has(linkedPath)) throw new Error(`Bootstrap symlink cycle reaches required runtime entry: ${normalizedRequiredFile}`);
+      visited.add(linkedPath);
+      const target = recordedSymlinks.get(linkedPath);
+      const targetPath = normalizedArchivePath(posix.join(posix.dirname(linkedPath), target));
+      if (!targetPath) throw new Error(`Bootstrap symlink for ${linkedPath} has an unsafe target: ${target}`);
+      if (directArchiveEntryExists(targetPath)) {
+        console.log(`Copper required runtime entry verified through SYMLINKS.txt: ${normalizedRequiredFile} -> ${targetPath}`);
+        resolved = true;
+        break;
+      }
+      linkedPath = targetPath;
+    }
+    if (!resolved) {
+      throw new Error(`Bootstrap is missing required runtime entry or a resolvable symlink: ${normalizedRequiredFile}`);
     }
   }
 
