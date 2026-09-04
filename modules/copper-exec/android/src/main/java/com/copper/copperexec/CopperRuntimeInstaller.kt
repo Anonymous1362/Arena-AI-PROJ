@@ -196,9 +196,17 @@ internal object CopperRuntimeInstaller {
   }
 
   private fun extractBootstrap(context: Context, asset: String, staging: File, home: File): Long {
-    val finalPrefix = layout(context).prefix
+    val runtimeLayout = layout(context)
+    val finalPrefix = runtimeLayout.prefix
     val symlinks = mutableListOf<Symlink>()
     val seenEntries = mutableSetOf<String>()
+    // Measure non-prefix runtime state once. Rewalking the growing staging
+    // tree for every archive member is quadratic and caused a valid bootstrap
+    // to exceed the instrumentation timeout. extractedBytes is the exact
+    // incremental staging payload, so it preserves the same quota boundary in
+    // linear time without trusting archive-reported entry sizes.
+    val existingNonPrefixBytes = runtimeBytes(runtimeLayout, includePrefix = false)
+    val stagingQuota = QUOTA_BYTES - existingNonPrefixBytes
     var extractedBytes = 0L
 
     context.assets.open(asset).use { assetStream ->
@@ -221,7 +229,7 @@ internal object CopperRuntimeInstaller {
             val parent = output.parentFile ?: throw IllegalStateException("Bootstrap entry has no parent: $name")
             require(parent.mkdirs() || parent.isDirectory) { "Could not create runtime parent directory: $name" }
             FileOutputStream(output).use { destination ->
-              extractedBytes += copyWithLimit(zip, destination, QUOTA_BYTES - runtimeBytes(layout(context), includePrefix = false))
+              extractedBytes += copyWithLimit(zip, destination, stagingQuota - extractedBytes)
             }
             if (needsExecutableMode(name)) Os.chmod(output.absolutePath, 0b111000000)
           }

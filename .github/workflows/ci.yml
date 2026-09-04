@@ -46,67 +46,7 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
-  # ── 3. On-demand relay for a retained bundled-runtime failure ────────────
-  # This is a short diagnostics-only path. It runs no emulator, no bootstrap,
-  # and no package build: the GitHub runner reads the retained report that this
-  # environment cannot fetch from Actions' Azure artifact endpoint.
-  copper-runtime-bundled-asset-diagnostics:
-    name: Copper Runtime bundled asset failure diagnostic
-    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-asset-diagnostics]') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      contents: read
-    env:
-      COPPER_VALIDATION_RUN_ID: '33905915946'
-      COPPER_VALIDATION_ARTIFACT_ID: '9950256114'
-      COPPER_VALIDATION_ARTIFACT_NAME: copper-runtime-bundled-asset-validation-log
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Download retained Android validation diagnostics
-        shell: bash
-        run: |
-          set -euo pipefail
-          metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$COPPER_VALIDATION_ARTIFACT_ID")"
-          test "$(jq -r '.name' <<<"$metadata")" = "$COPPER_VALIDATION_ARTIFACT_NAME"
-          test "$(jq -r '.workflow_run.id' <<<"$metadata")" = "$COPPER_VALIDATION_RUN_ID"
-          test "$(jq -r '.expired' <<<"$metadata")" = false
-          destination="$RUNNER_TEMP/copper-bundled-runtime-diagnostics"
-          gh run download "$COPPER_VALIDATION_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "$COPPER_VALIDATION_ARTIFACT_NAME" \
-            --dir "$destination"
-          report="$(find "$destination" -type f -name 'copper-bundled-runtime-test-report.txt' -print -quit)"
-          test -n "$report"
-          cp "$report" "$RUNNER_TEMP/copper-bundled-runtime-test-report.txt"
-          echo "----- Android test result report -----"
-          cat "$report"
-          echo "----- End Android test result report -----"
-
-      - name: Relay exact Android test failure as check annotations
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - "$RUNNER_TEMP/copper-bundled-runtime-test-report.txt" <<'PY'
-          from pathlib import Path
-          import sys
-
-          text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-          limit = 12_000
-          if len(text) > limit:
-              text = "[Earlier report text omitted; final 12,000 characters follow.]\n" + text[-limit:]
-          chunks = [text[index:index + 3_200] for index in range(0, len(text), 3_200)] or ["The retained Android test report was empty."]
-          for index, chunk in enumerate(chunks, start=1):
-              encoded = (chunk.replace("%", "%25")
-                                .replace("\r", "%0D")
-                                .replace("\n", "%0A"))
-              # Warnings retain the exact device-side failure in the Checks UI
-              # without turning the diagnostics-only relay into a false pass.
-              print(f"::warning title=Copper bundled runtime diagnostic ({index}/{len(chunks)})::{encoded}")
-          PY
-
-  # ── 4. On-demand Copper Runtime package preflight / bootstrap ─────────────
+  # ── 3. On-demand Copper Runtime package preflight / bootstrap ─────────────
   # Both paths are deliberately opt-in by commit message. The standalone manual
   # workflow becomes dispatchable once its file reaches the default branch.
   copper-runtime-bootstrap:
@@ -230,7 +170,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # ── 5. On-demand Android native module compilation ────────────────────────
+  # ── 4. On-demand Android native module compilation ────────────────────────
   # Uses a marker because NDK/Gradle compilation is much slower than the normal
   # Android JS-bundle smoke test below.
   copper-native-runtime-compile:
@@ -354,7 +294,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 6. Validate installation of the successful arm64 bootstrap ───────────
+  # ── 5. Validate installation of the successful arm64 bootstrap ───────────
   # This deliberate, non-publishing gate turns the retained full-build artifact
   # into a temporary Gradle asset and proves that Copper's real Android
   # installer and Bash PTY work together. It never substitutes an upstream
@@ -554,7 +494,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 7. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 6. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest
