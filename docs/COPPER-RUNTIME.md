@@ -38,7 +38,7 @@ The pinned inputs are recorded in [`runtime/copper-runtime.lock.json`](../runtim
 
 The pinned `termux-exec` 2.x package does **not** provide the obsolete `bin/termux-exec` command. Copper validates its real `bin/termux-exec-ld-preload-lib` helper and the `lib/libtermux-exec.so` preload-library compatibility symlink instead. Bootstrap archives deliberately represent symlinks in `SYMLINKS.txt`; the pinned upstream format contains both relative targets and absolute targets below the final Copper prefix (for example, trusted-key links). CI rejects every absolute target outside that exact prefix and follows each required manifest link to a real ZIP member. The Android installer applies the same boundary before restoring symlinks and verifying the runtime ready.
 
-The complete bootstrap reached the pinned `attr` 2.6.0 source download but Savannah's plain-HTTP endpoint exhausted its retry budget with repeated `502`/zero-byte responses. Copper changes **only that recipe** to Savannah's HTTPS mirror and retains upstream’s exact SHA-256 (`d42fa374…6985612`), so a mirror response must still be the authenticated pinned release. The focused preflight builds `attr` before the full graph to validate source delivery/checksum early, then builds `termux-am` as the Android Gradle gate. This avoids spending another full graph build before discovering either failure class.
+The complete bootstrap first reached the pinned `attr` 2.6.0 source download, then the next `libacl` 2.4.0 source download; Savannah's origin endpoints exhausted their retry budgets with repeated `502`/zero-byte responses. Copper changes **only those recipes** to Savannah's HTTPS mirror and retains upstream’s exact SHA-256 pins (`attr`: `d42fa374…6985612`; `libacl`: `73c853c3…4e5f6a`), so a mirror response must still be the authenticated pinned release. The focused preflight builds `attr`, then `libacl`, before the full graph to validate both source delivery/checksum paths early, then builds `termux-am` as the Android Gradle gate. This avoids spending another full graph build before discovering either failure class.
 
 ## Reproducible R1 commands
 
@@ -53,8 +53,8 @@ npm run runtime:patch -- --workspace /absolute/path/copper-runtime-source
 npm run runtime:verify-inputs -- --workspace /absolute/path/copper-runtime-source
 
 # 4. Build and verify a real arm64 bootstrap with Docker. This runs the same
-# generated-input check again, then validates the pinned attr HTTPS source and
-# the Android package preflight before it starts the full bootstrap graph.
+# generated-input check again, then validates the pinned attr/libacl HTTPS
+# sources and the Android package preflight before it starts the full graph.
 npm run runtime:bootstrap -- \
   --workspace /absolute/path/copper-runtime-source \
   --out /absolute/path/copper-runtime-artifacts

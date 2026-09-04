@@ -153,12 +153,14 @@ try {
   }
 
   // Run focused, dependency-ordered package preflights before the large
-  // bootstrap graph. attr is deliberately first: a real bootstrap previously
-  // spent almost an hour before its pinned source host exhausted curl retries.
-  // termux-am remains the Android/Gradle gate required by termux-tools. Their
-  // emitted .debs and built-package markers are reused by build-bootstraps.
+  // bootstrap graph. attr and its dependent libacl are deliberately first: a
+  // real bootstrap previously spent almost an hour before their pinned source
+  // hosts exhausted curl retries. termux-am remains the Android/Gradle gate
+  // required by termux-tools. Their emitted .debs and built-package markers
+  // are reused by build-bootstraps.
   const preflightPackages = [
-    { name: 'attr', purpose: 'HTTPS Savannah source delivery and checksum' },
+    { name: 'attr', purpose: 'attr HTTPS Savannah source delivery and checksum' },
+    { name: 'libacl', purpose: 'libacl HTTPS Savannah source delivery and checksum' },
     { name: 'termux-am', purpose: 'Android Gradle package build' },
   ];
   const command = ['./scripts/run-docker.sh', './scripts/build-bootstraps.sh', '--architectures', config.architecture];

@@ -36,6 +36,7 @@ const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
+const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
 
@@ -238,6 +239,19 @@ try {
   );
   writeFileSync(attrRecipePath, attrRecipe);
 
+  // libacl is the next bootstrap dependency using the same Savannah release
+  // infrastructure. The attr preflight proved the HTTPS mirror path; switch
+  // this exact pinned ACL release before it can fail late in the full graph.
+  // Its upstream SHA-256 remains unchanged and is verified before extraction.
+  let libaclRecipe = readFileSync(libaclRecipePath, 'utf8');
+  libaclRecipe = replaceExactly(
+    libaclRecipe,
+    'TERMUX_PKG_SRCURL=https://download.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz',
+    'TERMUX_PKG_SRCURL=https://download-mirror.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz',
+    'libacl 2.4.0 HTTPS source mirror'
+  );
+  writeFileSync(libaclRecipePath, libaclRecipe);
+
   const receipt = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -261,6 +275,7 @@ try {
       'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
       'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
+      'libacl 2.4.0 retains its pinned SHA-256 but downloads from the same HTTPS Savannah mirror instead of the repeatedly unavailable origin URL.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
   };

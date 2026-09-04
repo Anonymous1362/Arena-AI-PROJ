@@ -37,6 +37,7 @@ const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
+const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
 
 function fail(message) {
@@ -47,8 +48,8 @@ try {
   if (!/^[A-Za-z0-9._-]+$/.test(config.buildName)) {
     fail(`runtime buildName must be a whitespace-free make-safe token; received ${JSON.stringify(config.buildName)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(attrRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, or attr recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -68,20 +69,70 @@ try {
     fail('Could not find direct package entries in generated build-bootstraps.sh. Upstream changed; review the bootstrap package check deliberately.');
   }
   const packageRecipeRoots = ['packages', 'root-packages', 'x11-packages'];
-  const missingBootstrapRecipes = bootstrapPackages.filter((packageName) => !packageRecipeRoots.some((directory) => existsSync(resolve(packagesRoot, directory, packageName, 'build.sh'))));
+  const recipePathForPackage = (packageName) => packageRecipeRoots
+    .map((directory) => resolve(packagesRoot, directory, packageName, 'build.sh'))
+    .find((path) => existsSync(path));
+  const missingBootstrapRecipes = bootstrapPackages.filter((packageName) => !recipePathForPackage(packageName));
   if (missingBootstrapRecipes.length) {
     fail(`Generated bootstrap requests package(s) without source recipe(s): ${missingBootstrapRecipes.join(', ')}. Do not start Docker until each package name is mapped to its pinned source recipe.`);
   }
 
-  // The full package graph reached attr, but the pinned plain-HTTP Savannah
-  // endpoint exhausted its retry budget with 502/zero-byte responses. The
-  // Copper patch changes only that exact source host to Savannah's HTTPS
-  // mirror while retaining the upstream's cryptographic release checksum.
+  // Ask the pinned upstream dependency resolver for every recipe reached by
+  // the default bootstrap. A long build previously discovered Savannah source
+  // failures one package at a time. Keep that entire closure free of the
+  // known-unreliable origin URL before Docker starts, without rewriting
+  // unrelated recipes elsewhere in the upstream checkout.
+  const buildOrderScript = resolve(packagesRoot, 'scripts/buildorder.py');
+  const bootstrapDependencyRecipePaths = new Set();
+  for (const packageName of bootstrapPackages) {
+    const directRecipePath = recipePathForPackage(packageName);
+    const directRecipeDirectory = resolve(directRecipePath, '..');
+    const order = spawnSync(
+      'python3',
+      [buildOrderScript, directRecipeDirectory.slice(packagesRoot.length + 1), ...packageRecipeRoots],
+      {
+        cwd: packagesRoot,
+        encoding: 'utf8',
+        env: { ...process.env, TERMUX_ARCH: config.architecture },
+        maxBuffer: 1024 * 1024,
+      }
+    );
+    if (order.status !== 0 || order.error) {
+      fail(`Could not resolve the generated ${packageName} bootstrap dependency closure: ${order.stderr.trim() || order.error?.message || `exit ${order.status}`}`);
+    }
+    bootstrapDependencyRecipePaths.add(directRecipePath);
+    for (const line of order.stdout.split(/\r?\n/)) {
+      const match = line.match(/^(\S+)\s+(.+)$/);
+      if (!match) continue;
+      const recipePath = resolve(packagesRoot, match[2].trim(), 'build.sh');
+      if (!existsSync(recipePath)) {
+        fail(`Pinned dependency resolver reported ${match[1]} at a missing recipe path: ${match[2]}`);
+      }
+      bootstrapDependencyRecipePaths.add(recipePath);
+    }
+  }
+  const rawSavannahOriginRecipes = [...bootstrapDependencyRecipePaths]
+    .filter((recipePath) => readFileSync(recipePath, 'utf8').includes('download.savannah.gnu.org'))
+    .map((recipePath) => recipePath.slice(packagesRoot.length + 1));
+  if (rawSavannahOriginRecipes.length) {
+    fail(`Generated default bootstrap dependency closure still uses the unreliable Savannah origin URL in: ${rawSavannahOriginRecipes.join(', ')}. Use the reviewed HTTPS mirror with the existing recipe checksum before starting Docker.`);
+  }
+
+  // The full package graph reached attr and then libacl, where their pinned
+  // Savannah origin endpoints exhausted curl's retry budget with 502/zero-byte
+  // responses. The Copper patch changes only those exact source hosts to the
+  // HTTPS mirror while retaining upstream cryptographic release checksums.
   const attrRecipe = readFileSync(attrRecipePath, 'utf8');
   const expectedAttrSource = 'TERMUX_PKG_SRCURL="https://download-mirror.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"';
   const expectedAttrSha256 = 'TERMUX_PKG_SHA256=d42fa374513180bb48cb11a46696f488240e5124ff1e6ad88b0abff706985612';
   if (!attrRecipe.includes(expectedAttrSource) || !attrRecipe.includes(expectedAttrSha256)) {
     fail('Generated attr recipe must use the exact HTTPS Savannah mirror and retain attr 2.6.0’s pinned SHA-256.');
+  }
+  const libaclRecipe = readFileSync(libaclRecipePath, 'utf8');
+  const expectedLibaclSource = 'TERMUX_PKG_SRCURL=https://download-mirror.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz';
+  const expectedLibaclSha256 = 'TERMUX_PKG_SHA256=73c853c3d44e1f693e5a96a986f1bd19d3d0dac2c7d453e796177774bc4e5f6a';
+  if (!libaclRecipe.includes(expectedLibaclSource) || !libaclRecipe.includes(expectedLibaclSha256)) {
+    fail('Generated libacl recipe must use the exact HTTPS Savannah mirror and retain libacl 2.4.0’s pinned SHA-256.');
   }
 
   const properties = readFileSync(propertiesPath, 'utf8');
@@ -123,7 +174,8 @@ try {
 
   console.log('Copper completed-package pruning verified before upstream finish-build exits its subshell.');
   console.log('Copper bootstrap archive export verified: package-builder output/ is used instead of the repository root.');
-  console.log('Copper attr 2.6.0 source verified: HTTPS Savannah mirror with the upstream SHA-256 retained.');
+  console.log('Copper attr and libacl sources verified: HTTPS Savannah mirror with their upstream SHA-256 pins retained.');
+  console.log(`Copper default bootstrap dependency closure verified: ${bootstrapDependencyRecipePaths.size} recipe roots, no raw Savannah origin URLs.`);
   console.log(`Copper generated bootstrap recipes verified: ${bootstrapPackages.length} direct package entries map to pinned source recipes.`);
   console.log(`Copper generated termux-core make arguments verified: ${makeArguments.length} assignments, no bare make targets.`);
   console.log(`  TERMUX__NAME: ${config.buildName}`);
