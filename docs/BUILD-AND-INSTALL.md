@@ -62,8 +62,7 @@ cd android && ./gradlew assembleRelease
 The separate **Copper Runtime personal arm64 device-candidate APK** CI job is for
 the project owner's physical arm64 phone test. It embeds the exact verified
 Copper source-build bootstrap and labels itself a personal candidate in the
-Terminal screen. Download its `Copper-runtime-device-candidate` artifact only
-for that test.
+Terminal screen. The first successful candidate is in [CI run `33948964299`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33948964299): open the run, download the `Copper-runtime-device-candidate` artifact, unzip it, and install `Copper-runtime-device-candidate.apk` on an arm64 Android phone. That temporary Actions artifact expires on **2026-09-19**.
 
 It is deliberately different from both the ordinary UI test APK and a future
 runtime release: it must not be redistributed or presented as released, and it

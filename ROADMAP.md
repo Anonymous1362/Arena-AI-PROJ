@@ -93,8 +93,8 @@ Nothing in this roadmap changes Copper into an HTTPS-only app or authorizes a re
 ## Phase 5 — Make it usable on real arm64 phones **← CURRENT PHASE**
 
 - [x] Define and test a fail-closed local promotion record/gate for a future runtime release: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
-- [ ] **Current work:** build a clearly labeled personal arm64 device-candidate APK containing the exact verified source-build asset in `device-candidate` mode. It is for the project owner's phone test only, never a runtime release, and never silently substitutes an upstream/Termux bootstrap.
-- [ ] Install that personal candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
+- [x] Build a clearly labeled personal arm64 device-candidate APK containing the exact verified source-build asset in `device-candidate` mode. CI first passed native PTY compilation and bundled-runtime installation validation, then built [`Copper-runtime-device-candidate` in run `33948964299`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33948964299). It is for the project owner's phone test only, never a runtime release, and never silently substitutes an upstream/Termux bootstrap.
+- [ ] **Current work:** install that personal candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
 - [ ] Confirm manually in Copper Terminal that Bash starts, accepts interactive input, streams output, handles Ctrl-C, and starts in the SD-card `COPPER Projects` directory after Android permission approval.
 - [ ] Keep the UI honest: label personal candidates as non-release; report missing, corrupt, mismatched, unsupported, or repair-required assets accurately.
 - [ ] Before any permanent runtime distribution, create durable Copper-controlled immutable HTTPS delivery locations for the verified runtime ZIP/manifest and corresponding source. The temporary CI artifact is not an end-user release channel.
