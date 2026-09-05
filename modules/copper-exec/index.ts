@@ -90,6 +90,17 @@ export interface CopperRuntimeSession {
   startedAtEpochMs: number;
 }
 
+/** A short-lived diagnostic retained after a native PTY session exits. The
+ * output tail is deliberately bounded and exists only to make a failed shell
+ * launch actionable on the device that experienced it. */
+export interface CopperRuntimeSessionExit {
+  sessionId: string;
+  exit: number;
+  closedByUser: boolean;
+  outputTail?: string;
+  exitedAtEpochMs: number;
+}
+
 export type CopperRuntimeInstallStage = 'checking' | 'verifying' | 'extracting' | 'validating' | 'complete' | 'failed';
 
 /** Native installation milestones. persistentBytes is live staging usage, not
@@ -103,7 +114,7 @@ export interface CopperRuntimeInstallProgress {
 
 type CopperRuntimeEvents = {
   runtimeOutput: (event: { sessionId: string; data: string }) => void;
-  runtimeExit: (event: { sessionId: string; exit: number; closedByUser: boolean }) => void;
+  runtimeExit: (event: CopperRuntimeSessionExit) => void;
   runtimeError: (event: { sessionId: string; message: string }) => void;
   runtimeInstallProgress: (event: CopperRuntimeInstallProgress) => void;
 };
@@ -129,6 +140,7 @@ type NativeCopperExec = {
   resizeRuntimeSession(sessionId: string, rows: number, columns: number): Promise<boolean>;
   closeRuntimeSession(sessionId: string): Promise<boolean>;
   listRuntimeSessions(): Promise<CopperRuntimeSession[]>;
+  getRuntimeSessionExitDetail(sessionId: string): Promise<CopperRuntimeSessionExit | null>;
   /** Shares an external file or user-granted SAF URI without a cache copy. */
   shareUri(uri: string, mimeType: string, title: string | null): Promise<boolean>;
   /** Runs a manual command anywhere in Android shared storage after user grant. */
@@ -208,6 +220,9 @@ export const CopperExec = {
 
   listRuntimeSessions: async (): Promise<CopperRuntimeSession[]> =>
     native ? native.listRuntimeSessions() : [],
+
+  getRuntimeSessionExitDetail: async (sessionId: string): Promise<CopperRuntimeSessionExit | null> =>
+    native ? native.getRuntimeSessionExitDetail(sessionId) : null,
 
   addRuntimeOutputListener: (listener: CopperRuntimeEvents['runtimeOutput']): EventSubscription | null =>
     native?.addListener('runtimeOutput', listener) ?? null,

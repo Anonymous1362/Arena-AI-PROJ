@@ -165,6 +165,12 @@ class CopperExecModule : Module() {
       CopperRuntimeSessions.list()
     }
 
+    /** Bounded process-local PTY exit detail after a session leaves the active
+     * list. This is diagnostic UI data, never an agent terminal API. */
+    AsyncFunction("getRuntimeSessionExitDetail") { sessionId: String ->
+      CopperRuntimeSessions.exitDetail(sessionId)
+    }
+
     /**
      * Shares an external file or SAF content URI directly, without first
      * copying it to an internal cache. File URIs are converted through this

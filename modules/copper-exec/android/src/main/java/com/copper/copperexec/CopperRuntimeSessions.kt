@@ -20,6 +20,8 @@ internal object CopperRuntimeSessions {
   private const val DEFAULT_COLUMNS = 100
   private const val MAX_INPUT_BYTES = 256 * 1024
   private const val SIGNAL_HANGUP = 1
+  private const val EXIT_OUTPUT_TAIL_CHARS = 4 * 1024
+  private const val MAX_RETAINED_EXIT_DETAILS = 12
 
   private data class Session(
     val id: String,
@@ -27,10 +29,21 @@ internal object CopperRuntimeSessions {
     val pid: Int,
     val cwd: String,
     val startedAtEpochMs: Long,
-    val closed: AtomicBoolean = AtomicBoolean(false)
+    val closed: AtomicBoolean = AtomicBoolean(false),
+    val descriptorClosed: AtomicBoolean = AtomicBoolean(false),
+    val outputTail: StringBuilder = StringBuilder()
+  )
+
+  private data class ExitDetail(
+    val sessionId: String,
+    val exit: Int,
+    val closedByUser: Boolean,
+    val outputTail: String,
+    val exitedAtEpochMs: Long
   )
 
   private val sessions = ConcurrentHashMap<String, Session>()
+  private val recentExits = ConcurrentHashMap<String, ExitDetail>()
 
   fun start(
     context: Context,
@@ -72,8 +85,8 @@ internal object CopperRuntimeSessions {
       startedAtEpochMs = System.currentTimeMillis()
     )
     sessions[session.id] = session
-    readOutput(session, emit)
-    waitForExit(session, emit)
+    val outputThread = readOutput(session, emit)
+    waitForExit(session, outputThread, emit)
 
     return sessionInfo(session)
   }
@@ -98,7 +111,7 @@ internal object CopperRuntimeSessions {
       try {
         CopperPtyNative.nativeSignal(session.pid, SIGNAL_HANGUP)
       } finally {
-        CopperPtyNative.nativeClose(session.descriptor)
+        closeDescriptor(session)
       }
     }
     return true
@@ -107,6 +120,19 @@ internal object CopperRuntimeSessions {
   fun list(): List<Map<String, Any?>> = sessions.values
     .sortedBy { it.startedAtEpochMs }
     .map(::sessionInfo)
+
+  /** Returns a bounded launch/exit diagnostic after the session leaves the
+   * active map. This lets the UI distinguish a stale button from Bash exiting
+   * immediately, including the child’s last PTY output when available. */
+  fun exitDetail(sessionId: String): Map<String, Any?>? = recentExits[sessionId]?.let { detail ->
+    mapOf(
+      "sessionId" to detail.sessionId,
+      "exit" to detail.exit,
+      "closedByUser" to detail.closedByUser,
+      "outputTail" to detail.outputTail,
+      "exitedAtEpochMs" to detail.exitedAtEpochMs
+    )
+  }
 
   private fun session(sessionId: String): Session =
     sessions[sessionId] ?: throw IllegalArgumentException("Terminal session was not found.")
@@ -134,18 +160,22 @@ internal object CopperRuntimeSessions {
     }
   }
 
-  private fun readOutput(session: Session, emit: (String, Map<String, Any?>) -> Unit) {
+  private fun readOutput(session: Session, emit: (String, Map<String, Any?>) -> Unit): Thread =
     Thread {
       val buffer = ByteArray(16 * 1024)
       try {
-        while (!session.closed.get()) {
+        // Keep reading through normal child exit so a last linker/exec error
+        // reaches both the visible terminal and the retained diagnostic tail.
+        while (true) {
           val count = CopperPtyNative.nativeRead(session.descriptor, buffer)
           if (count <= 0) break
           // A terminal byte stream may contain ANSI controls; it is sent as-is
           // rather than being flattened into ordinary agent/chat text.
+          val data = String(buffer, 0, count, StandardCharsets.UTF_8)
+          appendOutputTail(session, data)
           emit("runtimeOutput", mapOf(
             "sessionId" to session.id,
-            "data" to String(buffer, 0, count, StandardCharsets.UTF_8)
+            "data" to data
           ))
         }
       } catch (error: Exception) {
@@ -158,22 +188,68 @@ internal object CopperRuntimeSessions {
       isDaemon = true
       start()
     }
+
+  private fun appendOutputTail(session: Session, data: String) = synchronized(session.outputTail) {
+    session.outputTail.append(data)
+    if (session.outputTail.length > EXIT_OUTPUT_TAIL_CHARS) {
+      session.outputTail.delete(0, session.outputTail.length - EXIT_OUTPUT_TAIL_CHARS)
+    }
   }
 
-  private fun waitForExit(session: Session, emit: (String, Map<String, Any?>) -> Unit) {
+  private fun outputTail(session: Session): String = synchronized(session.outputTail) {
+    session.outputTail.toString()
+  }
+
+  private fun recordExit(detail: ExitDetail) {
+    recentExits[detail.sessionId] = detail
+    // Keep only a small bounded diagnostic history. These details are not a
+    // terminal transcript and are never persisted beyond the app process.
+    while (recentExits.size > MAX_RETAINED_EXIT_DETAILS) {
+      val oldest = recentExits.values.minByOrNull { it.exitedAtEpochMs } ?: break
+      recentExits.remove(oldest.sessionId, oldest)
+    }
+  }
+
+  private fun closeDescriptor(session: Session) {
+    if (session.descriptorClosed.compareAndSet(false, true)) {
+      CopperPtyNative.nativeClose(session.descriptor)
+    }
+  }
+
+  private fun waitForExit(session: Session, outputThread: Thread, emit: (String, Map<String, Any?>) -> Unit) {
     Thread {
       val exitCode = CopperPtyNative.nativeWait(session.pid)
+      // Do not close the PTY master before its reader can drain the child’s
+      // final output. A rapid exec failure otherwise looks like a mysterious
+      // "session was not found" with no useful cause on the phone.
+      if (!session.closed.get()) {
+        try {
+          outputThread.join(350)
+        } catch (_: InterruptedException) {
+          Thread.currentThread().interrupt()
+        }
+      }
       val wasOpen = session.closed.compareAndSet(false, true)
       sessions.remove(session.id, session)
+      val detail = ExitDetail(
+        sessionId = session.id,
+        exit = exitCode,
+        closedByUser = !wasOpen,
+        outputTail = outputTail(session),
+        exitedAtEpochMs = System.currentTimeMillis()
+      )
+      recordExit(detail)
       try {
-        CopperPtyNative.nativeClose(session.descriptor)
+        closeDescriptor(session)
       } catch (_: Exception) {
-        // The reader or close() may already have closed the descriptor.
+        // The user close path may have released the descriptor first.
       }
       emit("runtimeExit", mapOf(
-        "sessionId" to session.id,
-        "exit" to exitCode,
-        "closedByUser" to !wasOpen
+        "sessionId" to detail.sessionId,
+        "exit" to detail.exit,
+        "closedByUser" to detail.closedByUser,
+        "outputTail" to detail.outputTail,
+        "exitedAtEpochMs" to detail.exitedAtEpochMs
       ))
     }.apply {
       name = "CopperRuntime-exit-${session.id.take(8)}"

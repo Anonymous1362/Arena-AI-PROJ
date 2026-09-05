@@ -6,7 +6,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { Button, Card } from '@/src/components/ui';
-import { CopperExec, type CopperRuntimeInstallProgress, type CopperRuntimeSession, type CopperRuntimeStatus } from '@/modules/copper-exec';
+import { CopperExec, type CopperRuntimeInstallProgress, type CopperRuntimeSession, type CopperRuntimeSessionExit, type CopperRuntimeStatus } from '@/modules/copper-exec';
 import { haptics } from '@/src/utils/haptics';
 import { useKeyboardVisible } from '@/src/hooks/useKeyboardVisible';
 
@@ -28,6 +28,20 @@ function appendTerminalData(previous: string, data: string) {
 
 function storageLine(label: string, bytes: number): [string, number] {
   return [label, bytes];
+}
+
+function sessionExitNotice(detail: CopperRuntimeSessionExit) {
+  if (detail.closedByUser) return 'Copper terminal session closed.';
+  // PTY output may include ANSI color/cursor controls. Preserve the useful
+  // final diagnostic without injecting terminal control bytes into a notice.
+  const output = (detail.outputTail ?? '')
+    .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .trim()
+    .slice(-900);
+  return output
+    ? `Copper Bash exited with code ${detail.exit}. ${output}`
+    : `Copper Bash exited with code ${detail.exit} before it could receive input. Open a new session to try again.`;
 }
 
 function installStageTitle(stage: CopperRuntimeInstallProgress['stage']) {
@@ -113,6 +127,11 @@ export default function TerminalScreen() {
   const terminalScrollRef = useRef<ScrollView>(null);
   const cwdRef = useRef('');
   const sessionIdRef = useRef<string | null>(null);
+  // Native PTY output can arrive between the native start resolving and React
+  // committing setSession(). Retain that short window rather than discarding
+  // an immediate bash/linker failure and leaving a stale-looking terminal.
+  const pendingOutputRef = useRef(new Map<string, string>());
+  const pendingExitRef = useRef(new Map<string, CopperRuntimeSessionExit>());
   const appStateRef = useRef(AppState.currentState);
   const awaitingPermissionReturnRef = useRef(false);
 
@@ -137,6 +156,14 @@ export default function TerminalScreen() {
   useEffect(() => {
     sessionIdRef.current = session?.id ?? null;
   }, [session]);
+
+  const closeTerminalFromExit = useCallback((detail: CopperRuntimeSessionExit) => {
+    sessionIdRef.current = null;
+    setSession(null);
+    setSendingCommand(false);
+    setCommandError(null);
+    setNotice(sessionExitNotice(detail));
+  }, []);
 
   const refreshStatus = useCallback(async (): Promise<boolean> => {
     if (Platform.OS !== 'android' || !CopperExec.isAvailable()) return false;
@@ -186,13 +213,25 @@ export default function TerminalScreen() {
 
   useEffect(() => {
     const outputSubscription = CopperExec.addRuntimeOutputListener(({ sessionId, data }) => {
-      if (sessionId !== sessionIdRef.current) return;
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId) {
+        pendingOutputRef.current.set(
+          sessionId,
+          appendTerminalData(pendingOutputRef.current.get(sessionId) ?? '', data)
+        );
+        return;
+      }
+      if (sessionId !== activeSessionId) return;
       setTerminalOutput((previous) => appendTerminalData(previous, data));
     });
-    const exitSubscription = CopperExec.addRuntimeExitListener(({ sessionId, exit, closedByUser }) => {
-      if (sessionId !== sessionIdRef.current) return;
-      setSession(null);
-      setNotice(closedByUser ? 'Copper terminal session closed.' : `Copper terminal exited with code ${exit}.`);
+    const exitSubscription = CopperExec.addRuntimeExitListener((detail) => {
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId) {
+        pendingExitRef.current.set(detail.sessionId, detail);
+        return;
+      }
+      if (detail.sessionId !== activeSessionId) return;
+      closeTerminalFromExit(detail);
     });
     const errorSubscription = CopperExec.addRuntimeErrorListener(({ sessionId, message }) => {
       if (sessionId !== sessionIdRef.current) return;
@@ -213,7 +252,7 @@ export default function TerminalScreen() {
       errorSubscription?.remove();
       installSubscription?.remove();
     };
-  }, []);
+  }, [closeTerminalFromExit]);
 
   useEffect(() => {
     if (!terminalOutput) return;
@@ -280,10 +319,35 @@ export default function TerminalScreen() {
     }
     setBusyAction('start');
     setNotice(null);
+    setCommandError(null);
+    pendingOutputRef.current.clear();
+    pendingExitRef.current.clear();
     try {
       const next = await CopperExec.startRuntimeSession(cwd || null, 28, 100);
+      // Set the id synchronously. Waiting for React's state effect here left a
+      // small race in which an immediately exited shell event was discarded.
+      sessionIdRef.current = next.id;
+      const earlyOutput = pendingOutputRef.current.get(next.id);
+      pendingOutputRef.current.delete(next.id);
+      let earlyExit = pendingExitRef.current.get(next.id) ?? null;
+      pendingExitRef.current.delete(next.id);
+      if (!earlyExit) {
+        try {
+          earlyExit = await CopperExec.getRuntimeSessionExitDetail(next.id);
+        } catch {
+          // The session can still be alive; the runtimeExit listener remains
+          // authoritative if a diagnostic lookup is temporarily unavailable.
+        }
+      }
+      if (earlyExit) {
+        closeTerminalFromExit(earlyExit);
+        return;
+      }
       setSession(next);
-      setTerminalOutput((previous) => previous || 'Copper Runtime — interactive Bash session\n');
+      setTerminalOutput((previous) => {
+        const initial = previous || 'Copper Runtime — interactive Bash session\n';
+        return earlyOutput ? appendTerminalData(initial, earlyOutput) : initial;
+      });
       setNotice('Live Copper Bash session started ✨');
       haptics.success();
     } catch (error) {
@@ -314,6 +378,18 @@ export default function TerminalScreen() {
         terminalScrollRef.current?.scrollToEnd({ animated: true });
       });
     } catch (error) {
+      // If the native session ended between rendering this composer and the
+      // tap, replace the raw bridge exception with the actual process exit
+      // code/output tail and remove the stale composer immediately.
+      try {
+        const exited = await CopperExec.getRuntimeSessionExitDetail(session.id);
+        if (exited) {
+          closeTerminalFromExit(exited);
+          return;
+        }
+      } catch {
+        // Preserve the original bridge error if diagnostics are unavailable.
+      }
       const message = (error as Error).message || 'Copper could not send that input.';
       // Keep failure feedback beside the control the person just tapped. The
       // older general notice sits above terminal output and was easy to miss.
