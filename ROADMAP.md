@@ -147,3 +147,8 @@ Copper can call this a complete in-app local package terminal only when all of t
 **Copper has a genuinely built and installer-validated arm64 runtime foundation; the next job is to promote that verified runtime into a durable, testable arm64 device build, then complete signed packages, live quota controls, and the separate AI workspace runner.**
 
 For the detailed technical design, source provenance, and CI evidence, see [`docs/COPPER-RUNTIME.md`](docs/COPPER-RUNTIME.md).
+
+## Returning in a later Agent Mode chat
+
+- Use [`docs/AGENT-HANDOFF.md`](docs/AGENT-HANDOFF.md) as the durable project handoff. It records the branch, completed CI evidence, safety rules, known limitations, and the next exact tasks.
+- Use [`docs/AGENT-CAPABILITY-EVALUATION.md`](docs/AGENT-CAPABILITY-EVALUATION.md) to score an available Agent Mode model by real Copper tasks instead of trusting a provider name alone.
