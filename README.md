@@ -46,7 +46,7 @@ See **[docs/BUILD-AND-INSTALL.md](docs/BUILD-AND-INSTALL.md)** for the complete,
 - **PWA** (zero Apple involvement) — install from the GitHub Pages build, works on every iOS/Android browser.
 - **Unsigned IPA CI pipeline** → sign on-device with **SideStore/AltStore** (free Apple ID, auto-refresh). Works on current iOS versions.
 - **Android APK** built automatically by CI (debug-signed release build) — sideload in one tap.
-- **Termux** on-device build instructions for Android.
+- **Android CI workflow** can build a sideloadable test APK from any selected branch—no separately installed Termux app is required by Copper.
 
 ## CI/CD (already wired)
 

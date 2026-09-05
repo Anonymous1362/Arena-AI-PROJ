@@ -20,13 +20,31 @@ This document is the honest, complete playbook for getting Copper onto devices *
 ## 1. Android — trivial
 
 ### Option A: let CI build the APK (recommended)
-1. Push a tag: `git tag v1.0.0 && git push origin v1.0.0` (or run **Android APK** from the Actions tab).
-2. Download `Copper-android` artifact from the run.
-3. Copy to phone, tap the APK, allow "install unknown apps" once. Done — installs like any app, runs forever.
 
-The APK is a release build signed with the generated debug keystore (fine for personal/sideload use).
+The **Android APK** workflow can build **any pushed branch or tag**. A pull request
+or merge is not required.
 
-### Option B: build on-device with Termux
+1. On GitHub, open **Actions → Android APK → Run workflow**.
+2. Choose the branch/ref you want to test—for example `arena/01a06159-arena-ai-proj`—then run it.
+3. Download the `Copper-android` artifact from that workflow run.
+4. Copy it to the phone, tap the APK, and allow “install unknown apps” once.
+
+A `v*` tag also triggers the workflow automatically, but a tag is not needed for
+personal branch testing. The APK is a release build signed with the generated
+debug keystore, suitable for personal sideloading.
+
+> **Runtime status matters:** the current branch can produce a test APK for the
+> Copper UI, selected-SAF AI workspace, and Manual Terminal permission flow. It
+> does **not** yet package a durable verified Copper Runtime asset, so its
+> terminal correctly reports `bundle_missing`; it is not yet a full Copper
+> Bash/`pkg` runtime APK.
+
+### Option B: advanced on-device build host (optional)
+
+The following uses Termux only as a **developer build host**. It is not a Copper
+runtime dependency: the resulting Copper APK runs without the separately
+installed Termux app.
+
 ```bash
 pkg update
 pkg install nodejs-lts openjdk-17 git a-binutils
@@ -37,7 +55,7 @@ cd android && ./gradlew assembleRelease
 # APK: android/app/build/outputs/apk/release/app-release.apk
 ```
 
-> `termux-setup-storage` only grants **Termux** access to Android storage. Copper does not depend on that grant: its Android build automatically uses its own app-specific folder on a removable SD card when one is mounted, otherwise primary external storage. See [the Android external / SD-card storage notes](../README.md#android-external--sd-card-storage) for the exact paths and optional folder picker.
+> `termux-setup-storage` grants storage access only to the optional Termux build host. Copper itself does not depend on that grant or on Termux: AI project files require the SAF workspace selected in Copper, while the Manual Terminal has its own explicit Android permission flow. See [the Android external / SD-card storage notes](../README.md#android-external--sd-card-storage).
 
 Tip: phones need lots of RAM for Gradle — close other apps or add swap. CI (Option A) is usually faster.
 

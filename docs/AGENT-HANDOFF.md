@@ -94,4 +94,4 @@ npm run runtime:bootstrap -- --workspace /absolute/path/copper-runtime-source --
 - Do not execute the arm64 runtime from external/shared/SD storage.
 - Do not use an x86_64 Android emulator result as proof that arm64 Copper Bash executed.
 
-For a user-friendly status view, see [`../ROADMAP.md`](../ROADMAP.md). For the technical runtime design and phase checklist, see [`COPPER-RUNTIME.md`](COPPER-RUNTIME.md).
+For a user-friendly status view, see [`../ROADMAP.md`](../ROADMAP.md). For the technical runtime design and phase checklist, see [`COPPER-RUNTIME.md`](COPPER-RUNTIME.md). For a production-grade agent qualification process, use [`AGENT-EVALUATION-OPERATOR-GUIDE.md`](AGENT-EVALUATION-OPERATOR-GUIDE.md), not the public exercises alone.

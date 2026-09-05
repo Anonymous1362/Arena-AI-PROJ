@@ -151,4 +151,4 @@ For the detailed technical design, source provenance, and CI evidence, see [`doc
 ## Returning in a later Agent Mode chat
 
 - Use [`docs/AGENT-HANDOFF.md`](docs/AGENT-HANDOFF.md) as the durable project handoff. It records the branch, completed CI evidence, safety rules, known limitations, and the next exact tasks.
-- Use [`docs/AGENT-CAPABILITY-EVALUATION.md`](docs/AGENT-CAPABILITY-EVALUATION.md) to score an available Agent Mode model by real Copper tasks instead of trusting a provider name alone.
+- Use [`docs/AGENT-CAPABILITY-EVALUATION.md`](docs/AGENT-CAPABILITY-EVALUATION.md) for public calibration, then [`docs/AGENT-EVALUATION-OPERATOR-GUIDE.md`](docs/AGENT-EVALUATION-OPERATOR-GUIDE.md) for private holdouts, independently reviewed evidence, and an A/B/C production decision.

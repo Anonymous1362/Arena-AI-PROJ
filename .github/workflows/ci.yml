@@ -23,7 +23,46 @@ jobs:
       - name: npx tsc --noEmit
         run: npx tsc --noEmit
 
-  # ── 2. Web bundle smoke test ──────────────────────────────────────────────
+  # ── 2. Agent-evaluation evidence tooling ──────────────────────────────────
+  # This validates the hash-checked evidence packer itself. It is deliberately
+  # not a public "model intelligence" test; private holdouts and independent
+  # review remain required by docs/AGENT-EVALUATION-OPERATOR-GUIDE.md.
+  agent-evaluation-tooling:
+    name: Agent evaluation evidence tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Check and exercise evidence packer
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/package-agent-evaluation-evidence.mjs
+          work="$RUNNER_TEMP/copper-agent-evaluation-tooling"
+          mkdir -p "$work"
+          printf 'CI self-audit transcript\n' > "$work/transcript.txt"
+          printf 'CI self-audit tool log\n' > "$work/tool-log.txt"
+          printf 'CI self-audit test log\n' > "$work/test-log.txt"
+          if node scripts/package-agent-evaluation-evidence.mjs \
+            --mode independent --task-id ci-independent-guard \
+            --start-sha "$GITHUB_SHA" --end-sha "$GITHUB_SHA" \
+            --transcript "$work/transcript.txt" --tool-log "$work/tool-log.txt" \
+            --test-log "$work/test-log.txt" --out "$work/should-not-exist.json"; then
+            echo '::error title=Evaluation evidence tooling::Independent mode accepted a missing holdout/reviewer attestation.'
+            exit 1
+          fi
+          node scripts/package-agent-evaluation-evidence.mjs \
+            --mode self-audit --task-id ci-self-audit \
+            --start-sha "$GITHUB_SHA" --end-sha "$GITHUB_SHA" \
+            --transcript "$work/transcript.txt" --tool-log "$work/tool-log.txt" \
+            --test-log "$work/test-log.txt" --out "$work/evidence.json"
+          node scripts/package-agent-evaluation-evidence.mjs --verify --bundle "$work/evidence.json"
+
+  # ── 3. Web bundle smoke test ──────────────────────────────────────────────
   web-bundle-smoke:
     name: Web bundle smoke test
     runs-on: ubuntu-latest
@@ -46,7 +85,7 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
-  # ── 3. Locked full-bootstrap provenance for asset validation ──────────────
+  # ── 4. Locked full-bootstrap provenance for asset validation ──────────────
   # An installer-validation commit must prove which *earlier* successful source
   # bootstrap it consumes. This is deliberately a short API attestation, not a
   # second multi-hour source build; the latter remains opt-in below.
@@ -89,7 +128,7 @@ jobs:
             echo '- This attests the existing source build; it does not rerun it.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── 4. On-demand Copper Runtime source preflight / bootstrap ──────────────
+  # ── 5. On-demand Copper Runtime source preflight / bootstrap ──────────────
   # Both paths are deliberately opt-in by commit message. The standalone manual
   # workflow becomes dispatchable once its file reaches the default branch.
   copper-runtime-bootstrap:
@@ -213,7 +252,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # ── 5. On-demand Android native module compilation ────────────────────────
+  # ── 6. On-demand Android native module compilation ────────────────────────
   # Uses a marker because NDK/Gradle compilation is much slower than the normal
   # Android JS-bundle smoke test below.
   copper-native-runtime-compile:
@@ -337,7 +376,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 6. Validate installation of the successful arm64 bootstrap ───────────
+  # ── 7. Validate installation of the successful arm64 bootstrap ───────────
   # This deliberate, non-publishing gate turns the retained full-build artifact
   # into a temporary Gradle asset and proves Copper's real Android installer.
   # GitHub's x86_64 emulator cannot execute an app-private arm64 ELF through
@@ -530,7 +569,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 6. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 8. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest
