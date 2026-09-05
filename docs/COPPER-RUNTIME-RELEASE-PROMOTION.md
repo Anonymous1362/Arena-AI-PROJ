@@ -6,6 +6,16 @@ its matching build manifest, and a corresponding-source bundle. It deliberately
 does **not** upload files, create a GitHub release, tag Git, build an APK, or
 make a release public.
 
+## Scope: this is not the personal phone-test APK path
+
+Before using this permanent-distribution gate, Copper may build a clearly
+labeled **personal device-candidate APK** for the project owner's physical arm64
+phone. That candidate embeds the exact verified source-build asset in
+`device-candidate` staging mode and is useful only for real Bash/PTTY execution
+evidence. It is not a Copper Runtime release, must not be redistributed, and
+does not remove any GPL/source or signing requirements for a later permanent
+runtime distribution.
+
 A GitHub Actions artifact is temporary validation evidence, not a durable
 runtime delivery channel. In particular, the current successful source bootstrap
 artifact is scheduled to expire on **2026-09-18**. Do not promote an archive

@@ -57,6 +57,20 @@ cd android && ./gradlew assembleRelease
 
 > `termux-setup-storage` grants storage access only to the optional Termux build host. Copper itself does not depend on that grant or on Termux: AI project files require the SAF workspace selected in Copper, while the Manual Terminal has its own explicit Android permission flow. See [the Android external / SD-card storage notes](../README.md#android-external--sd-card-storage).
 
+### Personal real-runtime phone candidate — not a release
+
+The separate **Copper Runtime personal arm64 device-candidate APK** CI job is for
+the project owner's physical arm64 phone test. It embeds the exact verified
+Copper source-build bootstrap and labels itself a personal candidate in the
+Terminal screen. Download its `Copper-runtime-device-candidate` artifact only
+for that test.
+
+It is deliberately different from both the ordinary UI test APK and a future
+runtime release: it must not be redistributed or presented as released, and it
+does not prove live package updates or replace the later source/signing
+requirements. Its purpose is narrower and important: prove real Copper Bash
+runs through the real PTY on an arm64 phone.
+
 Tip: phones need lots of RAM for Gradle — close other apps or add swap. CI (Option A) is usually faster.
 
 ---

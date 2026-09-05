@@ -30,6 +30,7 @@ internal object CopperRuntimeInstaller {
   private const val COPPER_PACKAGE_ID = "com.copper.chat"
   private const val BOOTSTRAP_ASSET_AARCH64 = "copper-runtime/copper-runtime-bootstrap-aarch64.zip"
   private const val BOOTSTRAP_MANIFEST_AARCH64 = "$BOOTSTRAP_ASSET_AARCH64.json"
+  private const val BOOTSTRAP_STAGE_RECEIPT = "copper-runtime/copper-runtime-stage-receipt.json"
   private const val QUOTA_BYTES = 2L * 1024L * 1024L * 1024L
   private const val MIN_FREE_HEADROOM_BYTES = 64L * 1024L * 1024L
   private const val METADATA_DIRECTORY = "copper-runtime"
@@ -46,6 +47,7 @@ internal object CopperRuntimeInstaller {
   fun status(context: Context): Map<String, Any?> {
     val layout = layout(context)
     val bundleAvailable = bootstrapAssetForCurrentAbi(context) != null
+    val assetStageMode = if (bundleAvailable) stagedAssetMode(context) else "none"
     val prefixReady = isRuntimeReady(layout.prefix)
     val prefixExists = layout.prefix.exists()
     val usage = storageUsage(layout)
@@ -62,6 +64,8 @@ internal object CopperRuntimeInstaller {
       "state" to state,
       "ready" to (prefixReady && context.packageName == COPPER_PACKAGE_ID),
       "bundleAvailable" to bundleAvailable,
+      "assetStageMode" to assetStageMode,
+      "candidateOnly" to (bundleAvailable && assetStageMode != "release"),
       "supportedAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
       "runtimePrefix" to layout.prefix.absolutePath,
       "runtimeHome" to layout.home.absolutePath,
@@ -192,6 +196,28 @@ internal object CopperRuntimeInstaller {
     } catch (_: Exception) {
       null
     }
+  }
+
+  /**
+   * The staging receipt is generated alongside the verified ZIP. It lets a
+   * personal device-test APK say that it contains the real runtime while still
+   * refusing to be confused with a promoted runtime release. A missing or
+   * malformed receipt is conservatively treated as an unrecognized candidate.
+   */
+  private fun stagedAssetMode(context: Context): String = try {
+    val receipt = context.assets.open(BOOTSTRAP_STAGE_RECEIPT)
+      .bufferedReader(StandardCharsets.UTF_8)
+      .use { it.readText() }
+    val mode = Regex("\\\"mode\\\"\\s*:\\s*\\\"([a-z-]+)\\\"")
+      .find(receipt)
+      ?.groupValues
+      ?.getOrNull(1)
+    when (mode) {
+      "ci-validation", "device-candidate", "release" -> mode
+      else -> "unrecognized"
+    }
+  } catch (_: Exception) {
+    "unrecognized"
   }
 
   private fun verifyBootstrapAssetDigest(context: Context, asset: BootstrapAsset) {

@@ -80,25 +80,25 @@ So a **skipped** source-build row on an installer-validation commit means **“n
 
 ## APK versus HTTPS — two different jobs
 
-**Copper is installed on Android as an APK.** HTTPS is not a replacement app, a web version of the terminal, or a requirement for the base runtime to be downloaded every time Copper starts.
+**Copper is installed on Android as an APK.** HTTPS is not a replacement app, a web version of the terminal, or a requirement for the base runtime to be downloaded every time Copper starts. **No separate website or web server is planned or needed for Copper to work.** The public GitHub repository is the online source-code project; that is different from a GitHub Release page containing installable files.
 
-- **Phase 5 HTTPS asset/source URLs:** before a *release-grade runtime APK* is made, the exact runtime ZIP that will be copied **into** that APK and its matching GPL corresponding-source bundle need durable, immutable, Copper-controlled locations. A GitHub Actions artifact expires, so it is evidence of a build—not a stable record of the bytes distributed in an APK.
+- **Phase 5 HTTPS asset/source URLs:** before a *released runtime APK* is made, the exact runtime ZIP that will be copied **into** that APK and its matching GPL corresponding-source bundle need durable, immutable, Copper-controlled locations. A GitHub Actions artifact expires, so it is evidence of a build—not a stable record of the bytes distributed in an APK.
 - **Phase 6 HTTPS package-repository URL:** after the base runtime is installed, `pkg`/APT needs a signed Copper package service if the user chooses to install or update packages. HTTPS protects transport; the offline archive key verifies that the package metadata is actually Copper's.
-- **Current ordinary test APK:** it can be built and sideloaded without either URL. It contains Copper's UI, AI/workspace boundaries, and Terminal permission flow, but intentionally reports `bundle_missing`; it is not the full Copper Bash/`pkg` APK.
+- **Two kinds of test APK:** the ordinary UI test APK can be built now and intentionally reports `bundle_missing`. The next personal device-candidate APK will instead contain the exact verified arm64 runtime for the project owner's phone test, but is still **not** a runtime release or package-update validation.
 
-Nothing in this roadmap changes Copper into an HTTPS-only app or authorizes a release. The HTTPS requirements exist only for a durable, auditable runtime distribution and later signed package updates.
+Nothing in this roadmap changes Copper into an HTTPS-only app or authorizes a release. Durable HTTPS/source requirements apply only before a permanent runtime distribution; a clearly labeled personal device candidate is the next phone-testing step.
 
 ---
 
 ## Phase 5 — Make it usable on real arm64 phones **← CURRENT PHASE**
 
-- [x] Define and test a fail-closed local promotion record/gate for an asset: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
-- [ ] Create the actual durable Copper-controlled immutable HTTPS delivery locations for verified runtime ZIPs/manifests and corresponding source. The current successful CI artifact is temporary evidence, not an end-user download channel.
-- [ ] Configure the real HTTPS package endpoint and offline archive key's **public** fingerprint, then prepare and independently verify the exact promoted bytes.
-- [ ] Build an arm64 Copper device-candidate APK containing **only** that verified promoted asset — never silently substitute an upstream/Termux bootstrap.
-- [ ] Install the candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
+- [x] Define and test a fail-closed local promotion record/gate for a future runtime release: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
+- [ ] **Current work:** build a clearly labeled personal arm64 device-candidate APK containing the exact verified source-build asset in `device-candidate` mode. It is for the project owner's phone test only, never a runtime release, and never silently substitutes an upstream/Termux bootstrap.
+- [ ] Install that personal candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
 - [ ] Confirm manually in Copper Terminal that Bash starts, accepts interactive input, streams output, handles Ctrl-C, and starts in the SD-card `COPPER Projects` directory after Android permission approval.
-- [ ] Keep the UI honest if the bundle is absent, corrupt, mismatched, unsupported, or needs repair.
+- [ ] Keep the UI honest: label personal candidates as non-release; report missing, corrupt, mismatched, unsupported, or repair-required assets accurately.
+- [ ] Before any permanent runtime distribution, create durable Copper-controlled immutable HTTPS delivery locations for the verified runtime ZIP/manifest and corresponding source. The temporary CI artifact is not an end-user release channel.
+- [ ] Before any permanent runtime distribution, configure the real HTTPS package endpoint and offline archive key's **public** fingerprint, then prepare and independently verify the exact promoted bytes.
 
 **Why the phone test is still needed:** GitHub's API-35 x86_64 emulator successfully validates the artifact and installer, but Android denies executing an app-private arm64 ELF through that emulator's native bridge. Copper therefore skips the arm64 Bash execution test there instead of falsely claiming that it ran. A real arm64 phone is the correct execution environment.
 

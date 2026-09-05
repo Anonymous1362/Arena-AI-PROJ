@@ -153,6 +153,10 @@ jobs:
           if (!manifest.correspondingSource?.sha256 || !manifest.sourceBuild?.inputManifestSha256) {
             throw new Error('release manifest omitted source provenance');
           }
+          const stageReceipt = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'copper-release-promotion-gate/android-assets/copper-runtime/copper-runtime-stage-receipt.json'), 'utf8'));
+          if (stageReceipt.mode !== 'release' || stageReceipt.candidateOnly !== false) {
+            throw new Error('release staging receipt did not retain the released-asset label');
+          }
           NODE
           restore_config
           trap - EXIT
@@ -187,7 +191,7 @@ jobs:
   # second multi-hour source build; the latter remains opt-in below.
   copper-runtime-bootstrap-provenance:
     name: Copper Runtime successful arm64 bootstrap provenance
-    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-asset-validation]') }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-asset-validation]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -355,7 +359,7 @@ jobs:
     name: Copper Runtime native PTY validation
     # Run independently on direct native changes and as a required, fast gate
     # before every expensive source bootstrap build.
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-asset-validation]')) }}
+    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[native-compile]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-asset-validation]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -482,7 +486,7 @@ jobs:
   copper-runtime-bundled-asset-validation:
     name: Copper Runtime bundled arm64 installation validation
     needs: [copper-native-runtime-compile, copper-runtime-bootstrap-provenance]
-    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-asset-validation]') && needs.copper-native-runtime-compile.result == 'success' && needs.copper-runtime-bootstrap-provenance.result == 'success' }}
+    if: ${{ always() && github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-asset-validation]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) && needs.copper-native-runtime-compile.result == 'success' && needs.copper-runtime-bootstrap-provenance.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 65
     permissions:
@@ -665,7 +669,114 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 9. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 9. Personal device-candidate APK from the verified source artifact ────
+  # This job exists for the project owner's physical arm64-phone test. It
+  # embeds the exact temporary source-build asset in device-candidate mode;
+  # neither the APK nor its Actions artifact is a runtime release.
+  copper-runtime-device-candidate-apk:
+    name: Copper Runtime personal arm64 device-candidate APK
+    needs: copper-runtime-bundled-asset-validation
+    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-device-candidate]') && needs.copper-runtime-bundled-asset-validation.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      actions: read
+      contents: read
+    env:
+      COPPER_BOOTSTRAP_RUN_ID: '33871619836'
+      COPPER_BOOTSTRAP_ARTIFACT_ID: '9939259618'
+      COPPER_BOOTSTRAP_ARTIFACT_DIGEST: 'sha256:e1ded88255b22637683e2a32592ccbb0647e66ab86cc3b9ae6f9a769aa6b76de'
+      COPPER_BOOTSTRAP_HEAD_SHA: 'effec23f6e6ead349c65e2b5b7f489efd46105d4'
+      COPPER_BOOTSTRAP_ARTIFACT_NAME: copper-runtime-bootstrap-aarch64
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Fetch the exact verified Copper runtime artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$COPPER_BOOTSTRAP_ARTIFACT_ID")"
+          test "$(jq -r '.name' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_NAME"
+          test "$(jq -r '.digest' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_DIGEST"
+          test "$(jq -r '.workflow_run.id' <<<"$metadata")" = "$COPPER_BOOTSTRAP_RUN_ID"
+          test "$(jq -r '.workflow_run.head_sha' <<<"$metadata")" = "$COPPER_BOOTSTRAP_HEAD_SHA"
+          test "$(jq -r '.expired' <<<"$metadata")" = false
+          download="$RUNNER_TEMP/copper-runtime-device-candidate-input"
+          gh run download "$COPPER_BOOTSTRAP_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$COPPER_BOOTSTRAP_ARTIFACT_NAME" \
+            --dir "$download"
+          archive="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip' -print -quit)"
+          manifest="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip.json' -print -quit)"
+          test -n "$archive" && test -n "$manifest"
+          printf '%s\n' "$archive" > "$RUNNER_TEMP/copper-runtime-device-candidate-archive-path"
+          printf '%s\n' "$manifest" > "$RUNNER_TEMP/copper-runtime-device-candidate-manifest-path"
+
+      - name: Install dependencies and stage personal device-candidate assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          archive="$(cat "$RUNNER_TEMP/copper-runtime-device-candidate-archive-path")"
+          manifest="$(cat "$RUNNER_TEMP/copper-runtime-device-candidate-manifest-path")"
+          destination="$GITHUB_WORKSPACE/modules/copper-exec/android/src/main/assets/copper-runtime"
+          npm run runtime:stage-android-assets -- \
+            --archive "$archive" --manifest "$manifest" --out "$destination" \
+            --mode device-candidate
+          test "$(jq -r '.mode' "$destination/copper-runtime-stage-receipt.json")" = device-candidate
+          test "$(jq -r '.candidateOnly' "$destination/copper-runtime-stage-receipt.json")" = true
+
+      - name: Generate Android project with the real Copper runtime candidate
+        run: npx expo prebuild --platform android --clean
+        env:
+          CI: true
+
+      - name: Build personal device-candidate APK
+        working-directory: android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Assemble candidate download with provenance label
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find android/app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          candidate="$RUNNER_TEMP/copper-runtime-device-candidate"
+          mkdir -p "$candidate"
+          cp "$apk" "$candidate/Copper-runtime-device-candidate.apk"
+          cp modules/copper-exec/android/src/main/assets/copper-runtime/copper-runtime-bootstrap-aarch64.zip.json "$candidate/"
+          cp modules/copper-exec/android/src/main/assets/copper-runtime/copper-runtime-stage-receipt.json "$candidate/"
+          cat > "$candidate/README-PERSONAL-DEVICE-CANDIDATE.txt" <<'EOF'
+          This APK contains the real verified Copper arm64 runtime for the project owner's personal physical-device test.
+          It is not a released Copper Runtime APK and not a package-repository validation.
+          Do not describe it as a runtime release or distribute it as one.
+          EOF
+
+      - name: Upload personal device-candidate APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Copper-runtime-device-candidate
+          path: ${{ runner.temp }}/copper-runtime-device-candidate/
+          if-no-files-found: error
+          retention-days: 14
+
+  # ── 10. Android JS-bundle smoke test ──────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest

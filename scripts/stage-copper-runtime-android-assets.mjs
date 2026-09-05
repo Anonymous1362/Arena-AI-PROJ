@@ -12,11 +12,14 @@
  *     --mode ci-validation
  *
  * Modes:
- *   ci-validation  Allows the current non-publishable artifact only for a
- *                  temporary CI installer test. It must not be used to ship.
- *   release        Refuses a non-publishable manifest and requires the runtime
- *                  config to contain a Copper HTTPS repository and public
- *                  archive-key fingerprint before staging a release asset.
+ *   ci-validation      Allows the current non-publishable artifact only for a
+ *                      temporary CI installer test. It must not be used to ship.
+ *   device-candidate   Allows the exact verified source-build artifact in a
+ *                      personal, non-release APK for the project owner's arm64
+ *                      phone test. The staged receipt labels it as a candidate.
+ *   release            Refuses a non-publishable manifest and requires the
+ *                      runtime config to contain a Copper HTTPS repository and
+ *                      public archive-key fingerprint before staging a release asset.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -42,7 +45,7 @@ const expectedArchiveName = `copper-runtime-bootstrap-${config.architecture}.zip
 
 function usage(message) {
   if (message) console.error(message);
-  console.error('Usage: node scripts/stage-copper-runtime-android-assets.mjs --archive /path/archive.zip --manifest /path/archive.zip.json --out /path/assets/copper-runtime --mode ci-validation|release');
+  console.error('Usage: node scripts/stage-copper-runtime-android-assets.mjs --archive /path/archive.zip --manifest /path/archive.zip.json --out /path/assets/copper-runtime --mode ci-validation|device-candidate|release');
   process.exit(1);
 }
 
@@ -59,7 +62,9 @@ function parseArguments() {
   }
   if (values.size !== known.size) usage('All of --archive, --manifest, --out, and --mode are required.');
   const mode = values.get('--mode');
-  if (mode !== 'ci-validation' && mode !== 'release') usage('--mode must be ci-validation or release.');
+  if (!['ci-validation', 'device-candidate', 'release'].includes(mode)) {
+    usage('--mode must be ci-validation, device-candidate, or release.');
+  }
   return {
     archive: resolve(values.get('--archive')),
     manifest: resolve(values.get('--manifest')),
@@ -175,27 +180,14 @@ async function main() {
   rmSync(stage, { recursive: true, force: true });
   mkdirSync(stage, { recursive: true });
 
-  try {
-    const stagedArchive = resolve(stage, expectedArchiveName);
-    const stagedManifest = resolve(stage, `${expectedArchiveName}.json`);
-    copyFileSync(archive, stagedArchive);
-    copyFileSync(manifestPath, stagedManifest);
-    if (await sha256(stagedArchive) !== digest) fail('archive changed while staging.');
-    if (readFileSync(stagedManifest, 'utf8') !== readFileSync(manifestPath, 'utf8')) {
-      fail('manifest changed while staging.');
-    }
-
-    rmSync(output, { recursive: true, force: true });
-    renameSync(stage, output);
-  } catch (error) {
-    rmSync(stage, { recursive: true, force: true });
-    throw error;
-  }
-
   const receipt = {
     schemaVersion: 1,
     product: config.displayName,
     mode,
+    // An APK staged in ci-validation or device-candidate mode is useful
+    // execution evidence only. It must never be described as a promoted
+    // runtime distribution.
+    candidateOnly: mode !== 'release',
     architecture: config.architecture,
     applicationId: config.applicationId,
     runtimePrefix: config.runtimePrefix,
@@ -205,6 +197,27 @@ async function main() {
     manifestPublishable: parsedManifest.publishable,
     sourceManifestFile: basename(manifestPath),
   };
+
+  try {
+    const stagedArchive = resolve(stage, expectedArchiveName);
+    const stagedManifest = resolve(stage, `${expectedArchiveName}.json`);
+    copyFileSync(archive, stagedArchive);
+    copyFileSync(manifestPath, stagedManifest);
+    if (await sha256(stagedArchive) !== digest) fail('archive changed while staging.');
+    if (readFileSync(stagedManifest, 'utf8') !== readFileSync(manifestPath, 'utf8')) {
+      fail('manifest changed while staging.');
+    }
+    // Keep the same provenance label in the APK assets and beside the staged
+    // directory so the native UI can identify a personal test candidate.
+    writeFileSync(resolve(stage, 'copper-runtime-stage-receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+
+    rmSync(output, { recursive: true, force: true });
+    renameSync(stage, output);
+  } catch (error) {
+    rmSync(stage, { recursive: true, force: true });
+    throw error;
+  }
+
   const receiptPath = resolve(parent, `${basename(output)}.copper-stage-receipt.json`);
   writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 

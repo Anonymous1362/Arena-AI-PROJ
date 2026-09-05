@@ -39,14 +39,18 @@ function runtimeCopy(status: CopperRuntimeStatus | null) {
   switch (status.state) {
     case 'ready':
       return {
-        title: 'Copper Runtime is ready',
-        body: `Real Copper Bash, apt, and pkg sessions can run from ${status.runtimePrefix}. Your projects stay on shared storage.`,
+        title: status.candidateOnly ? 'Copper Runtime device candidate is ready' : 'Copper Runtime is ready',
+        body: status.candidateOnly
+          ? `This personal test APK contains the real verified arm64 Copper runtime at ${status.runtimePrefix}. Test Bash and PTY behavior on this phone; it is not a released runtime APK or package-update validation.`
+          : `Real Copper Bash, apt, and pkg sessions can run from ${status.runtimePrefix}. Your projects stay on shared storage.`,
         icon: 'checkmark-circle-outline' as const,
       };
     case 'not_installed':
       return {
-        title: 'Copper Runtime is ready to install',
-        body: 'This APK contains a verified arm64 Copper bootstrap. Installation puts executable packages in protected app storage, never on the SD card.',
+        title: status.candidateOnly ? 'Real Copper Runtime candidate is ready to install' : 'Copper Runtime is ready to install',
+        body: status.candidateOnly
+          ? 'This personal test APK contains the real verified arm64 Copper bootstrap for phone validation. It is not a released runtime APK.'
+          : 'This APK contains a verified arm64 Copper bootstrap. Installation puts executable packages in protected app storage, never on the SD card.',
         icon: 'download-outline' as const,
       };
     case 'repair_required':

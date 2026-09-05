@@ -45,6 +45,8 @@ class CopperPtyNativeInstrumentedTest {
       val installed = CopperRuntimeInstaller.install(context, replaceExisting = false)
       assertEquals("ready", installed["state"])
       assertTrue("The installed prefix must be ready.", installed["ready"] == true)
+      assertEquals("ci-validation", installed["assetStageMode"])
+      assertTrue("CI-only staged assets must retain their candidate-only label.", installed["candidateOnly"] == true)
 
       val prefix = File(context.filesDir, "usr")
       assertTrue("Copper Bash must have execute mode.", File(prefix, "bin/bash").canExecute())
