@@ -51,6 +51,20 @@ export interface CopperRuntimeStatus {
   persistentBytes: number;
   quotaBytes: number;
   remainingBytes: number;
+  /** Runtime executables and installed-package payload, excluding cache/index/tmp. */
+  runtimePayloadBytes: number;
+  /** Downloaded APT .deb archives that `apt clean` may reclaim. */
+  aptArchiveBytes: number;
+  /** Downloaded APT package indexes. */
+  aptListsBytes: number;
+  /** The runtime prefix's temporary directory. */
+  runtimeTemporaryBytes: number;
+  /** Persistent shell settings and user state under Copper's private $HOME. */
+  shellHomeBytes: number;
+  /** Copper installer metadata. */
+  installerMetadataBytes: number;
+  /** In-progress/retained installer staging directories, normally zero. */
+  repairStagingBytes: number;
   freeDeviceBytes: number;
   packageName: string;
   expectedPackageName: string;

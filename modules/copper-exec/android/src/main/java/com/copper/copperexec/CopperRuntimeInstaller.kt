@@ -48,7 +48,8 @@ internal object CopperRuntimeInstaller {
     val bundleAvailable = bootstrapAssetForCurrentAbi(context) != null
     val prefixReady = isRuntimeReady(layout.prefix)
     val prefixExists = layout.prefix.exists()
-    val bytesUsed = runtimeBytes(layout)
+    val usage = storageUsage(layout)
+    val bytesUsed = usage.persistentBytes
     val state = when {
       context.packageName != COPPER_PACKAGE_ID -> "package_mismatch"
       !bundleAvailable -> "bundle_missing"
@@ -67,6 +68,17 @@ internal object CopperRuntimeInstaller {
       "persistentBytes" to bytesUsed,
       "quotaBytes" to QUOTA_BYTES,
       "remainingBytes" to (QUOTA_BYTES - bytesUsed).coerceAtLeast(0),
+      // Categories are mutually exclusive and sum to persistentBytes. They
+      // show the actual package/cache/home state which future managed APT
+      // operations must preflight, rather than presenting only a single
+      // storage bar to the user.
+      "runtimePayloadBytes" to usage.runtimePayloadBytes,
+      "aptArchiveBytes" to usage.aptArchiveBytes,
+      "aptListsBytes" to usage.aptListsBytes,
+      "runtimeTemporaryBytes" to usage.runtimeTemporaryBytes,
+      "shellHomeBytes" to usage.shellHomeBytes,
+      "installerMetadataBytes" to usage.installerMetadataBytes,
+      "repairStagingBytes" to usage.repairStagingBytes,
       "freeDeviceBytes" to context.filesDir.usableSpace,
       "packageName" to context.packageName,
       "expectedPackageName" to COPPER_PACKAGE_ID
@@ -388,6 +400,44 @@ internal object CopperRuntimeInstaller {
     val rootPath = root.canonicalPath.trimEnd(File.separatorChar)
     val childPath = child.canonicalPath
     return childPath == rootPath || childPath.startsWith(rootPath + File.separator)
+  }
+
+  /**
+   * A non-overlapping view of every app-private directory counted against
+   * Copper's persistent runtime budget. In particular, APT's archive cache,
+   * package-list index, and prefix tmp directory are subtracted from the
+   * general prefix category so that the displayed values always add up.
+   */
+  private data class StorageUsage(
+    val runtimePayloadBytes: Long,
+    val aptArchiveBytes: Long,
+    val aptListsBytes: Long,
+    val runtimeTemporaryBytes: Long,
+    val shellHomeBytes: Long,
+    val installerMetadataBytes: Long,
+    val repairStagingBytes: Long
+  ) {
+    val persistentBytes: Long
+      get() = runtimePayloadBytes + aptArchiveBytes + aptListsBytes + runtimeTemporaryBytes +
+        shellHomeBytes + installerMetadataBytes + repairStagingBytes
+  }
+
+  private fun storageUsage(layout: Layout): StorageUsage {
+    val prefixBytes = treeBytes(layout.prefix)
+    val aptArchiveBytes = treeBytes(File(layout.prefix, "var/cache/apt/archives"))
+    val aptListsBytes = treeBytes(File(layout.prefix, "var/lib/apt/lists"))
+    val runtimeTemporaryBytes = treeBytes(File(layout.prefix, "tmp"))
+    val runtimePayloadBytes = (prefixBytes - aptArchiveBytes - aptListsBytes - runtimeTemporaryBytes)
+      .coerceAtLeast(0)
+    return StorageUsage(
+      runtimePayloadBytes = runtimePayloadBytes,
+      aptArchiveBytes = aptArchiveBytes,
+      aptListsBytes = aptListsBytes,
+      runtimeTemporaryBytes = runtimeTemporaryBytes,
+      shellHomeBytes = treeBytes(layout.home),
+      installerMetadataBytes = treeBytes(layout.metadataDirectory),
+      repairStagingBytes = treeBytes(layout.staging) + treeBytes(layout.previous)
+    )
   }
 
   private fun runtimeBytes(layout: Layout, includePrefix: Boolean = true): Long {

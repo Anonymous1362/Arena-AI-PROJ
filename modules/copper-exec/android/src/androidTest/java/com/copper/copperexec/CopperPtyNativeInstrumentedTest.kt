@@ -113,6 +113,54 @@ class CopperPtyNativeInstrumentedTest {
     }
   }
 
+  /**
+   * Storage accounting is deliberately tested without a bundled bootstrap, so
+   * cache/home/repair measurements remain covered by Android instrumentation.
+   * The added leaf files are unique and cleaned up without touching a real
+   * prefix.
+   */
+  @Test(timeout = 15_000)
+  fun reportsNonOverlappingRuntimeStorageBreakdown() {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val token = "copper-quota-${System.nanoTime()}"
+    val files = context.filesDir
+    val added = listOf(
+      File(files, "usr/bin/$token-runtime") to 19,
+      File(files, "usr/var/cache/apt/archives/$token.deb") to 23,
+      File(files, "usr/var/lib/apt/lists/$token-index") to 29,
+      File(files, "usr/tmp/$token-tmp") to 31,
+      File(files, "home/$token-home") to 37,
+      File(files, "copper-runtime/$token-metadata") to 41,
+      File(files, "usr-staging/$token-staging") to 43,
+      File(files, "usr-previous/$token-previous") to 47
+    )
+    val before = CopperRuntimeInstaller.status(context)
+    try {
+      for ((file, size) in added) {
+        assertTrue("Could not create test parent for ${file.path}", file.parentFile?.mkdirs() == true || file.parentFile?.isDirectory == true)
+        file.writeBytes(ByteArray(size) { 0x63 })
+      }
+      val after = CopperRuntimeInstaller.status(context)
+
+      assertEquals(19L, statusBytes(after, "runtimePayloadBytes") - statusBytes(before, "runtimePayloadBytes"))
+      assertEquals(23L, statusBytes(after, "aptArchiveBytes") - statusBytes(before, "aptArchiveBytes"))
+      assertEquals(29L, statusBytes(after, "aptListsBytes") - statusBytes(before, "aptListsBytes"))
+      assertEquals(31L, statusBytes(after, "runtimeTemporaryBytes") - statusBytes(before, "runtimeTemporaryBytes"))
+      assertEquals(37L, statusBytes(after, "shellHomeBytes") - statusBytes(before, "shellHomeBytes"))
+      assertEquals(41L, statusBytes(after, "installerMetadataBytes") - statusBytes(before, "installerMetadataBytes"))
+      assertEquals(90L, statusBytes(after, "repairStagingBytes") - statusBytes(before, "repairStagingBytes"))
+      assertEquals(
+        270L,
+        statusBytes(after, "persistentBytes") - statusBytes(before, "persistentBytes")
+      )
+    } finally {
+      added.map { it.first }.forEach { it.delete() }
+    }
+  }
+
+  private fun statusBytes(status: Map<String, Any?>, key: String): Long =
+    status[key] as? Long ?: throw AssertionError("Runtime status $key was not a Long: ${status[key]}")
+
   @Test(timeout = 15_000)
   fun createsInteractivePtyAndReturnsChildExit() {
     val context = InstrumentationRegistry.getInstrumentation().targetContext

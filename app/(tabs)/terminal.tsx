@@ -24,6 +24,10 @@ function appendTerminalData(previous: string, data: string) {
   return `…[Copper clipped older scrollback at ${formatBytes(MAX_SCROLLBACK_CHARS)}]…\n${combined.slice(-MAX_SCROLLBACK_CHARS)}`;
 }
 
+function storageLine(label: string, bytes: number): [string, number] {
+  return [label, bytes];
+}
+
 function runtimeCopy(status: CopperRuntimeStatus | null) {
   if (!status) {
     return {
@@ -244,6 +248,16 @@ export default function TerminalScreen() {
   const available = Platform.OS === 'android' && CopperExec.isAvailable();
   const copy = runtimeCopy(runtime);
   const quotaPercent = runtime ? Math.min(100, (runtime.persistentBytes / runtime.quotaBytes) * 100) : 0;
+  const runtimeStorageBreakdown: Array<[string, number]> = runtime
+    ? [
+        storageLine('Runtime & installed packages', runtime.runtimePayloadBytes),
+        storageLine('APT download cache', runtime.aptArchiveBytes),
+        storageLine('APT package indexes', runtime.aptListsBytes),
+        storageLine('Runtime temporary files', runtime.runtimeTemporaryBytes),
+        storageLine('Shell home & settings', runtime.shellHomeBytes),
+        storageLine('Installer / repair state', runtime.installerMetadataBytes + runtime.repairStagingBytes),
+      ].filter(([, bytes]) => bytes > 0)
+    : [];
   const canInstall = Boolean(runtime?.bundleAvailable && runtime.state === 'not_installed');
   const canRepair = Boolean(runtime?.bundleAvailable && runtime.state === 'repair_required');
 
@@ -298,6 +312,16 @@ export default function TerminalScreen() {
                 <View style={[styles.meter, { backgroundColor: colors.surface3 }]}>
                   <View style={[styles.meterFill, { width: `${quotaPercent}%`, backgroundColor: quotaPercent >= 90 ? colors.danger : colors.accent }]} />
                 </View>
+                {runtimeStorageBreakdown.length > 0 ? (
+                  <View style={{ marginTop: spacing(2), gap: 3 }}>
+                    {runtimeStorageBreakdown.map(([label, bytes]) => (
+                      <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: spacing(2) }}>
+                        <Text style={{ color: colors.textFaint, fontSize: 11.5, flex: 1 }}>{label}</Text>
+                        <Text style={{ color: colors.textFaint, fontSize: 11.5 }}>{formatBytes(bytes)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
