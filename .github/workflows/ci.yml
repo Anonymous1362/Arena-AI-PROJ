@@ -62,7 +62,103 @@ jobs:
             --test-log "$work/test-log.txt" --out "$work/evidence.json"
           node scripts/package-agent-evaluation-evidence.mjs --verify --bundle "$work/evidence.json"
 
-  # ── 3. Web bundle smoke test ──────────────────────────────────────────────
+  # ── 3. Runtime release-promotion gate ─────────────────────────────────────
+  # This creates a synthetic plumbing fixture only. It proves the release gate
+  # fails closed without owner configuration and that a valid release manifest
+  # is consumable by Android release staging; it never represents a runtime.
+  copper-runtime-release-promotion-tooling:
+    name: Copper Runtime release-promotion gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Exercise release-promotion gate with synthetic fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/promote-copper-runtime-release.mjs
+          work="$RUNNER_TEMP/copper-release-promotion-gate"
+          mkdir -p "$work/input"
+          cp runtime/copper-runtime.config.json "$work/original-config.json"
+          restore_config() { cp "$work/original-config.json" runtime/copper-runtime.config.json; }
+          trap restore_config EXIT
+          python3 - "$work/input" <<'PY'
+          import hashlib, json, pathlib, sys, zipfile
+          output = pathlib.Path(sys.argv[1])
+          archive = output / 'copper-runtime-bootstrap-aarch64.zip'
+          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as value:
+              value.writestr('bin/bash', '# synthetic release-gate fixture only\\n')
+              value.writestr('SYMLINKS.txt', '')
+          source = output / 'copper-runtime-corresponding-source.tar.gz'
+          source.write_bytes(b'synthetic corresponding source fixture only\\n')
+          manifest = {
+              'schemaVersion': 1,
+              'product': 'Copper Runtime',
+              'createdAt': '2026-09-05T00:00:00.000Z',
+              'architecture': 'aarch64',
+              'applicationId': 'com.copper.chat',
+              'runtimePrefix': '/data/data/com.copper.chat/files/usr',
+              'runtimeHome': '/data/data/com.copper.chat/files/home',
+              'file': archive.name,
+              'sizeBytes': archive.stat().st_size,
+              'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+              'upstream': {'fixture': 'synthetic-only'},
+              'extraBootstrapPackages': [],
+              'publishable': False,
+              'publishBlocker': 'Synthetic fixture begins as an unpublishable source-build input.'
+          }
+          (output / f'{archive.name}.json').write_text(json.dumps(manifest), encoding='utf-8')
+          PY
+          if node scripts/promote-copper-runtime-release.mjs \
+            --archive "$work/input/copper-runtime-bootstrap-aarch64.zip" \
+            --build-manifest "$work/input/copper-runtime-bootstrap-aarch64.zip.json" \
+            --source-bundle "$work/input/copper-runtime-corresponding-source.tar.gz" \
+            --source-url https://sources.copper.invalid/releases/copper-runtime-corresponding-source.tar.gz \
+            --asset-url https://downloads.copper.invalid/releases/r2026.09.05/copper-runtime-bootstrap-aarch64.zip \
+            --release-id r2026.09.05-arm64.1 --out "$work/unconfigured-output"; then
+            echo '::error title=Copper release promotion::Unconfigured owner repository/key settings were accepted.'
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const configPath = 'runtime/copper-runtime.config.json';
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          config.repository.baseUrl = 'https://packages.copper.invalid/apt';
+          config.repository.signing.keyFingerprint = '0123456789abcdef0123456789abcdef01234567';
+          fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
+          node scripts/promote-copper-runtime-release.mjs \
+            --archive "$work/input/copper-runtime-bootstrap-aarch64.zip" \
+            --build-manifest "$work/input/copper-runtime-bootstrap-aarch64.zip.json" \
+            --source-bundle "$work/input/copper-runtime-corresponding-source.tar.gz" \
+            --source-url https://sources.copper.invalid/releases/copper-runtime-corresponding-source.tar.gz \
+            --asset-url https://downloads.copper.invalid/releases/r2026.09.05/copper-runtime-bootstrap-aarch64.zip \
+            --release-id r2026.09.05-arm64.1 --out "$work/release-candidate"
+          node scripts/stage-copper-runtime-android-assets.mjs \
+            --archive "$work/release-candidate/copper-runtime-bootstrap-aarch64.zip" \
+            --manifest "$work/release-candidate/copper-runtime-bootstrap-aarch64.zip.json" \
+            --out "$work/android-assets/copper-runtime" --mode release
+          node - "$work/release-candidate" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const candidate = process.argv[2];
+          const manifest = JSON.parse(fs.readFileSync(path.join(candidate, 'copper-runtime-bootstrap-aarch64.zip.json'), 'utf8'));
+          if (manifest.schemaVersion !== 1 || manifest.publishable !== true || manifest.publication?.immutableUrlRequired !== true) {
+            throw new Error('release manifest did not retain required promotion fields');
+          }
+          if (!manifest.correspondingSource?.sha256 || !manifest.sourceBuild?.inputManifestSha256) {
+            throw new Error('release manifest omitted source provenance');
+          }
+          NODE
+          restore_config
+          trap - EXIT
+          cmp -s runtime/copper-runtime.config.json "$work/original-config.json"
+
+  # ── 4. Web bundle smoke test ──────────────────────────────────────────────
   web-bundle-smoke:
     name: Web bundle smoke test
     runs-on: ubuntu-latest
@@ -85,7 +181,7 @@ jobs:
       - name: Verify index.html exists
         run: test -f dist-ci/index.html
 
-  # ── 4. Locked full-bootstrap provenance for asset validation ──────────────
+  # ── 5. Locked full-bootstrap provenance for asset validation ──────────────
   # An installer-validation commit must prove which *earlier* successful source
   # bootstrap it consumes. This is deliberately a short API attestation, not a
   # second multi-hour source build; the latter remains opt-in below.
@@ -128,7 +224,7 @@ jobs:
             echo '- This attests the existing source build; it does not rerun it.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── 5. On-demand Copper Runtime source preflight / bootstrap ──────────────
+  # ── 6. On-demand Copper Runtime source preflight / bootstrap ──────────────
   # Both paths are deliberately opt-in by commit message. The standalone manual
   # workflow becomes dispatchable once its file reaches the default branch.
   copper-runtime-bootstrap:
@@ -252,7 +348,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # ── 6. On-demand Android native module compilation ────────────────────────
+  # ── 7. On-demand Android native module compilation ────────────────────────
   # Uses a marker because NDK/Gradle compilation is much slower than the normal
   # Android JS-bundle smoke test below.
   copper-native-runtime-compile:
@@ -376,7 +472,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 7. Validate installation of the successful arm64 bootstrap ───────────
+  # ── 8. Validate installation of the successful arm64 bootstrap ───────────
   # This deliberate, non-publishing gate turns the retained full-build artifact
   # into a temporary Gradle asset and proves Copper's real Android installer.
   # GitHub's x86_64 emulator cannot execute an app-private arm64 ELF through
@@ -569,7 +665,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ── 8. Android JS-bundle smoke test ───────────────────────────────────────
+  # ── 9. Android JS-bundle smoke test ───────────────────────────────────────
   android-bundle-smoke:
     name: Android bundle smoke test
     runs-on: ubuntu-latest

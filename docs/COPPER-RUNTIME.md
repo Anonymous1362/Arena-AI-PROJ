@@ -68,7 +68,19 @@ npm run runtime:stage-android-assets -- \
   --out /absolute/path/modules/copper-exec/android/src/main/assets/copper-runtime \
   --mode ci-validation
 
-# 6. Assemble a signed static APT repository from Copper-built .deb files.
+# 6. After the owner-controlled HTTPS endpoint/public key and corresponding
+# source bundle exist, prepare a release candidate. This still does not upload
+# or publish anything; see docs/COPPER-RUNTIME-RELEASE-PROMOTION.md.
+npm run runtime:promote-release -- \
+  --archive /secure/input/copper-runtime-bootstrap-aarch64.zip \
+  --build-manifest /secure/input/copper-runtime-bootstrap-aarch64.zip.json \
+  --source-bundle /secure/input/copper-runtime-source-r2026.09.05.tar.gz \
+  --source-url https://source.example/copper/r2026.09.05/copper-runtime-source-r2026.09.05.tar.gz \
+  --asset-url https://downloads.example/copper/r2026.09.05/copper-runtime-bootstrap-aarch64.zip \
+  --release-id r2026.09.05-arm64.1 \
+  --out /secure/output/copper-runtime-r2026.09.05-arm64.1
+
+# 7. Assemble a signed static APT repository from Copper-built .deb files.
 # The signing key must be supplied from a secure location, never committed.
 npm run runtime:repo -- \
   --packages /absolute/path/copper-runtime-source/termux-packages/output \
@@ -129,7 +141,8 @@ An app-level path guard is essential, but it is not a kernel-grade sandbox once 
 - [x] Add a static APT repository assembler that generates `Packages`, `Release`, immutable by-hash indexes, and refuses publishing without an offline-provided GPG archive key (`runtime:repo`).
 - [x] Run the full arm64 bootstrap builder successfully and retain its verified ZIP plus JSON manifest as CI artifact `copper-runtime-bootstrap-aarch64` in run [`33871619836`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33871619836). This is build evidence, not yet a distributable app asset or package repository. The CI row named **Copper Runtime arm64 source build (opt-in)** is intentionally skipped on installer-validation commits unless their message requests `[runtime-preflight]` or `[runtime-bootstrap]`; the validation path instead requires a successful **Copper Runtime successful arm64 bootstrap provenance** attestation pinned to this run/artifact.
 - [x] Run the opt-in `[runtime-asset-validation]` CI gate against that exact temporary artifact in [run `33914196546`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33914196546). The gate checked the GitHub enclosing-artifact identity, validated the contained ZIP against its JSON manifest, materialized both only in the runner's Android module assets, then used the API-35 x86_64 emulator to exercise the atomic installer, restored symlinks/modes, and Copper prefix layout. Its instrumentation target is explicitly `com.copper.chat`, since the bootstrap prefix is compiled for that application identity. Earlier attempts exposed and then fixed a quadratic staging-tree quota scan during extraction. The emulator refuses app-private arm64 ELF execution through Android's native bridge (`Permission denied`), so the separate Copper Bash PTY test is correctly skipped there and must pass on a real arm64 device. This is not release packaging, and the locked temporary artifact must be renewed before expiration.
-- [ ] Establish a Copper-controlled HTTPS package endpoint, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
+- [x] Add a fail-closed release-promotion gate (`runtime:promote-release`) that creates a locally verified candidate only from the exact source-build ZIP/manifest, a corresponding-source bundle, configured HTTPS repository/public archive-key fingerprint, and immutable asset/source URLs. It does not publish or create an APK; see [`COPPER-RUNTIME-RELEASE-PROMOTION.md`](COPPER-RUNTIME-RELEASE-PROMOTION.md).
+- [ ] Establish the actual Copper-controlled HTTPS package/source endpoints, generate an offline archive key, commit only its public fingerprint/keyring, and publish signed package metadata/packages.
 - [x] Add the native atomic installer/validator/repair/removal manager and bootstrap-size quota preflight. It stays unavailable until a verified Copper bootstrap asset is added; it never falls back to a Termux binary.
 - [ ] Add ongoing 2 GiB runtime quota monitoring and package-install preflight checks for live PTY sessions. Android has no ordinary unrooted per-directory hard quota, so enforcement must be an honest managed cap (preflight plus process monitoring), not a false kernel guarantee.
 

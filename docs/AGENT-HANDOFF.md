@@ -40,6 +40,7 @@ Read this file before changing Copper Runtime, Terminal, CI, storage boundaries,
 - `scripts/stage-copper-runtime-android-assets.mjs` validates and atomically stages an already-supplied bootstrap ZIP/manifest for Android module assets. It has two modes:
   - `ci-validation` — only for temporary installer testing;
   - `release` — refuses a non-publishable manifest and refuses until a Copper HTTPS repo URL and public signing-key fingerprint are configured.
+- `scripts/promote-copper-runtime-release.mjs` is the fail-closed pre-publication gate. It prepares an external release-candidate directory only from the verified build ZIP/manifest plus corresponding source, configured owner endpoint/key fingerprint, and immutable HTTPS URLs. It never uploads/publishes; see [`COPPER-RUNTIME-RELEASE-PROMOTION.md`](COPPER-RUNTIME-RELEASE-PROMOTION.md).
 - `.github/workflows/ci.yml` has an opt-in `[runtime-asset-validation]` path. It requires a native PTY gate and a successful earlier source-bootstrap provenance attestation; it does not rerun the expensive source bootstrap unless a commit explicitly requests `[runtime-preflight]` or `[runtime-bootstrap]`.
 
 ## Important validation limitation
@@ -58,13 +59,14 @@ No normal Copper APK currently embeds a verified runtime ZIP. The Terminal's `bu
 
 Proceed in this order:
 
-1. Establish a Copper-controlled durable runtime asset delivery/promotion process with immutable ZIP + JSON manifest provenance. Do not use the expiring GitHub Actions artifact as an end-user channel.
-2. Complete the GPL/source and release-artifact obligations for distribution.
-3. Configure Copper's HTTPS package repository and offline-generated signing key. Commit only the public key/fingerprint.
-4. Promote only a verified, publishable runtime asset into an arm64 device-candidate APK.
-5. On a real arm64 phone, run the Copper Bash PTY test and manually verify terminal input/output/Ctrl-C plus SD-card project start directory.
-6. Add managed preflight/monitoring for live `pkg`/APT operations under the 2 GiB budget.
-7. Add the remaining explicit workspace-runner manifest, action logs, confirmations, cancellation, and escape/failure tests without weakening the already-enforced SAF boundary or exposing the Manual Terminal PTY to AI tools.
+1. The local release-promotion gate is complete. Establish the actual Copper-controlled durable, immutable HTTPS asset/source delivery locations; do not use the expiring GitHub Actions artifact as an end-user channel.
+2. Complete the GPL/source and release-artifact obligations for the exact distributed bootstrap.
+3. Generate an offline Copper archive signing key and configure the real HTTPS package repository. Commit only the public key/fingerprint.
+4. Run `runtime:promote-release` only with the exact verified source-build ZIP/manifest and complete corresponding source, then independently verify the uploaded immutable bytes.
+5. Stage only that verified publishable release asset into an arm64 device-candidate APK.
+6. On a real arm64 phone, run the Copper Bash PTY test and manually verify terminal input/output/Ctrl-C plus SD-card project start directory.
+7. Add managed preflight/monitoring for live `pkg`/APT operations under the 2 GiB budget.
+8. Add the remaining explicit workspace-runner manifest, action logs, confirmations, cancellation, and escape/failure tests without weakening the already-enforced SAF boundary or exposing the Manual Terminal PTY to AI tools.
 
 ## Commands worth running before a change
 
@@ -72,6 +74,7 @@ Proceed in this order:
 npm ci --ignore-scripts
 npm run typecheck
 node --check scripts/stage-copper-runtime-android-assets.mjs
+node --check scripts/promote-copper-runtime-release.mjs
 npx expo export --platform android --output-dir /tmp/copper-android-smoke
 git diff --check
 ```

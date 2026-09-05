@@ -144,7 +144,7 @@ Copper can call this a complete in-app local package terminal only when all of t
 
 ## Current truth in one sentence
 
-**Copper has a genuinely built and installer-validated arm64 runtime foundation; the next job is to promote that verified runtime into a durable, testable arm64 device build, then complete signed packages, live quota controls, and the separate AI workspace runner.**
+**Copper has a genuinely built and installer-validated arm64 runtime foundation plus a fail-closed release-promotion gate; the next job is to configure durable owner-controlled asset/source hosting and archive signing, promote a verified runtime into a testable arm64 device build, then complete signed packages, live quota controls, and the separate AI workspace runner.**
 
 For the detailed technical design, source provenance, and CI evidence, see [`docs/COPPER-RUNTIME.md`](docs/COPPER-RUNTIME.md).
 

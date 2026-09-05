@@ -18,6 +18,7 @@
     "runtime:bootstrap": "node scripts/build-copper-runtime-bootstrap.mjs",
     "runtime:stage-android-assets": "node scripts/stage-copper-runtime-android-assets.mjs",
     "runtime:repo": "node scripts/build-copper-apt-repository.mjs",
+    "runtime:promote-release": "node scripts/promote-copper-runtime-release.mjs",
     "evaluation:bundle-evidence": "node scripts/package-agent-evaluation-evidence.mjs"
   },
   "dependencies": {
