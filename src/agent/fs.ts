@@ -5,7 +5,8 @@
  * removable volume over emulated primary storage. By default, AI tools require
  * an explicitly selected project workspace through Android's Storage Access
  * Framework (SAF), such as `COPPER Projects`. All agent paths remain relative
- * and jailed to that root. The user can deliberately turn that boundary off.
+ * and jailed to that root. This boundary is enforced: broad Manual Terminal
+ * storage access is a separate capability and is never inherited by AI tools.
  * There is never an Android-internal-storage fallback for agent file work.
  * iOS and web retain their platform sandbox because Android external volumes do
  * not exist there.
@@ -45,7 +46,9 @@ const SAF = (FileSystem as unknown as {
 /* ------------------------------- root state -------------------------------- */
 
 let grantedTreeUri: string | null = null;
-let workspaceOnly = true;
+// AI access is deliberately not configurable to use the automatic external
+// root. That broader capability belongs solely to the Manual Terminal.
+const workspaceOnly = true;
 let automaticExternal: ExternalStorageInfo | null = null;
 let automaticStorageChecked = false;
 let automaticStorageTask: Promise<FsPermissionInfo> | null = null;
@@ -97,11 +100,6 @@ export function setGrantedTree(uri: string | null): void {
 
 export function getGrantedTree(): string | null {
   return grantedTreeUri;
-}
-
-/** Whether AI file tools must remain inside an explicitly selected workspace. */
-export function setWorkspaceOnly(enabled: boolean): void {
-  workspaceOnly = enabled;
 }
 
 /**
@@ -191,8 +189,8 @@ export function getStorageStatus(): FsPermissionInfo {
 
 /**
  * Opens the Android system folder picker, initially focused on a removable SD
- * volume when one is mounted. This is optional: the default app-specific SD
- * folder requires no broad-storage permission or Termux-style setup.
+ * volume when one is mounted. Selecting a SAF workspace is required before AI
+ * file tools can operate; no app-specific external-folder fallback is used.
  */
 export async function requestStorageAccess(): Promise<FsPermissionInfo> {
   if (Platform.OS === 'web') {
@@ -215,7 +213,7 @@ export async function requestStorageAccess(): Promise<FsPermissionInfo> {
       };
     }
     // The user closed the picker. Keep the selected-workspace requirement in
-    // place (or the user’s deliberate automatic-root setting) unchanged.
+    // place; AI never falls back to an automatic external root.
     return getStorageStatus();
   }
 

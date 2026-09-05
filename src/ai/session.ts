@@ -8,7 +8,6 @@ import type { WireMessage } from '@/src/ai/types';
 import { runAgentTurn } from '@/src/agent/loop';
 import { buildSystemPrompt } from '@/src/agent/prompts';
 import { currentRoot } from '@/src/agent/fs';
-import { executorStatus } from '@/src/agent/tools';
 import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
 import { useUsageStore } from '@/src/store/usage';
@@ -116,12 +115,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
     scopeLabel:
       storageRoot.tier === 'granted'
         ? `user-granted storage root “${settings.agentScope.safRootLabel ?? storageRoot.rootLabel}”`
-        : storageRoot.tier === 'external'
-          ? `automatic external storage “${storageRoot.rootLabel}”`
-          : storageRoot.tier === 'unavailable'
-            ? storageRoot.rootLabel
-            : 'app sandbox',
-    executorReal: executorStatus() === 'native',
+        : storageRoot.tier === 'unavailable'
+          ? storageRoot.rootLabel
+          : 'app sandbox',
+    // Agent commands are deliberately the selected-workspace file shell;
+    // only the separately permissioned Manual Terminal starts a native PTY.
+    executorReal: false,
   });
 
   let wire: WireMessage[] = buildWireMessages(

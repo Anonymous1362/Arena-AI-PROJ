@@ -34,7 +34,7 @@ export interface AgentScope {
   enabled: boolean;
   /** User granted an Android project workspace through SAF. */
   storageEnabled: boolean;
-  /** Keep AI tools inside the selected workspace instead of auto external storage. */
+  /** Enforced true: AI tools stay inside the selected SAF workspace. */
   workspaceOnly: boolean;
   safTreeUri?: string;
   safRootLabel?: string;
@@ -160,7 +160,12 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       patchGeneration: (patch) => set((s) => ({ generation: { ...s.generation, ...patch } })),
-      patchAgentScope: (patch) => set((s) => ({ agentScope: { ...s.agentScope, ...patch } })),
+      // AI workspace containment is a product safety rule, not an optional
+      // UI preference. The Manual Terminal has its own explicit Android
+      // permission gate and cannot be inherited by agent tools.
+      patchAgentScope: (patch) => set((s) => ({
+        agentScope: { ...s.agentScope, ...patch, workspaceOnly: true },
+      })),
       patchAppearance: (patch) => set((s) => ({ appearance: { ...s.appearance, ...patch } })),
       patchBehavior: (patch) => set((s) => ({ behavior: { ...s.behavior, ...patch } })),
 
@@ -182,15 +187,14 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'aurora/settings/v2',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 4,
-      // v1 → v4: drop legacy records and add safe agent-workspace defaults.
+      version: 5,
+      // v1 → v5: drop legacy records and enforce the selected SAF workspace
+      // boundary even for a profile that previously stored it as disabled.
       migrate: (persisted: any) => {
         const s = { ...persisted };
         delete s.localModels;
         if (!s.agentScope) s.agentScope = defaultAgentScope;
-        if (typeof (s.agentScope as any).workspaceOnly !== 'boolean') {
-          (s.agentScope as any).workspaceOnly = true;
-        }
+        (s.agentScope as any).workspaceOnly = true;
         if (s.generation && (s.generation as any).systemPrompt === '__aurora_default__') {
           (s.generation as any).systemPrompt = '__copper_default__';
         }

@@ -13,10 +13,9 @@ import {
   requestStorageAccess,
   revokeStorageAccess,
   setGrantedTree,
-  setWorkspaceOnly,
   type FsPermissionInfo,
 } from '@/src/agent/fs';
-import { TOOL_SPECS, executorStatus } from '@/src/agent/tools';
+import { TOOL_SPECS } from '@/src/agent/tools';
 import { haptics } from '@/src/utils/haptics';
 import { CopperExec } from '@/modules/copper-exec';
 
@@ -34,11 +33,10 @@ export default function AgentSettingsScreen() {
   const [storage, setStorage] = useState<FsPermissionInfo>(() => getStorageStatus());
   const [hasAllFiles, setHasAllFiles] = useState(false);
 
-  // Re-arm persisted SAF access after hydration, while always discovering the
-  // automatic removable/primary external root in the background.
+  // Re-arm persisted SAF access after hydration and gather removable-volume
+  // information only to focus the Android folder picker.
   useEffect(() => {
     let mounted = true;
-    setWorkspaceOnly(agentScope.workspaceOnly);
     setGrantedTree(agentScope.storageEnabled && Platform.OS === 'android' ? agentScope.safTreeUri ?? null : null);
     void Promise.all([
       initExternalStorage(),
@@ -49,7 +47,7 @@ export default function AgentSettingsScreen() {
       setHasAllFiles(allFiles);
     });
     return () => { mounted = false; };
-  }, [agentScope.safTreeUri, agentScope.storageEnabled, agentScope.workspaceOnly]);
+  }, [agentScope.safTreeUri, agentScope.storageEnabled]);
 
   const pickFolder = async () => {
     setBusy(true);
@@ -63,7 +61,6 @@ export default function AgentSettingsScreen() {
         safTreeUri: granted ? res.treeUri : undefined,
         safRootLabel: granted ? res.rootLabel : undefined,
       });
-      setWorkspaceOnly(true);
       setGrantedTree(granted ? res.treeUri ?? null : null);
       setStorage(getStorageStatus());
       haptics.success();
@@ -84,7 +81,6 @@ export default function AgentSettingsScreen() {
     setBusy(true);
     try {
       revokeStorageAccess();
-      setWorkspaceOnly(true);
       patch({ storageEnabled: false, workspaceOnly: true, safTreeUri: undefined, safRootLabel: undefined });
       await initExternalStorage();
       setStorage(getStorageStatus());
@@ -110,12 +106,7 @@ export default function AgentSettingsScreen() {
 
   const isAndroid = Platform.OS === 'android';
   const usingCustomFolder = storage.tier === 'granted';
-  const automaticExternal = storage.tier === 'external';
-  const rootSummary = usingCustomFolder
-    ? `Custom: “${storage.rootLabel}”`
-    : automaticExternal
-      ? `Auto: ${storage.rootLabel}`
-      : storage.rootLabel;
+  const rootSummary = usingCustomFolder ? `Custom: “${storage.rootLabel}”` : storage.rootLabel;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -134,15 +125,9 @@ export default function AgentSettingsScreen() {
             value={behavior.autoContinue}
             onChange={(v) => patchBehavior({ autoContinue: v })}
           />
-          <SwitchRow
-            label="Limit AI to selected workspace"
-            hint="Recommended. AI files stay inside the folder you select, such as COPPER Projects."
-            value={agentScope.workspaceOnly}
-            onChange={(v) => {
-              setWorkspaceOnly(v);
-              patch({ workspaceOnly: v });
-              setStorage(getStorageStatus());
-            }}
+          <Banner
+            kind="info"
+            text="AI is restricted to the project workspace you select. Broad shared-storage access belongs only to the Manual Terminal."
           />
         </Card>
 
@@ -164,7 +149,7 @@ export default function AgentSettingsScreen() {
         <Card style={{ marginTop: spacing(4) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3), marginBottom: spacing(3) }}>
             <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name={automaticExternal ? 'hardware-chip-outline' : 'folder-open'} size={19} color={colors.accent} />
+              <Ionicons name="folder-open" size={19} color={colors.accent} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ color: colors.text, fontSize: 15, fontWeight: '800' }}>Storage root</Text>
@@ -189,7 +174,7 @@ export default function AgentSettingsScreen() {
                 Select your COPPER Projects folder on the SD card. AI file tools and generated exports are jailed inside it,
                 so a game can be created as its own named subfolder without the AI touching folders outside your workspace.
               </Text>
-              {!usingCustomFolder && agentScope.workspaceOnly ? (
+              {!usingCustomFolder ? (
                 <Text style={{ color: colors.warning, fontSize: 12.5, lineHeight: 18, marginBottom: spacing(3) }}>
                   Select `/storage/0123-4567/Download/COPPER Projects` in the picker to enable AI project files.
                 </Text>
@@ -285,19 +270,19 @@ export default function AgentSettingsScreen() {
           >
             <Ionicons name="terminal" size={14} color={colors.termText} />
             <Text style={{ color: colors.termText, fontSize: 12.5, fontWeight: '700', flex: 1 }}>
-              AI shell: {executorStatus() === 'native' ? 'native · automatic external cwd' : 'workspace-safe file commands (ls, cat, grep, find…)'}
+              AI shell: workspace-safe file commands (ls, cat, grep, find…)
             </Text>
             <View
               style={{
                 width: 8,
                 height: 8,
                 borderRadius: 4,
-                backgroundColor: executorStatus() === 'native' ? colors.success : colors.warning,
+                backgroundColor: colors.success,
               }}
             />
           </View>
           <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 18, marginTop: spacing(2) }}>
-            AI commands stay inside the selected workspace when workspace protection is on. The separate Terminal tab is for your manual all-files commands.
+            AI commands always stay inside the selected workspace. The separate Terminal tab is for your manual all-files commands.
           </Text>
         </Card>
 

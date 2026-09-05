@@ -5,10 +5,9 @@
  * inside the storage root configured by the user (see fs.ts + settings.agentScope):
  *  - `read_file` / `write_file` / `list_dir` / `delete_path` / `mkdir` / `stat`
  *    operate only on the selected AI workspace (normally COPPER Projects).
- *  - `run_command` uses the workspace-safe built-in shell unless Copper has
- *    an explicitly configured physical workspace executor.
+ *  - `run_command` always uses the workspace-safe built-in shell; it does not
+ *    inherit the Manual Terminal's broader Android storage capability.
  */
-import { Platform } from 'react-native';
 import {
   readAgentFile,
   writeAgentFile,
@@ -17,10 +16,8 @@ import {
   mkdirAgent,
   statAgentPath,
   currentRoot,
-  initExternalStorage,
   safeRelPath,
 } from '@/src/agent/fs';
-import { CopperExec } from '@/modules/copper-exec';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -164,46 +161,13 @@ export async function dispatchTool(
 /* ------------------------------ run_command ------------------------------- */
 
 /**
- * The native executor is usable only for Copper's physical external root.
- * A SAF URI is not a POSIX working directory, so custom-folder commands use
- * the built-in file-shell instead of pretending a native shell can access it.
+ * AI command execution is intentionally limited to the workspace-safe file
+ * shell. A SAF URI is not a POSIX working directory, and routing AI commands
+ * through the native executor would bypass the selected-workspace boundary.
  */
-export type ExecutorMode = 'native' | 'builtin';
-
-export function executorStatus(): ExecutorMode {
+async function runCommand(command: string, _timeoutMs: number, _cap?: number): Promise<ToolResult> {
   const root = currentRoot();
-  return Platform.OS === 'android' && root.tier === 'external' && !!root.path && CopperExec.isAvailable()
-    ? 'native'
-    : 'builtin';
-}
-
-async function runCommand(command: string, timeoutMs: number, _cap?: number): Promise<ToolResult> {
-  if (Platform.OS === 'android' && currentRoot().tier !== 'granted') await initExternalStorage(true);
-  const root = currentRoot();
-  const cwdLabel = root.rootLabel;
-
-  if (executorStatus() === 'native' && root.path) {
-    try {
-      const result = await Promise.race([
-        CopperExec.exec(command, root.path, timeoutMs),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs + 1_500)
-        ),
-      ]);
-      const output = result.stdout.length > 32_000
-        ? `${result.stdout.slice(0, 16_000)}\n…[truncated]…\n${result.stdout.slice(-16_000)}`
-        : result.stdout;
-      return {
-        ok: result.exit === 0 && !result.timedOut,
-        output: result.timedOut ? `${output}\nCommand timed out after ${Math.round(timeoutMs / 1000)}s.` : output,
-      };
-    } catch (e) {
-      return { ok: false, output: `Command failed: ${(e as Error).message}` };
-    }
-  }
-
-  // Simulated tier — honest about what it is, still useful.
-  return simulateShell(command, cwdLabel);
+  return simulateShell(command, root.rootLabel);
 }
 
 /* --------------------------- simulated mini-shell -------------------------- */
@@ -300,7 +264,7 @@ function simulateShell(command: string, cwdLabel: string): Promise<ToolResult> {
           return {
             ok: true,
             output:
-              'Built-in shell (sandboxed): ls cat head tail wc echo grep touch mkdir rm mv cp find pwd help.\nFull native execution unlocks with an executor grant on Android.',
+              'Built-in workspace shell: ls cat head tail wc echo grep touch mkdir rm mv cp find pwd help. AI commands remain inside the selected project workspace.',
           };
         default:
           return {

@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import * as SystemUI from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '@/src/theme';
-import { initExternalStorage, setGrantedTree, setWorkspaceOnly } from '@/src/agent/fs';
+import { initExternalStorage, setGrantedTree } from '@/src/agent/fs';
 import { useSettingsStore } from '@/src/store/settings';
 
 function Routes() {
@@ -37,20 +37,18 @@ function Routes() {
 }
 
 /**
- * Arms the persisted custom SAF folder and discovers the automatic external
- * Android root as soon as the app starts. Android never falls back to the
- * internal app files directory for agent/terminal work.
+ * Arms the persisted AI SAF workspace and discovers removable storage for the
+ * picker as soon as the app starts. AI never falls back to app-private files
+ * or an automatic external root; the Manual Terminal is separately permissioned.
  */
 function StorageRootInitializer() {
   const storageEnabled = useSettingsStore((s) => s.agentScope.storageEnabled);
-  const workspaceOnly = useSettingsStore((s) => s.agentScope.workspaceOnly);
   const safTreeUri = useSettingsStore((s) => s.agentScope.safTreeUri);
 
   useEffect(() => {
-    setWorkspaceOnly(workspaceOnly);
     setGrantedTree(Platform.OS === 'android' && storageEnabled ? safTreeUri ?? null : null);
     void initExternalStorage();
-  }, [safTreeUri, storageEnabled, workspaceOnly]);
+  }, [safTreeUri, storageEnabled]);
 
   return null;
 }

@@ -93,8 +93,6 @@ type NativeCopperExec = {
   listRuntimeSessions(): Promise<CopperRuntimeSession[]>;
   /** Shares an external file or user-granted SAF URI without a cache copy. */
   shareUri(uri: string, mimeType: string, title: string | null): Promise<boolean>;
-  /** Runs an agent command in Copper's automatic external workspace. */
-  exec(command: string, workingDirectory: string | null, timeoutMs: number): Promise<NativeCommandResult>;
   /** Runs a manual command anywhere in Android shared storage after user grant. */
   execAllFiles(command: string, workingDirectory: string | null, timeoutMs: number): Promise<NativeCommandResult>;
 };
@@ -185,11 +183,6 @@ export const CopperExec = {
   shareUri: async (uri: string, mimeType: string, title: string | null): Promise<boolean> => {
     if (!native) throw new Error('Native sharing for an external/custom folder is unavailable in this build.');
     return native.shareUri(uri, mimeType, title);
-  },
-
-  exec: async (command: string, workingDirectory: string | null, timeoutMs: number): Promise<NativeCommandResult> => {
-    if (!native) throw new Error('Native external-storage terminal is unavailable in this build. Install a Copper Android build, not Expo Go.');
-    return native.exec(command, workingDirectory, timeoutMs);
   },
 
   execAllFiles: async (command: string, workingDirectory: string | null, timeoutMs: number): Promise<NativeCommandResult> => {

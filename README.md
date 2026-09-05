@@ -74,7 +74,7 @@ src/
     loop.ts              tool-calling loop, [PLAN] parsing, auto-continue
     prompts.ts           master prompt (Claude-style behavior contract)
     tools.ts             tool registry: files + run_command
-    fs.ts                jailed storage root (Android external / optional SAF grant)
+    fs.ts                selected-SAF workspace jail for AI file tools
   components/            design system (PressableScale, Sheet, AgentPanels, …)
   store/                 zustand + AsyncStorage persistence (settings, chats)
   theme/                 tokens, warm light/dark palettes, motion language
@@ -88,18 +88,13 @@ scripts/                 web dist patcher (PWA head tags)
 
 ## Android external / SD-card storage
 
-Copper does **not** need `termux-setup-storage` for its own workspace. A custom Android build locates `getExternalFilesDirs()` at launch, chooses a mounted removable card first, then falls back to Android’s primary **external** volume. The automatic workspace is the app-specific folder, for example:
+Copper does **not** need `termux-setup-storage` for its own workspace. A custom Android build finds a mounted removable card before Android’s primary **external** volume so the folder picker can open in a sensible location.
 
-```text
-/storage/B1C2-3D4E/Android/data/com.copper.chat/files/   # removable SD card
-/storage/emulated/0/Android/data/com.copper.chat/files/  # primary external storage
-```
-
-By default, **AI file tools and their exports require a project workspace selected through SAF** — for example `/storage/0123-4567/Download/COPPER Projects`. This is a hard boundary: the AI can create any number of named project folders within that workspace, but cannot use folders outside it. If the workspace is not selected, agent file operations stop with a clear setup message rather than silently using `/data/data/...`.
+**AI file tools and their exports require a project workspace selected through SAF** — for example `/storage/0123-4567/Download/COPPER Projects`. This is an enforced boundary: the AI can create any number of named project folders within that workspace, but cannot use folders outside it. If the workspace is not selected, agent file operations stop with a clear setup message rather than silently using an app-private or automatic external location.
 
 The **manual Terminal tab is separate**. It can be given Android’s special **All files access** from Settings, allowing commands *you type* to use device storage and mounted SD cards under `/storage/`. This permission never grants raw access to Android’s protected `/data` area, and it does not remove the AI workspace boundary. It is intended for personal/sideload builds; Google Play limits use of this permission.
 
-**Need a different AI location?** In **Settings → Agent & storage**, select **COPPER Projects folder**. Android’s system picker opens at the removable card when it can; select an SD-card, Downloads, or Documents folder and Copper persists access through SAF. Turn off **Limit AI to selected workspace** only if you deliberately want the AI to use the automatic card-first app-specific external root.
+**Need a different AI location?** In **Settings → Agent & storage**, select **COPPER Projects folder**. Android’s system picker opens at the removable card when it can; select an SD-card, Downloads, or Documents folder and Copper persists access through SAF. The selected folder remains the AI boundary.
 
 > Android still keeps required app metadata such as settings, keys, databases, and OS caches in its protected internal app area. Moving those would make keys unsafe and is not supported by Android. The external-first guarantee applies to the user-visible workspace, terminal cwd, and exports.
 

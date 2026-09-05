@@ -32,6 +32,7 @@ Read this file before changing Copper Runtime, Terminal, CI, storage boundaries,
 ## What is implemented
 
 - `app/(tabs)/terminal.tsx` connects only to persistent native Copper Runtime sessions. It reports true missing/install/repair/ready state, streams output, accepts input/Ctrl-C, and does not portray Android system shell as Copper Bash.
+- AI access is now **hard limited** to a user-selected SAF workspace: `src/agent/fs.ts` has no automatic-external fallback, `src/agent/tools.ts` exposes only the built-in workspace file shell, Settings has no opt-out, and settings migration v5 repairs any historical persisted `workspaceOnly: false`. The Manual Terminal's Android-approved shared-storage access remains separate.
 - `modules/copper-exec/android/src/main/java/com/copper/copperexec/CopperRuntimeInstaller.kt` performs manifest hash verification, safe staged extraction, symlink restoration, required-entry validation, atomic promotion, repair/removal, and bootstrap quota enforcement.
 - `CopperRuntimeSessions.kt` owns persistent Bash PTYs.
 - `CopperExecModule.kt` starts the Manual Terminal at the removable volume's `Download/COPPER Projects` directory when present, after the explicit All files access grant.
@@ -63,7 +64,7 @@ Proceed in this order:
 4. Promote only a verified, publishable runtime asset into an arm64 device-candidate APK.
 5. On a real arm64 phone, run the Copper Bash PTY test and manually verify terminal input/output/Ctrl-C plus SD-card project start directory.
 6. Add managed preflight/monitoring for live `pkg`/APT operations under the 2 GiB budget.
-7. Implement separate workspace-bound AI runner capabilities; never expose the Manual Terminal PTY to AI tools.
+7. Add the remaining explicit workspace-runner manifest, action logs, confirmations, cancellation, and escape/failure tests without weakening the already-enforced SAF boundary or exposing the Manual Terminal PTY to AI tools.
 
 ## Commands worth running before a change
 

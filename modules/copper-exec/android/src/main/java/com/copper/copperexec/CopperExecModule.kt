@@ -191,17 +191,6 @@ class CopperExecModule : Module() {
       appContext.throwingActivity.startActivity(Intent.createChooser(intent, title))
       true
     }
-
-    /**
-     * Runs Android's system shell with the selected external app folder as its
-     * working directory. This is not a Termux shell and deliberately does not
-     * use or create an internal application prefix.
-     */
-    AsyncFunction("exec") { command: String, _requestedWorkingDirectory: String?, timeoutMs: Double ->
-      val cwd = preferredExternalFilesDir()
-        ?: throw IllegalStateException("No writable external storage is mounted. Insert or remount the SD card, then try again.")
-      runShell(command, cwd, timeoutMs.toLong())
-    }
   }
 
   /** Returns mounted, writable app-specific external folders only. */
