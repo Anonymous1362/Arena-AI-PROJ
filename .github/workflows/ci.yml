@@ -747,9 +747,32 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          # The Copper runtime asset is arm64-only. Do not bloat a personal
+          # arm64-phone candidate with React Native native libraries for x86
+          # emulators or 32-bit Android devices.
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
+
+      - name: Report APK and bundled-runtime sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find android/app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+          asset="modules/copper-exec/android/src/main/assets/copper-runtime/copper-runtime-bootstrap-aarch64.zip"
+          test -n "$apk" && test -f "$asset"
+          {
+            echo '### Copper personal device-candidate size report'
+            echo
+            echo '- Candidate target: `arm64-v8a` only'
+            echo "- APK bytes: \`$(stat -c '%s' "$apk")\`"
+            echo "- Bundled runtime ZIP bytes: \`$(stat -c '%s' "$asset")\`"
+            echo
+            echo 'Largest APK entries:'
+            echo '```text'
+            unzip -l "$apk" | awk 'NR > 3 && $1 ~ /^[0-9]+$/ { print $1 "  " $4 }' | sort -nr | head -20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assemble candidate download with provenance label
         shell: bash

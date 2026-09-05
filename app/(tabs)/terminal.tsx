@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AppState, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { Button, Card } from '@/src/components/ui';
-import { CopperExec, type CopperRuntimeSession, type CopperRuntimeStatus } from '@/modules/copper-exec';
+import { CopperExec, type CopperRuntimeInstallProgress, type CopperRuntimeSession, type CopperRuntimeStatus } from '@/modules/copper-exec';
 import { haptics } from '@/src/utils/haptics';
 
 const mono = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
@@ -26,6 +27,31 @@ function appendTerminalData(previous: string, data: string) {
 
 function storageLine(label: string, bytes: number): [string, number] {
   return [label, bytes];
+}
+
+function installStageTitle(stage: CopperRuntimeInstallProgress['stage']) {
+  switch (stage) {
+    case 'checking': return 'Preparing installation';
+    case 'verifying': return 'Verifying runtime';
+    case 'extracting': return 'Installing runtime';
+    case 'validating': return 'Checking installation';
+    case 'complete': return 'Installation complete';
+    case 'failed': return 'Installation needs attention';
+  }
+}
+
+function StorageMeter({ percent, color, trackColor }: { percent: number; color: string; trackColor: string }) {
+  const target = Math.max(0, Math.min(100, percent));
+  const displayed = useSharedValue(target);
+  useEffect(() => {
+    displayed.value = withTiming(target, { duration: 180, easing: Easing.out(Easing.cubic) });
+  }, [displayed, target]);
+  const fillStyle = useAnimatedStyle(() => ({ width: `${displayed.value}%` }));
+  return (
+    <View style={[styles.meter, { backgroundColor: trackColor }]}>
+      <Animated.View style={[styles.meterFill, fillStyle, { backgroundColor: color }]} />
+    </View>
+  );
 }
 
 function runtimeCopy(status: CopperRuntimeStatus | null) {
@@ -78,9 +104,15 @@ function runtimeCopy(status: CopperRuntimeStatus | null) {
 export default function TerminalScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  // The tab bar is absolute, so its actual Android height does not occupy
+  // layout space. Reserve its 56pt control row plus the gesture/navigation
+  // inset explicitly; this keeps the terminal composer tappable above it.
+  const tabBarHeight = Math.max(56, 56 + insets.bottom);
   const terminalScrollRef = useRef<ScrollView>(null);
   const cwdRef = useRef('');
   const sessionIdRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  const awaitingPermissionReturnRef = useRef(false);
 
   const [hasAllFiles, setHasAllFiles] = useState(false);
   const [cwd, setCwd] = useState('');
@@ -89,6 +121,8 @@ export default function TerminalScreen() {
   const [command, setCommand] = useState('');
   const [terminalOutput, setTerminalOutput] = useState('');
   const [busyAction, setBusyAction] = useState<'install' | 'repair' | 'start' | 'close' | null>(null);
+  const [installProgress, setInstallProgress] = useState<CopperRuntimeInstallProgress | null>(null);
+  const [awaitingPermissionReturn, setAwaitingPermissionReturn] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,8 +133,8 @@ export default function TerminalScreen() {
     sessionIdRef.current = session?.id ?? null;
   }, [session]);
 
-  const refreshStatus = useCallback(async () => {
-    if (Platform.OS !== 'android' || !CopperExec.isAvailable()) return;
+  const refreshStatus = useCallback(async (): Promise<boolean> => {
+    if (Platform.OS !== 'android' || !CopperExec.isAvailable()) return false;
     try {
       const [granted, runtimeStatus, startDirectory] = await Promise.all([
         CopperExec.hasAllFilesAccess(),
@@ -110,8 +144,10 @@ export default function TerminalScreen() {
       setHasAllFiles(granted);
       setRuntime(runtimeStatus);
       if (startDirectory) setCwd(startDirectory);
+      return granted;
     } catch (error) {
       setNotice((error as Error).message || 'Copper could not read its terminal status.');
+      return false;
     }
   }, []);
 
@@ -120,6 +156,28 @@ export default function TerminalScreen() {
       void refreshStatus();
     }, [refreshStatus])
   );
+
+  // Android's special All files page opens over Copper without necessarily
+  // changing the route focus. Refresh when the app becomes active again so a
+  // successful permission grant never requires a second button tap.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const returnedToCopper = appStateRef.current !== 'active' && nextState === 'active';
+      appStateRef.current = nextState;
+      if (!returnedToCopper || !awaitingPermissionReturnRef.current) return;
+      awaitingPermissionReturnRef.current = false;
+      setAwaitingPermissionReturn(false);
+      void refreshStatus().then((granted) => {
+        setNotice(
+          granted
+            ? 'Shared-storage access is enabled ✅ You can open Copper Bash now.'
+            : 'Android storage access was not enabled. You can try again whenever you are ready.'
+        );
+      });
+    });
+    return () => subscription.remove();
+  }, [refreshStatus]);
 
   useEffect(() => {
     const outputSubscription = CopperExec.addRuntimeOutputListener(({ sessionId, data }) => {
@@ -135,10 +193,20 @@ export default function TerminalScreen() {
       if (sessionId !== sessionIdRef.current) return;
       setNotice(message);
     });
+    const installSubscription = CopperExec.addRuntimeInstallProgressListener((progress) => {
+      setInstallProgress(progress);
+      setRuntime((previous) => previous ? {
+        ...previous,
+        persistentBytes: progress.persistentBytes,
+        quotaBytes: progress.quotaBytes,
+        remainingBytes: Math.max(0, progress.quotaBytes - progress.persistentBytes),
+      } : previous);
+    });
     return () => {
       outputSubscription?.remove();
       exitSubscription?.remove();
       errorSubscription?.remove();
+      installSubscription?.remove();
     };
   }, []);
 
@@ -149,22 +217,35 @@ export default function TerminalScreen() {
   }, [terminalOutput]);
 
   const requestAllFiles = async () => {
+    if (awaitingPermissionReturn) return;
+    awaitingPermissionReturnRef.current = true;
+    setAwaitingPermissionReturn(true);
+    setNotice('Opening Android storage settings… Copper will refresh automatically when you return.');
     try {
       const granted = await CopperExec.requestAllFilesAccess();
       setHasAllFiles(granted);
-      setNotice(
-        granted
-          ? 'Shared-storage access is enabled ✅ Your manual Copper session can use device storage and mounted SD cards under /storage/.'
-          : 'Android Settings opened. Turn on “Allow access to manage all files”, then come back here.'
-      );
+      if (granted) {
+        awaitingPermissionReturnRef.current = false;
+        setAwaitingPermissionReturn(false);
+        setNotice('Shared-storage access is enabled ✅ You can open Copper Bash now.');
+      }
     } catch (error) {
-      setNotice((error as Error).message);
+      awaitingPermissionReturnRef.current = false;
+      setAwaitingPermissionReturn(false);
+      setNotice((error as Error).message || 'Copper could not open Android storage settings.');
+      haptics.error();
     }
   };
 
   const installRuntime = async (repair = false) => {
     if (!runtime?.bundleAvailable || busyAction) return;
     setBusyAction(repair ? 'repair' : 'install');
+    setInstallProgress({
+      stage: 'checking',
+      message: repair ? 'Preparing Copper Runtime repair…' : 'Preparing Copper Runtime installation…',
+      persistentBytes: runtime.persistentBytes,
+      quotaBytes: runtime.quotaBytes,
+    });
     setNotice(null);
     try {
       const next = repair
@@ -252,7 +333,8 @@ export default function TerminalScreen() {
   const available = Platform.OS === 'android' && CopperExec.isAvailable();
   const copy = runtimeCopy(runtime);
   const quotaPercent = runtime ? Math.min(100, (runtime.persistentBytes / runtime.quotaBytes) * 100) : 0;
-  const runtimeStorageBreakdown: Array<[string, number]> = runtime
+  const showingLiveInstallProgress = busyAction === 'install' || busyAction === 'repair';
+  const runtimeStorageBreakdown: Array<[string, number]> = runtime && !showingLiveInstallProgress
     ? [
         storageLine('Runtime & installed packages', runtime.runtimePayloadBytes),
         storageLine('APT download cache', runtime.aptArchiveBytes),
@@ -266,8 +348,12 @@ export default function TerminalScreen() {
   const canRepair = Boolean(runtime?.bundleAvailable && runtime.state === 'repair_required');
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ paddingTop: insets.top + spacing(2), paddingHorizontal: spacing(4), paddingBottom: spacing(3) }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={{ flex: 1 }}>
+        <View style={{ paddingTop: insets.top + spacing(2), paddingHorizontal: spacing(4), paddingBottom: spacing(3) }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3) }}>
           <View style={{ width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.termBg }}>
             <Ionicons name="terminal" size={19} color={colors.termText} />
@@ -295,7 +381,7 @@ export default function TerminalScreen() {
         <ScrollView
           ref={terminalScrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: spacing(3) }}
+          contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: tabBarHeight + spacing(3) }}
           keyboardShouldPersistTaps="handled"
         >
           <Card style={{ marginBottom: spacing(3) }}>
@@ -313,9 +399,22 @@ export default function TerminalScreen() {
                   <Text style={{ color: colors.textFaint, fontSize: 11.5 }}>Private runtime storage</Text>
                   <Text style={{ color: colors.textFaint, fontSize: 11.5 }}>{formatBytes(runtime.persistentBytes)} / {formatBytes(runtime.quotaBytes)}</Text>
                 </View>
-                <View style={[styles.meter, { backgroundColor: colors.surface3 }]}>
-                  <View style={[styles.meterFill, { width: `${quotaPercent}%`, backgroundColor: quotaPercent >= 90 ? colors.danger : colors.accent }]} />
-                </View>
+                <StorageMeter
+                  percent={quotaPercent}
+                  color={quotaPercent >= 90 ? colors.danger : colors.accent}
+                  trackColor={colors.surface3}
+                />
+                {installProgress ? (
+                  <View style={[styles.installStatus, { backgroundColor: colors.accentSoft, borderColor: colors.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.text, fontSize: 12.5, fontWeight: '800' }}>{installStageTitle(installProgress.stage)}</Text>
+                      <Text style={{ color: colors.textSub, fontSize: 12, lineHeight: 17, marginTop: 2 }}>{installProgress.message}</Text>
+                    </View>
+                    <Text style={{ color: colors.accent, fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
+                      {formatBytes(installProgress.persistentBytes)}
+                    </Text>
+                  </View>
+                ) : null}
                 {runtimeStorageBreakdown.length > 0 ? (
                   <View style={{ marginTop: spacing(2), gap: 3 }}>
                     {runtimeStorageBreakdown.map(([label, bytes]) => (
@@ -329,8 +428,8 @@ export default function TerminalScreen() {
               </View>
             ) : null}
 
-            {canInstall ? <View style={{ marginTop: spacing(3) }}><Button label="Install verified runtime" icon="download-outline" loading={busyAction === 'install'} onPress={() => installRuntime(false)} /></View> : null}
-            {canRepair ? <View style={{ marginTop: spacing(3) }}><Button label="Repair verified runtime" icon="construct-outline" loading={busyAction === 'repair'} onPress={() => installRuntime(true)} /></View> : null}
+            {canInstall ? <View style={{ marginTop: spacing(3) }}><Button label={busyAction === 'install' ? 'Installing Copper Runtime…' : 'Install verified runtime'} icon="download-outline" loading={busyAction === 'install'} onPress={() => installRuntime(false)} /></View> : null}
+            {canRepair ? <View style={{ marginTop: spacing(3) }}><Button label={busyAction === 'repair' ? 'Repairing Copper Runtime…' : 'Repair verified runtime'} icon="construct-outline" loading={busyAction === 'repair'} onPress={() => installRuntime(true)} /></View> : null}
           </Card>
 
           {runtime?.ready && !hasAllFiles ? (
@@ -339,7 +438,13 @@ export default function TerminalScreen() {
               <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginTop: spacing(2), marginBottom: spacing(3) }}>
                 This lets commands you type use device storage and a mounted SD card under /storage/. It does not give the AI unrestricted terminal access or access to protected Android /data paths.
               </Text>
-              <Button label="Open Android storage permission" icon="shield-outline" onPress={requestAllFiles} />
+              <Button
+                label={awaitingPermissionReturn ? 'Checking Android permission…' : 'Open Android storage permission'}
+                icon="shield-outline"
+                loading={awaitingPermissionReturn}
+                disabled={awaitingPermissionReturn}
+                onPress={requestAllFiles}
+              />
             </Card>
           ) : null}
 
@@ -375,7 +480,7 @@ export default function TerminalScreen() {
       )}
 
       {available && session ? (
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing(3), paddingTop: spacing(2), paddingBottom: insets.bottom + spacing(2) }}>
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing(3), paddingTop: spacing(2), paddingBottom: tabBarHeight + spacing(2) }}>
           <Text numberOfLines={1} selectable style={{ color: colors.textFaint, fontSize: 11.5, marginBottom: spacing(1.5), fontFamily: mono }}>
             {session.cwd}
           </Text>
@@ -398,13 +503,15 @@ export default function TerminalScreen() {
           </View>
         </View>
       ) : null}
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   meter: { height: 6, borderRadius: 3, overflow: 'hidden' },
   meterFill: { height: '100%', borderRadius: 3 },
+  installStatus: { marginTop: 10, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 8 },
   terminal: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   terminalHeader: { paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.10)' },
   terminalPath: { fontSize: 10.5 },

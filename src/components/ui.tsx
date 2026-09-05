@@ -1,6 +1,6 @@
-import React from 'react';
-import { PressableProps, StyleSheet, Switch, Text, TextInput, TextInputProps, View, ViewStyle, StyleProp } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import React, { useEffect } from 'react';
+import { StyleSheet, Switch, Text, TextInput, TextInputProps, View, ViewStyle, StyleProp } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/src/theme';
 import { radius, spacing, typeScale } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
@@ -298,6 +298,28 @@ export function TextField({
 
 /* ---------------------------------- Button ----------------------------------- */
 
+/** A native-thread spinner: unlike a static sync icon, it stays visibly alive
+ * while an Android native operation is running. */
+function ButtonSpinner({ color }: { color: string }) {
+  const rotation = useSharedValue(0);
+  useEffect(() => {
+    rotation.value = 0;
+    rotation.value = withRepeat(
+      withTiming(1, { duration: 850, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, [rotation]);
+  const animated = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value * 360}deg` }],
+  }));
+  return (
+    <Animated.View style={[{ marginRight: 2 }, animated]}>
+      <Ionicons name="sync" size={17} color={color} />
+    </Animated.View>
+  );
+}
+
 export function Button({
   label,
   onPress,
@@ -305,6 +327,7 @@ export function Button({
   icon,
   loading,
   disabled,
+  haptic,
   style,
 }: {
   label: string;
@@ -313,6 +336,8 @@ export function Button({
   icon?: keyof typeof Ionicons.glyphMap;
   loading?: boolean;
   disabled?: boolean;
+  /** Avoid a vibration on every secondary/navigation action. */
+  haptic?: 'none' | 'light' | 'medium' | 'heavy' | 'selection' | 'success' | 'warning';
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -327,7 +352,12 @@ export function Button({
     : variant === 'secondary' ? colors.text
     : colors.accent;
   return (
-    <PressableScale haptic="light" onPress={onPress} disabled={disabled || loading} style={style}>
+    <PressableScale
+      haptic={haptic ?? (variant === 'primary' ? 'light' : 'none')}
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={style}
+    >
       <View
         style={{
           flexDirection: 'row',
@@ -344,9 +374,7 @@ export function Button({
         }}
       >
         {loading ? (
-          <Animated.View style={{ marginRight: 2 }}>
-            <Ionicons name="sync" size={16} color={fg} />
-          </Animated.View>
+          <ButtonSpinner color={fg} />
         ) : icon ? (
           <Ionicons name={icon} size={17} color={fg} />
         ) : null}

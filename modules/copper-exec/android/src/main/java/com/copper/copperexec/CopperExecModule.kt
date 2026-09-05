@@ -34,7 +34,7 @@ class CopperExecModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("CopperExec")
-    Events("runtimeOutput", "runtimeExit", "runtimeError")
+    Events("runtimeOutput", "runtimeExit", "runtimeError", "runtimeInstallProgress")
 
     AsyncFunction("getStorageInfo") {
       storageInfo(preferredExternalFilesDir())
@@ -116,12 +116,16 @@ class CopperExecModule : Module() {
 
     /** Install a verified bundled Copper Runtime bootstrap atomically. */
     AsyncFunction("installCopperRuntime") { replaceExisting: Boolean ->
-      CopperRuntimeInstaller.install(context, replaceExisting)
+      CopperRuntimeInstaller.install(context, replaceExisting) { progress ->
+        sendEvent("runtimeInstallProgress", progress)
+      }
     }
 
     /** Reinstall the executable package prefix while preserving shell settings. */
     AsyncFunction("repairCopperRuntime") {
-      CopperRuntimeInstaller.repair(context)
+      CopperRuntimeInstaller.repair(context) { progress ->
+        sendEvent("runtimeInstallProgress", progress)
+      }
     }
 
     /** Remove the runtime; callers explicitly choose whether $HOME is retained. */

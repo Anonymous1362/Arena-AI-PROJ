@@ -33,6 +33,7 @@ internal object CopperRuntimeInstaller {
   private const val BOOTSTRAP_STAGE_RECEIPT = "copper-runtime/copper-runtime-stage-receipt.json"
   private const val QUOTA_BYTES = 2L * 1024L * 1024L * 1024L
   private const val MIN_FREE_HEADROOM_BYTES = 64L * 1024L * 1024L
+  private const val INSTALL_PROGRESS_BYTES = 2L * 1024L * 1024L
   private const val METADATA_DIRECTORY = "copper-runtime"
   private const val METADATA_FILE = "installation.properties"
   private const val PREFIX_DIRECTORY = "usr"
@@ -90,13 +91,22 @@ internal object CopperRuntimeInstaller {
   }
 
   /** Atomically install/reinstall the verified bundled bootstrap. */
-  fun install(context: Context, replaceExisting: Boolean): Map<String, Any?> = synchronized(installLock) {
+  fun install(
+    context: Context,
+    replaceExisting: Boolean,
+    onProgress: ((Map<String, Any?>) -> Unit)? = null
+  ): Map<String, Any?> = synchronized(installLock) {
     requireCopperPackage(context)
     val layout = layout(context)
+    reportInstallProgress(onProgress, "checking", "Checking the verified Copper Runtime…", runtimeBytes(layout))
     val asset = bootstrapAssetForCurrentAbi(context)
       ?: throw IllegalStateException("Copper Runtime bootstrap and signed build manifest are not bundled for this device ABI. Install a Copper build containing the verified arm64 runtime bundle.")
 
-    if (isRuntimeReady(layout.prefix) && !replaceExisting) return status(context)
+    if (isRuntimeReady(layout.prefix) && !replaceExisting) {
+      val alreadyInstalled = status(context)
+      reportInstallProgress(onProgress, "complete", "Copper Runtime is already installed.", alreadyInstalled["persistentBytes"] as Long)
+      return alreadyInstalled
+    }
     if (runtimeBytes(layout) > QUOTA_BYTES) {
       throw IllegalStateException("Copper Runtime already exceeds its 2 GiB storage limit. Remove packages or clear the runtime before repairing it.")
     }
@@ -111,25 +121,61 @@ internal object CopperRuntimeInstaller {
     }
 
     try {
+      reportInstallProgress(onProgress, "verifying", "Verifying the bundled runtime…", runtimeBytes(layout))
       verifyBootstrapAssetDigest(context, asset)
-      val extracted = extractBootstrap(context, asset.archivePath, layout.staging, layout.home)
+      val bytesBeforeExtraction = runtimeBytes(layout)
+      reportInstallProgress(onProgress, "extracting", "Installing Copper Runtime files…", bytesBeforeExtraction)
+      val extracted = extractBootstrap(context, asset.archivePath, layout.staging, layout.home) { extractedBytes ->
+        reportInstallProgress(
+          onProgress,
+          "extracting",
+          "Installing Copper Runtime files…",
+          bytesBeforeExtraction + extractedBytes
+        )
+      }
       if (runtimeBytes(layout, includePrefix = false) > QUOTA_BYTES) {
         throw IllegalStateException("Copper Runtime bootstrap exceeds the configured 2 GiB runtime storage limit.")
       }
+      reportInstallProgress(onProgress, "validating", "Validating the installed runtime…", runtimeBytes(layout))
       verifyPrefix(layout.staging)
       promoteStaging(layout)
       ensureHome(layout.home)
       writeMetadata(layout, asset, extracted)
-      status(context)
+      val installed = status(context)
+      reportInstallProgress(onProgress, "complete", "Copper Runtime installed and verified.", installed["persistentBytes"] as Long)
+      installed
     } catch (error: Exception) {
       deleteTree(layout.staging)
+      reportInstallProgress(onProgress, "failed", error.message ?: "Copper Runtime installation failed.", runtimeBytes(layout))
       // The old prefix is restored by promoteStaging() if promotion itself fails.
       throw error
     }
   }
 
   /** Reinstall the runtime prefix while retaining terminal settings in $HOME. */
-  fun repair(context: Context): Map<String, Any?> = install(context, replaceExisting = true)
+  fun repair(
+    context: Context,
+    onProgress: ((Map<String, Any?>) -> Unit)? = null
+  ): Map<String, Any?> = install(context, replaceExisting = true, onProgress = onProgress)
+
+  /** Sends small, rate-limited milestones to the JS UI. Extraction itself
+   * invokes this only every INSTALL_PROGRESS_BYTES, so React does not receive a
+   * callback for every archive buffer. */
+  private fun reportInstallProgress(
+    onProgress: ((Map<String, Any?>) -> Unit)?,
+    stage: String,
+    message: String,
+    persistentBytes: Long
+  ) {
+    onProgress?.invoke(
+      mapOf(
+        "stage" to stage,
+        "message" to message,
+        "persistentBytes" to persistentBytes.coerceAtLeast(0),
+        "quotaBytes" to QUOTA_BYTES
+      )
+    )
+  }
 
   /**
    * Remove the executable/package prefix. `preserveHome` keeps shell settings
@@ -234,7 +280,13 @@ internal object CopperRuntimeInstaller {
     }
   }
 
-  private fun extractBootstrap(context: Context, asset: String, staging: File, home: File): Long {
+  private fun extractBootstrap(
+    context: Context,
+    asset: String,
+    staging: File,
+    home: File,
+    onExtractedBytes: (Long) -> Unit
+  ): Long {
     val runtimeLayout = layout(context)
     val finalPrefix = runtimeLayout.prefix
     val symlinks = mutableListOf<Symlink>()
@@ -247,6 +299,7 @@ internal object CopperRuntimeInstaller {
     val existingNonPrefixBytes = runtimeBytes(runtimeLayout, includePrefix = false)
     val stagingQuota = QUOTA_BYTES - existingNonPrefixBytes
     var extractedBytes = 0L
+    var lastReportedBytes = 0L
 
     context.assets.open(asset).use { assetStream ->
       ZipInputStream(assetStream).use { zip ->
@@ -267,8 +320,15 @@ internal object CopperRuntimeInstaller {
           } else {
             val parent = output.parentFile ?: throw IllegalStateException("Bootstrap entry has no parent: $name")
             require(parent.mkdirs() || parent.isDirectory) { "Could not create runtime parent directory: $name" }
+            val bytesBeforeFile = extractedBytes
             FileOutputStream(output).use { destination ->
-              extractedBytes += copyWithLimit(zip, destination, stagingQuota - extractedBytes)
+              extractedBytes += copyWithLimit(zip, destination, stagingQuota - extractedBytes) { copiedInFile ->
+                val currentBytes = bytesBeforeFile + copiedInFile
+                if (currentBytes - lastReportedBytes >= INSTALL_PROGRESS_BYTES) {
+                  lastReportedBytes = currentBytes
+                  onExtractedBytes(currentBytes)
+                }
+              }
             }
             if (needsExecutableMode(name)) Os.chmod(output.absolutePath, 0b111000000)
           }
@@ -276,6 +336,7 @@ internal object CopperRuntimeInstaller {
         }
       }
     }
+    if (extractedBytes > lastReportedBytes) onExtractedBytes(extractedBytes)
 
     if (symlinks.isEmpty()) throw IllegalStateException("Bootstrap archive did not contain its required SYMLINKS.txt manifest.")
     for (symlink in symlinks) {
@@ -320,7 +381,12 @@ internal object CopperRuntimeInstaller {
     }
   }
 
-  private fun copyWithLimit(input: InputStream, output: FileOutputStream, remainingQuota: Long): Long {
+  private fun copyWithLimit(
+    input: InputStream,
+    output: FileOutputStream,
+    remainingQuota: Long,
+    onCopiedBytes: (Long) -> Unit
+  ): Long {
     if (remainingQuota <= 0) throw IllegalStateException("Copper Runtime reached its 2 GiB storage limit during bootstrap extraction.")
     val buffer = ByteArray(16 * 1024)
     var total = 0L
@@ -332,6 +398,7 @@ internal object CopperRuntimeInstaller {
         throw IllegalStateException("Copper Runtime bootstrap exceeds its 2 GiB storage limit.")
       }
       output.write(buffer, 0, read)
+      onCopiedBytes(total)
     }
     return total
   }

@@ -90,10 +90,22 @@ export interface CopperRuntimeSession {
   startedAtEpochMs: number;
 }
 
+export type CopperRuntimeInstallStage = 'checking' | 'verifying' | 'extracting' | 'validating' | 'complete' | 'failed';
+
+/** Native installation milestones. persistentBytes is live staging usage, not
+ * a guessed percentage of a compressed archive. */
+export interface CopperRuntimeInstallProgress {
+  stage: CopperRuntimeInstallStage;
+  message: string;
+  persistentBytes: number;
+  quotaBytes: number;
+}
+
 type CopperRuntimeEvents = {
   runtimeOutput: (event: { sessionId: string; data: string }) => void;
   runtimeExit: (event: { sessionId: string; exit: number; closedByUser: boolean }) => void;
   runtimeError: (event: { sessionId: string; message: string }) => void;
+  runtimeInstallProgress: (event: CopperRuntimeInstallProgress) => void;
 };
 
 type NativeCopperExec = {
@@ -205,6 +217,9 @@ export const CopperExec = {
 
   addRuntimeErrorListener: (listener: CopperRuntimeEvents['runtimeError']): EventSubscription | null =>
     native?.addListener('runtimeError', listener) ?? null,
+
+  addRuntimeInstallProgressListener: (listener: CopperRuntimeEvents['runtimeInstallProgress']): EventSubscription | null =>
+    native?.addListener('runtimeInstallProgress', listener) ?? null,
 
   shareUri: async (uri: string, mimeType: string, title: string | null): Promise<boolean> => {
     if (!native) throw new Error('Native sharing for an external/custom folder is unavailable in this build.');

@@ -42,8 +42,13 @@ class CopperPtyNativeInstrumentedTest {
 
     CopperRuntimeInstaller.remove(context, preserveHome = false)
     try {
-      val installed = CopperRuntimeInstaller.install(context, replaceExisting = false)
+      val progress = mutableListOf<Map<String, Any?>>()
+      val installed = CopperRuntimeInstaller.install(context, replaceExisting = false) { progress += it }
       assertEquals("ready", installed["state"])
+      assertTrue("Installation must report visible milestones.", progress.map { it["stage"] }.containsAll(listOf("checking", "verifying", "extracting", "validating", "complete")))
+      assertEquals("complete", progress.lastOrNull()?.get("stage"))
+      assertTrue("Installation progress must retain the 2 GiB runtime cap.", progress.all { it["quotaBytes"] == 2L * 1024L * 1024L * 1024L })
+      assertTrue("Installation progress must never be negative.", progress.all { (it["persistentBytes"] as Long) >= 0 })
       assertTrue("The installed prefix must be ready.", installed["ready"] == true)
       assertEquals("ci-validation", installed["assetStageMode"])
       assertTrue("CI-only staged assets must retain their candidate-only label.", installed["candidateOnly"] == true)

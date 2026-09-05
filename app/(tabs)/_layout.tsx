@@ -21,6 +21,9 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // The terminal composer owns the bottom edge while typing; an absolute
+        // tab bar must not cover it when Android resizes for the keyboard.
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textFaint,
         tabBarStyle: {
