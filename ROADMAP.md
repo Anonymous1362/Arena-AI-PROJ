@@ -80,9 +80,10 @@ So a **skipped** source-build row on an installer-validation commit means **“n
 
 ## Phase 5 — Make it usable on real arm64 phones **← CURRENT PHASE**
 
-- [ ] Create a durable Copper-controlled delivery location for verified runtime ZIPs/manifests. The current successful CI artifact is temporary evidence, not an end-user download channel.
-- [ ] Define the reviewed promotion record for an asset: source-build run, exact source commit, runtime ZIP SHA-256, manifest, retention, and Copper release version.
-- [ ] Build an arm64 Copper device-candidate APK containing **only** a verified promoted asset — never silently substitute an upstream/Termux bootstrap.
+- [x] Define and test a fail-closed local promotion record/gate for an asset: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
+- [ ] Create the actual durable Copper-controlled immutable HTTPS delivery locations for verified runtime ZIPs/manifests and corresponding source. The current successful CI artifact is temporary evidence, not an end-user download channel.
+- [ ] Configure the real HTTPS package endpoint and offline archive key's **public** fingerprint, then prepare and independently verify the exact promoted bytes.
+- [ ] Build an arm64 Copper device-candidate APK containing **only** that verified promoted asset — never silently substitute an upstream/Termux bootstrap.
 - [ ] Install the candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
 - [ ] Confirm manually in Copper Terminal that Bash starts, accepts interactive input, streams output, handles Ctrl-C, and starts in the SD-card `COPPER Projects` directory after Android permission approval.
 - [ ] Keep the UI honest if the bundle is absent, corrupt, mismatched, unsupported, or needs repair.
