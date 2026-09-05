@@ -78,6 +78,18 @@ So a **skipped** source-build row on an installer-validation commit means **“n
 
 ---
 
+## APK versus HTTPS — two different jobs
+
+**Copper is installed on Android as an APK.** HTTPS is not a replacement app, a web version of the terminal, or a requirement for the base runtime to be downloaded every time Copper starts.
+
+- **Phase 5 HTTPS asset/source URLs:** before a *release-grade runtime APK* is made, the exact runtime ZIP that will be copied **into** that APK and its matching GPL corresponding-source bundle need durable, immutable, Copper-controlled locations. A GitHub Actions artifact expires, so it is evidence of a build—not a stable record of the bytes distributed in an APK.
+- **Phase 6 HTTPS package-repository URL:** after the base runtime is installed, `pkg`/APT needs a signed Copper package service if the user chooses to install or update packages. HTTPS protects transport; the offline archive key verifies that the package metadata is actually Copper's.
+- **Current ordinary test APK:** it can be built and sideloaded without either URL. It contains Copper's UI, AI/workspace boundaries, and Terminal permission flow, but intentionally reports `bundle_missing`; it is not the full Copper Bash/`pkg` APK.
+
+Nothing in this roadmap changes Copper into an HTTPS-only app or authorizes a release. The HTTPS requirements exist only for a durable, auditable runtime distribution and later signed package updates.
+
+---
+
 ## Phase 5 — Make it usable on real arm64 phones **← CURRENT PHASE**
 
 - [x] Define and test a fail-closed local promotion record/gate for an asset: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
