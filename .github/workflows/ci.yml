@@ -761,6 +761,15 @@ jobs:
           apk="$(find android/app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
           asset="modules/copper-exec/android/src/main/assets/copper-runtime/copper-runtime-bootstrap-aarch64.zip"
           test -n "$apk" && test -f "$asset"
+          listing="$RUNNER_TEMP/copper-runtime-device-candidate-apk-listing.txt"
+          if ! unzip -l "$apk" > "$listing"; then
+            echo "::error title=Copper candidate APK size report::The built APK could not be read as a ZIP: $apk"
+            file "$apk" || true
+            unzip -t "$apk" || true
+            exit 1
+          fi
+          largest="$RUNNER_TEMP/copper-runtime-device-candidate-largest-entries.txt"
+          awk 'NR > 3 && $1 ~ /^[0-9]+$/ { print $1 "  " $4 }' "$listing" | sort -nr > "$largest"
           {
             echo '### Copper personal device-candidate size report'
             echo
@@ -770,7 +779,7 @@ jobs:
             echo
             echo 'Largest APK entries:'
             echo '```text'
-            unzip -l "$apk" | awk 'NR > 3 && $1 ~ /^[0-9]+$/ { print $1 "  " $4 }' | sort -nr | head -20
+            head -20 "$largest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -790,6 +799,22 @@ jobs:
           It is not a released Copper Runtime APK and not a package-repository validation.
           Do not describe it as a runtime release or distribute it as one.
           EOF
+
+      - name: Surface device-candidate diagnostics on failure
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -u
+          echo '### Copper personal device-candidate diagnostics' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Generated APK files:'
+          find android/app/build/outputs/apk -type f -printf '%p %s bytes\n' 2>/dev/null || true
+          echo 'Staged runtime assets:'
+          find modules/copper-exec/android/src/main/assets/copper-runtime -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+          apk="$(find android/app/build/outputs/apk/release -type f -name '*.apk' -print -quit 2>/dev/null || true)"
+          if [ -n "$apk" ]; then
+            echo "APK file type: $(file -b "$apk" || true)"
+            unzip -t "$apk" || true
+          fi
 
       - name: Upload personal device-candidate APK
         uses: actions/upload-artifact@v6
