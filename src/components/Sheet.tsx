@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import type { DimensionValue } from 'react-native';
 import Animated, {
+  Extrapolation,
+  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -19,7 +21,8 @@ import { haptics } from '@/src/utils/haptics';
 
 /**
  * Lightweight, dependency-free bottom sheet built on Reanimated + Gesture
- * Handler. Slides with a spring, dimmes the backdrop, drag-to-dismiss.
+ * Handler. One UI-thread value owns both drag and dismissal, so a downward
+ * swipe cannot reset to the open position for a frame before it closes.
  * Works on iOS, Android and web (PWA).
  */
 
@@ -34,27 +37,28 @@ interface SheetProps {
   plain?: boolean;
 }
 
-const COLLAPSED = 700;
 
 export function Sheet({ visible, onClose, title, children, maxHeight = '72%', plain = false }: SheetProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const y = useSharedValue(COLLAPSED);
-  const backdrop = useSharedValue(0);
-  const drag = useSharedValue(0);
+  const { height: windowHeight } = useWindowDimensions();
+  // A fixed 700px travel distance can leave tall sheets visible on Android.
+  const collapsed = Math.ceil(windowHeight + insets.bottom + 40);
+  const translateY = useSharedValue(collapsed);
+  const dismissing = useSharedValue(false);
 
   useEffect(() => {
     if (visible) {
-      drag.set(0);
-      y.set(withSpring(0, Spring.snappy));
-      backdrop.set(withTiming(1, { duration: 200 }));
+      dismissing.set(false);
+      translateY.set(collapsed);
+      translateY.set(withSpring(0, Spring.snappy));
     } else {
-      y.set(withTiming(COLLAPSED, { duration: 200 }));
-      backdrop.set(withTiming(0, { duration: 180 }));
+      dismissing.set(true);
+      translateY.set(withTiming(collapsed, { duration: 190 }));
     }
-  }, [visible, y, backdrop, drag]);
+  }, [collapsed, dismissing, translateY, visible]);
 
-  const close = useMemo(() => () => {
+  const close = useCallback(() => {
     haptics.light();
     onClose();
   }, [onClose]);
@@ -62,29 +66,33 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   const pan = useMemo(
     () =>
       Gesture.Pan()
-        .onUpdate((e) => {
-          drag.set(Math.max(0, e.translationY));
+        .activeOffsetY(6)
+        .failOffsetX([-36, 36])
+        .onUpdate((event) => {
+          if (dismissing.get()) return;
+          translateY.set(Math.min(collapsed, Math.max(0, event.translationY)));
         })
-        .onEnd((e) => {
-          const shouldClose = e.translationY > 110 || e.velocityY > 900;
+        .onEnd((event) => {
+          if (dismissing.get()) return;
+          const shouldClose = event.translationY > Math.min(140, collapsed * 0.18) || event.velocityY > 1_100;
           if (shouldClose) {
-            drag.set(0);
-            y.set(withTiming(COLLAPSED, { duration: 180 }));
-            backdrop.set(withTiming(0, { duration: 160 }));
-            runOnJS(close)();
+            dismissing.set(true);
+            translateY.set(withTiming(collapsed, { duration: 190 }, (finished) => {
+              if (finished) runOnJS(close)();
+            }));
           } else {
-            drag.set(withSpring(0, Spring.gentle));
+            translateY.set(withSpring(0, Spring.gentle));
           }
         }),
-    [close, drag, y, backdrop]
+    [close, collapsed, dismissing, translateY]
   );
 
   const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: y.get() + drag.get() }],
+    transform: [{ translateY: translateY.get() }],
   }));
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: backdrop.get(),
+    opacity: interpolate(translateY.get(), [0, collapsed], [1, 0], Extrapolation.CLAMP),
   }));
 
   const isPct = typeof maxHeight === 'string';
@@ -103,7 +111,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
           haptic="none"
           scale={1}
           opacityOnPress={1}
-          onPress={onClose}
+          onPress={close}
           style={StyleSheet.absoluteFill}
         >
           <View style={StyleSheet.absoluteFill} />
@@ -139,7 +147,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
                     >
                       {title}
                     </Animated.Text>
-                    <PressableScale haptic="light" onPress={onClose} style={styles.closeBtn}>
+                    <PressableScale haptic="none" onPress={close} style={styles.closeBtn}>
                       <Ionicons name="close" size={20} color={colors.textSub} />
                     </PressableScale>
                   </View>
@@ -163,7 +171,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     borderWidth: StyleSheet.hairlineWidth,
-    transform: [{ translateY: COLLAPSED }],
     ...Platform.select({
       ios: {
         shadowColor: '#000',

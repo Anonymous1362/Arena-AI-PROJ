@@ -26,6 +26,7 @@ import { EmptyState } from '@/src/components/EmptyState';
 import { ConfirmSheet } from '@/src/components/ConfirmSheet';
 import { speakAloud, stopSpeaking } from '@/src/utils/speech';
 import { haptics } from '@/src/utils/haptics';
+import { useKeyboardVisible } from '@/src/hooks/useKeyboardVisible';
 import { shareJson } from '@/src/utils/share';
 import { exportConversationMarkdown } from '@/src/utils/exportMarkdown';
 import type { MessageAttachment } from '@/src/store/chats';
@@ -92,6 +93,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const keyboardVisible = useKeyboardVisible();
 
   const conv = useChatsStore((s) => s.conversations.find((c) => c.id === id));
   const deleteMessage = useChatsStore((s) => s.deleteMessage);
@@ -298,7 +300,7 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         {banner ? (
@@ -338,7 +340,13 @@ export default function ChatScreen() {
           </ScrollView>
         )}
 
-        <View style={{ paddingHorizontal: spacing(3), paddingBottom: Math.max(spacing(3), insets.bottom + 8), paddingTop: spacing(2) }}>
+        <View style={{
+          paddingHorizontal: spacing(3),
+          // Stack screens have no tab bar. Once the keyboard is visible, do
+          // not reserve the home-indicator inset a second time.
+          paddingBottom: keyboardVisible ? spacing(2) : Math.max(spacing(3), insets.bottom + 8),
+          paddingTop: spacing(2),
+        }}>
           <ComposerWithPromptLib
             streaming={streaming}
             sendOnEnter={sendOnEnter}

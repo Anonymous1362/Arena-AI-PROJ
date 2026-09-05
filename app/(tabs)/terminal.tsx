@@ -8,6 +8,7 @@ import { useTheme, radius, spacing } from '@/src/theme';
 import { Button, Card } from '@/src/components/ui';
 import { CopperExec, type CopperRuntimeInstallProgress, type CopperRuntimeSession, type CopperRuntimeStatus } from '@/modules/copper-exec';
 import { haptics } from '@/src/utils/haptics';
+import { useKeyboardVisible } from '@/src/hooks/useKeyboardVisible';
 
 const mono = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
 const MAX_SCROLLBACK_CHARS = 256 * 1024;
@@ -108,6 +109,7 @@ export default function TerminalScreen() {
   // layout space. Reserve its 56pt control row plus the gesture/navigation
   // inset explicitly; this keeps the terminal composer tappable above it.
   const tabBarHeight = Math.max(56, 56 + insets.bottom);
+  const keyboardVisible = useKeyboardVisible();
   const terminalScrollRef = useRef<ScrollView>(null);
   const cwdRef = useRef('');
   const sessionIdRef = useRef<string | null>(null);
@@ -124,6 +126,9 @@ export default function TerminalScreen() {
   const [installProgress, setInstallProgress] = useState<CopperRuntimeInstallProgress | null>(null);
   const [awaitingPermissionReturn, setAwaitingPermissionReturn] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [sendingCommand, setSendingCommand] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const commandInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     cwdRef.current = cwd;
@@ -292,17 +297,31 @@ export default function TerminalScreen() {
 
   const sendCommand = async () => {
     const input = command;
-    if (!input || !session || busyAction) return;
+    if (!input.trim() || !session || busyAction || sendingCommand) return;
+
+    setSendingCommand(true);
+    setCommandError(null);
     try {
       // This is deliberately a persistent PTY write—not a one-off Android
       // system-shell command. Bash owns cwd, variables, jobs, and package
       // state for the life of the Copper session.
-      await CopperExec.writeRuntimeSession(session.id, `${input}\n`);
+      const written = await CopperExec.writeRuntimeSession(session.id, `${input}\n`);
+      if (written <= 0) throw new Error('Copper Bash did not accept the input.');
       setCommand('');
       haptics.selection();
+      requestAnimationFrame(() => {
+        commandInputRef.current?.focus();
+        terminalScrollRef.current?.scrollToEnd({ animated: true });
+      });
     } catch (error) {
-      setNotice((error as Error).message);
+      const message = (error as Error).message || 'Copper could not send that input.';
+      // Keep failure feedback beside the control the person just tapped. The
+      // older general notice sits above terminal output and was easy to miss.
+      setCommandError(message);
+      setNotice(message);
       haptics.error();
+    } finally {
+      setSendingCommand(false);
     }
   };
 
@@ -350,7 +369,7 @@ export default function TerminalScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior="padding"
     >
       <View style={{ flex: 1 }}>
         <View style={{ paddingTop: insets.top + spacing(2), paddingHorizontal: spacing(4), paddingBottom: spacing(3) }}>
@@ -480,17 +499,30 @@ export default function TerminalScreen() {
       )}
 
       {available && session ? (
-        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface, paddingHorizontal: spacing(3), paddingTop: spacing(2), paddingBottom: tabBarHeight + spacing(2) }}>
+        <View style={{
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+          backgroundColor: colors.surface,
+          paddingHorizontal: spacing(3),
+          paddingTop: spacing(2),
+          // The tab bar is hidden while the keyboard is up. Keeping its full
+          // reservation made the composer float over the terminal output.
+          paddingBottom: keyboardVisible ? Math.max(spacing(2), insets.bottom + 4) : tabBarHeight + spacing(2),
+        }}>
           <Text numberOfLines={1} selectable style={{ color: colors.textFaint, fontSize: 11.5, marginBottom: spacing(1.5), fontFamily: mono }}>
             {session.cwd}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing(2) }}>
             <View style={{ flex: 1, minHeight: 44, borderRadius: radius.md, backgroundColor: colors.termBg, paddingHorizontal: spacing(3), justifyContent: 'center' }}>
               <TextInput
+                ref={commandInputRef}
                 value={command}
-                onChangeText={setCommand}
-                onSubmitEditing={sendCommand}
-                editable={!busyAction}
+                onChangeText={(next) => {
+                  setCommand(next);
+                  if (commandError) setCommandError(null);
+                }}
+                onSubmitEditing={() => void sendCommand()}
+                editable={!busyAction && !sendingCommand}
                 placeholder="Send input to Copper Bash…"
                 placeholderTextColor="#817D73"
                 autoCapitalize="none"
@@ -499,8 +531,15 @@ export default function TerminalScreen() {
                 style={{ color: colors.termText, fontFamily: mono, fontSize: 13.5, paddingVertical: 10 }}
               />
             </View>
-            <Button label="Send" icon="arrow-up" disabled={!command || busyAction !== null} onPress={sendCommand} />
+            <Button
+              label={sendingCommand ? 'Sending…' : 'Send'}
+              icon="arrow-up"
+              loading={sendingCommand}
+              disabled={!command.trim() || busyAction !== null || sendingCommand}
+              onPress={() => void sendCommand()}
+            />
           </View>
+          {commandError ? <Text style={{ color: colors.danger, fontSize: 12, lineHeight: 17, marginTop: spacing(1.5) }}>Could not send: {commandError}</Text> : null}
         </View>
       ) : null}
       </View>
