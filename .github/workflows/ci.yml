@@ -191,7 +191,7 @@ jobs:
   # second multi-hour source build; the latter remains opt-in below.
   copper-runtime-bootstrap-provenance:
     name: Copper Runtime successful arm64 bootstrap provenance
-    if: ${{ github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-asset-validation]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) }}
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-asset-validation]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -237,7 +237,7 @@ jobs:
     # preflight or the source bootstrap until the compiled-and-executed Android
     # PTY transport gate has passed.
     needs: copper-native-runtime-compile
-    if: ${{ always() && github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-preflight]')) && needs.copper-native-runtime-compile.result == 'success' }}
+    if: ${{ always() && github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-bootstrap]') || contains(github.event.head_commit.message, '[runtime-preflight]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) && needs.copper-native-runtime-compile.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -485,8 +485,8 @@ jobs:
   # upstream Termux archive and it never uploads the runtime to Git.
   copper-runtime-bundled-asset-validation:
     name: Copper Runtime bundled arm64 installation validation
-    needs: [copper-native-runtime-compile, copper-runtime-bootstrap-provenance]
-    if: ${{ always() && github.event_name == 'push' && (contains(github.event.head_commit.message, '[runtime-asset-validation]') || contains(github.event.head_commit.message, '[runtime-device-candidate]')) && needs.copper-native-runtime-compile.result == 'success' && needs.copper-runtime-bootstrap-provenance.result == 'success' }}
+    needs: [copper-native-runtime-compile, copper-runtime-bootstrap-provenance, copper-runtime-bootstrap]
+    if: ${{ always() && github.event_name == 'push' && ((contains(github.event.head_commit.message, '[runtime-asset-validation]') && needs.copper-native-runtime-compile.result == 'success' && needs.copper-runtime-bootstrap-provenance.result == 'success') || (contains(github.event.head_commit.message, '[runtime-device-candidate]') && needs.copper-native-runtime-compile.result == 'success' && needs.copper-runtime-bootstrap.result == 'success')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 65
     permissions:
@@ -532,7 +532,8 @@ jobs:
             exit 1
           fi
 
-      - name: Fetch and verify the exact successful Copper runtime artifact
+      - name: Fetch and verify the retained Copper runtime artifact
+        if: ${{ contains(github.event.head_commit.message, '[runtime-asset-validation]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -560,6 +561,37 @@ jobs:
           test -f "$destination/copper-runtime-bootstrap-aarch64.zip"
           test -f "$destination/copper-runtime-bootstrap-aarch64.zip.json"
           du -h "$destination/copper-runtime-bootstrap-aarch64.zip"
+
+      - name: Fetch the current source-built Copper runtime artifact
+        if: ${{ contains(github.event.head_commit.message, '[runtime-device-candidate]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          download="$RUNNER_TEMP/copper-runtime-current-source-input"
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name copper-runtime-bootstrap-aarch64 \
+            --dir "$download"
+          archive="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip' -print -quit)"
+          manifest="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip.json' -print -quit)"
+          test -n "$archive" && test -n "$manifest"
+          test "$(jq -r '.applicationId' "$manifest")" = com.copper.chat
+          test "$(jq -r '.architecture' "$manifest")" = aarch64
+          destination="$GITHUB_WORKSPACE/modules/copper-exec/android/src/main/assets/copper-runtime"
+          npm run runtime:stage-android-assets -- \
+            --archive "$archive" \
+            --manifest "$manifest" \
+            --out "$destination" \
+            --mode ci-validation
+          test -f "$destination/copper-runtime-bootstrap-aarch64.zip"
+          test -f "$destination/copper-runtime-bootstrap-aarch64.zip.json"
+          {
+            echo '### Copper Runtime current source-build input'
+            echo
+            echo "- Source build run: \`$GITHUB_RUN_ID\`"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+            echo "- Runtime ZIP bytes: \`$(stat -c '%s' "$destination/copper-runtime-bootstrap-aarch64.zip")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate Android project with temporary verified runtime asset
         run: |
@@ -675,19 +707,14 @@ jobs:
   # neither the APK nor its Actions artifact is a runtime release.
   copper-runtime-device-candidate-apk:
     name: Copper Runtime personal arm64 device-candidate APK
-    needs: copper-runtime-bundled-asset-validation
-    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-device-candidate]') && needs.copper-runtime-bundled-asset-validation.result == 'success' }}
+    needs: [copper-runtime-bundled-asset-validation, copper-runtime-bootstrap]
+    if: ${{ always() && github.event_name == 'push' && contains(github.event.head_commit.message, '[runtime-device-candidate]') && needs.copper-runtime-bundled-asset-validation.result == 'success' && needs.copper-runtime-bootstrap.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
       actions: read
       contents: read
     env:
-      COPPER_BOOTSTRAP_RUN_ID: '33871619836'
-      COPPER_BOOTSTRAP_ARTIFACT_ID: '9939259618'
-      COPPER_BOOTSTRAP_ARTIFACT_DIGEST: 'sha256:e1ded88255b22637683e2a32592ccbb0647e66ab86cc3b9ae6f9a769aa6b76de'
-      COPPER_BOOTSTRAP_HEAD_SHA: 'effec23f6e6ead349c65e2b5b7f489efd46105d4'
-      COPPER_BOOTSTRAP_ARTIFACT_NAME: copper-runtime-bootstrap-aarch64
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
@@ -702,24 +729,20 @@ jobs:
           java-version: '17'
           distribution: temurin
 
-      - name: Fetch the exact verified Copper runtime artifact
+      - name: Fetch the current source-built Copper runtime artifact
         shell: bash
         run: |
           set -euo pipefail
-          metadata="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$COPPER_BOOTSTRAP_ARTIFACT_ID")"
-          test "$(jq -r '.name' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_NAME"
-          test "$(jq -r '.digest' <<<"$metadata")" = "$COPPER_BOOTSTRAP_ARTIFACT_DIGEST"
-          test "$(jq -r '.workflow_run.id' <<<"$metadata")" = "$COPPER_BOOTSTRAP_RUN_ID"
-          test "$(jq -r '.workflow_run.head_sha' <<<"$metadata")" = "$COPPER_BOOTSTRAP_HEAD_SHA"
-          test "$(jq -r '.expired' <<<"$metadata")" = false
           download="$RUNNER_TEMP/copper-runtime-device-candidate-input"
-          gh run download "$COPPER_BOOTSTRAP_RUN_ID" \
+          gh run download "$GITHUB_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "$COPPER_BOOTSTRAP_ARTIFACT_NAME" \
+            --name copper-runtime-bootstrap-aarch64 \
             --dir "$download"
           archive="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip' -print -quit)"
           manifest="$(find "$download" -type f -name 'copper-runtime-bootstrap-aarch64.zip.json' -print -quit)"
           test -n "$archive" && test -n "$manifest"
+          test "$(jq -r '.applicationId' "$manifest")" = com.copper.chat
+          test "$(jq -r '.architecture' "$manifest")" = aarch64
           printf '%s\n' "$archive" > "$RUNNER_TEMP/copper-runtime-device-candidate-archive-path"
           printf '%s\n' "$manifest" > "$RUNNER_TEMP/copper-runtime-device-candidate-manifest-path"
 

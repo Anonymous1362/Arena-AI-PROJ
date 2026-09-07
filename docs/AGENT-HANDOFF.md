@@ -41,7 +41,7 @@ Read this file before changing Copper Runtime, Terminal, CI, storage boundaries,
   - `ci-validation` — only for temporary installer testing;
   - `release` — refuses a non-publishable manifest and refuses until a Copper HTTPS repo URL and public signing-key fingerprint are configured.
 - `scripts/promote-copper-runtime-release.mjs` is the fail-closed pre-publication gate. It prepares an external release-candidate directory only from the verified build ZIP/manifest plus corresponding source, configured owner endpoint/key fingerprint, and immutable HTTPS URLs. It never uploads/publishes; see [`COPPER-RUNTIME-RELEASE-PROMOTION.md`](COPPER-RUNTIME-RELEASE-PROMOTION.md).
-- `.github/workflows/ci.yml` has an opt-in `[runtime-asset-validation]` path. It requires a native PTY gate and a successful earlier source-bootstrap provenance attestation; it does not rerun the expensive source bootstrap unless a commit explicitly requests `[runtime-preflight]` or `[runtime-bootstrap]`.
+- `.github/workflows/ci.yml` has an opt-in `[runtime-asset-validation]` path. It requires a native PTY gate and a successful earlier source-bootstrap provenance attestation. A `[runtime-device-candidate]` is deliberately stricter: it forces a new source bootstrap for the candidate commit, validates that same-run artifact on the emulator, and stages that same-run ZIP/manifest into the personal APK; it must never reuse a retained artifact from an earlier commit.
 
 ## Important validation limitation
 
