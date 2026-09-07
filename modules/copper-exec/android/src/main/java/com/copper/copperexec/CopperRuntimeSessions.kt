@@ -1,6 +1,7 @@
 package com.copper.copperexec
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -64,11 +65,17 @@ internal object CopperRuntimeSessions {
 
     val terminalRows = rows.coerceIn(2, 300).takeIf { rows > 0 } ?: DEFAULT_ROWS
     val terminalColumns = columns.coerceIn(10, 500).takeIf { columns > 0 } ?: DEFAULT_COLUMNS
-    val environment = environment(prefix, home, cwd)
+    val environment = environment(context, prefix, home, cwd)
+    // Android 10+ rejects a direct execve() of a writable app-data file for
+    // apps targeting API 29+. The real termux-exec solution is to launch the
+    // read-only system linker, with the private runtime binary as its argument.
+    // This is not an Android system-shell fallback: linker64 loads this exact
+    // Copper-built Bash and it retains the Copper/termux-exec environment.
+    val linker = systemLinker()
     val process = CopperPtyNative.nativeCreate(
-      shell.absolutePath,
+      linker,
       cwd.absolutePath,
-      arrayOf(shell.absolutePath, "--login"),
+      arrayOf(linker, shell.absolutePath, "--login"),
       environment.toTypedArray(),
       terminalRows,
       terminalColumns
@@ -144,11 +151,20 @@ internal object CopperRuntimeSessions {
     "startedAtEpochMs" to session.startedAtEpochMs
   )
 
-  private fun environment(prefix: File, home: File, cwd: File): List<String> {
+  private fun systemLinker(): String =
+    if (Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) "/system/bin/linker64" else "/system/bin/linker"
+
+  private fun environment(context: Context, prefix: File, home: File, cwd: File): List<String> {
     val termuxExec = File(prefix, "lib/libtermux-exec.so")
     return buildList {
       add("HOME=${home.absolutePath}")
       add("PREFIX=${prefix.absolutePath}")
+      // Newer termux-exec variants use these explicit values to decide when to
+      // reroute later package/script exec calls through the system linker.
+      add("TERMUX__PREFIX=${prefix.absolutePath}")
+      add("TERMUX_APP__DATA_DIR=${context.dataDir.absolutePath}")
+      add("TERMUX_EXEC__EXECVE_CALL__INTERCEPT=enable")
+      add("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=enable")
       add("TMPDIR=${File(prefix, "tmp").absolutePath}")
       add("PATH=${File(prefix, "bin").absolutePath}:/system/bin:/system/xbin")
       add("SHELL=${File(prefix, "bin/bash").absolutePath}")

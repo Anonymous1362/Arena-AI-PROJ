@@ -169,13 +169,17 @@ class CopperPtyNativeInstrumentedTest {
     status[key] as? Long ?: throw AssertionError("Runtime status $key was not a Long: ${status[key]}")
 
   @Test(timeout = 15_000)
-  fun createsInteractivePtyAndReturnsChildExit() {
+  fun createsInteractivePtyThroughSystemLinkerAndReturnsChildExit() {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
     val cwd = context.cacheDir.apply { mkdirs() }
+    // This mirrors the supported Android-10+ launch route for the Copper
+    // runtime: exec the read-only system linker, which then loads the target.
+    // It proves the PTY bridge preserves linker arguments and interactive I/O.
+    val linker = if (Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) "/system/bin/linker64" else "/system/bin/linker"
     val process = CopperPtyNative.nativeCreate(
-      "/system/bin/sh",
+      linker,
       cwd.absolutePath,
-      arrayOf("/system/bin/sh", "-c", "read value; printf 'copper-pty-reply:%s\\n' \"\$value\"; exit 23"),
+      arrayOf(linker, "/system/bin/sh", "-c", "read value; printf 'copper-pty-reply:%s\\n' \"\$value\"; exit 23"),
       arrayOf(
         "HOME=${cwd.absolutePath}",
         "PATH=/system/bin:/system/xbin",
