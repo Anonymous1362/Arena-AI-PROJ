@@ -36,6 +36,7 @@ const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
+const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
@@ -48,8 +49,8 @@ try {
   if (!/^[A-Za-z0-9._-]+$/.test(config.buildName)) {
     fail(`runtime buildName must be a whitespace-free make-safe token; received ${JSON.stringify(config.buildName)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -137,6 +138,29 @@ try {
 
   const properties = readFileSync(propertiesPath, 'utf8');
 
+  // termux-tools configures the interactive-login/profile scripts from these
+  // exported names. Without the generated hook, configure.ac defaults all
+  // paths to com.termux even though properties.sh was repathed for Copper.
+  // Keep this as an exact block test so a future upstream recipe change cannot
+  // silently restore the on-device mkdir/cp failure seen during login.
+  const termuxToolsRecipe = readFileSync(termuxToolsRecipePath, 'utf8');
+  const expectedTermuxToolsPreConfigure = [
+    'termux_step_pre_configure() {',
+    '\t# termux-tools configure.ac otherwise defaults these to com.termux.',
+    '\texport TERMUX_APP_PACKAGE="${TERMUX_APP__PACKAGE_NAME}"',
+    '\texport TERMUX_BASE_DIR="${TERMUX__ROOTFS}"',
+    '\texport TERMUX_CACHE_DIR="${TERMUX__CACHE_DIR}"',
+    '\texport TERMUX_PREFIX="${TERMUX__PREFIX}"',
+    '\texport TERMUX_ANDROID_HOME="${TERMUX__HOME}"',
+    '\texport TERMUX_PACKAGE_FORMAT',
+    '\texport TERMUX_PACKAGE_MANAGER',
+    '\tautoreconf -vfi',
+    '}',
+  ].join('\n');
+  if (!termuxToolsRecipe.includes(expectedTermuxToolsPreConfigure)) {
+    fail('Generated termux-tools recipe does not export Copper paths before configure. Refusing a bootstrap whose interactive login can fall back to /data/data/com.termux.');
+  }
+
   // Use the same unquoted expansion as upstream termux_step_make. NUL output
   // retains exactly the argv values that `make` would receive and makes a bare
   // `Runtime` target unambiguous rather than relying on fragile text parsing.
@@ -178,6 +202,7 @@ try {
   console.log(`Copper default bootstrap dependency closure verified: ${bootstrapDependencyRecipePaths.size} recipe roots, no raw Savannah origin URLs.`);
   console.log(`Copper generated bootstrap recipes verified: ${bootstrapPackages.length} direct package entries map to pinned source recipes.`);
   console.log(`Copper generated termux-core make arguments verified: ${makeArguments.length} assignments, no bare make targets.`);
+  console.log('Copper generated termux-tools configure environment verified: login/profile paths cannot fall back to com.termux.');
   console.log(`  TERMUX__NAME: ${config.buildName}`);
   console.log(`  Product display name: ${config.displayName}`);
 } catch (error) {

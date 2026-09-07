@@ -69,10 +69,11 @@ function sha256(path) {
 }
 
 function commandFailureDetails(result) {
+  const outputText = (value) => Buffer.isBuffer(value) ? value.toString('utf8').trim() : value?.trim() ?? '';
   const details = [
     result.error ? `${result.error.name}: ${result.error.message}` : '',
-    result.stdout?.trim() ?? '',
-    result.stderr?.trim() ?? '',
+    outputText(result.stdout),
+    outputText(result.stderr),
   ].filter(Boolean).join('\n');
   return details || `exit status ${result.status ?? 'unknown'}`;
 }
@@ -120,6 +121,22 @@ function parseBootstrapSymlinks(contents) {
   return symlinks;
 }
 
+function validateConfiguredStartupTextMembers() {
+  const members = config.bootstrap.startupTextMembers;
+  if (!Array.isArray(members) || !members.length) {
+    throw new Error('runtime bootstrap startupTextMembers must list the Copper login/bootstrap scripts to validate.');
+  }
+  const seen = new Set();
+  for (const member of members) {
+    if (!member || typeof member.archivePath !== 'string' || !normalizedArchivePath(member.archivePath) || !Array.isArray(member.requiredFragments) || !member.requiredFragments.length || member.requiredFragments.some((fragment) => typeof fragment !== 'string' || !fragment)) {
+      throw new Error('runtime bootstrap startupTextMembers contains an invalid archive path or required fragment list.');
+    }
+    if (seen.has(member.archivePath)) throw new Error(`runtime bootstrap startupTextMembers lists ${member.archivePath} more than once.`);
+    seen.add(member.archivePath);
+  }
+  return members;
+}
+
 try {
   if (!hasOnlyKnownFlags()) usage('Unknown or incomplete argument.');
   const workspace = resolve(takeFlag('--workspace'));
@@ -140,6 +157,9 @@ try {
   if (receipt.buildName !== config.buildName || receipt.applicationId !== config.applicationId || receipt.runtimePrefix !== config.runtimePrefix || receipt.architecture !== config.architecture) {
     throw new Error('Copper patch receipt does not match runtime/copper-runtime.config.json. Re-run the patch step.');
   }
+  // Validate the post-build archive contract now as well, so --print-command
+  // and generated-input checks fail before any Docker work if it is malformed.
+  const configuredStartupTextMembers = validateConfiguredStartupTextMembers();
 
   // Fail before Docker/preflight if generated recipe argument splitting would
   // turn any part of Copper's branding into an unintended make target.
@@ -162,6 +182,7 @@ try {
     { name: 'attr', purpose: 'attr HTTPS Savannah source delivery and checksum' },
     { name: 'libacl', purpose: 'libacl HTTPS Savannah source delivery and checksum' },
     { name: 'termux-am', purpose: 'Android Gradle package build' },
+    { name: 'termux-tools', purpose: 'Copper interactive login/profile configuration' },
   ];
   const command = ['./scripts/run-docker.sh', './scripts/build-bootstraps.sh', '--architectures', config.architecture];
   if (extraPackages) {
@@ -271,6 +292,93 @@ try {
     return exists;
   };
 
+  // These generated shell/configuration files execute during login or package
+  // setup. A prior candidate contained the right Copper bootstrap archive but
+  // termux-tools' generated profile script still used its configure.ac default
+  // of /data/data/com.termux, causing visible mkdir/cp failures on every
+  // interactive shell. Scan every text member that can be executed or sourced
+  // at runtime, then assert the three startup files' exact Copper fragments.
+  const archiveEntries = spawnSync('unzip', ['-Z1', expectedArchive], {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (archiveEntries.status !== 0 || archiveEntries.error) {
+    throw new Error(`Could not list bootstrap archive members for runtime-path validation:\n${commandFailureDetails(archiveEntries)}`);
+  }
+  const archiveMemberNames = archiveEntries.stdout.split(/\r?\n/).filter(Boolean);
+  const directArchiveEntries = new Set(archiveMemberNames);
+  const runtimeTextMemberCache = new Map();
+  const isRuntimeTextCandidate = (archivePath) => (
+    archivePath.startsWith('etc/')
+    || archivePath.startsWith('bin/')
+    || archivePath.startsWith('libexec/')
+    || /^var\/lib\/dpkg\/info\/[^/]+\.(?:preinst|postinst|prerm|postrm)$/.test(archivePath)
+  );
+  const readRuntimeTextMember = (archivePath) => {
+    if (runtimeTextMemberCache.has(archivePath)) return runtimeTextMemberCache.get(archivePath);
+    const sample = spawnSync('bash', ['-c', 'unzip -p "$1" "$2" | dd bs=4096 count=1 status=none', 'copper-bootstrap-text-sample', expectedArchive, archivePath], {
+      encoding: 'buffer',
+      maxBuffer: 8192,
+    });
+    if (sample.status !== 0 || sample.error) {
+      throw new Error(`Could not sample runtime text member ${archivePath}:\n${commandFailureDetails(sample)}`);
+    }
+    // ELF and NUL-bearing members are executable data, not sourceable text.
+    // Do not decode them as text merely to search for path-shaped byte strings.
+    if (sample.stdout.includes(0) || sample.stdout.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+      runtimeTextMemberCache.set(archivePath, null);
+      return null;
+    }
+    const member = spawnSync('unzip', ['-p', expectedArchive, archivePath], {
+      encoding: 'buffer',
+      maxBuffer: 1024 * 1024,
+    });
+    if (member.status !== 0 || member.error) {
+      throw new Error(`Could not read runtime text member ${archivePath}:\n${commandFailureDetails(member)}`);
+    }
+    if (member.stdout.includes(0)) {
+      runtimeTextMemberCache.set(archivePath, null);
+      return null;
+    }
+    const contents = member.stdout.toString('utf8');
+    if (!Buffer.from(contents, 'utf8').equals(member.stdout)) {
+      runtimeTextMemberCache.set(archivePath, null);
+      return null;
+    }
+    runtimeTextMemberCache.set(archivePath, contents);
+    return contents;
+  };
+  const legacyRuntimePath = /\/data\/(?:data|user\/[0-9]+)\/com\.termux(?:\/|$)/;
+  const unresolvedCopperPlaceholder = /@TERMUX(?:_[A-Z0-9_]+)?@/;
+  const runtimeTextFailures = [];
+  let inspectedRuntimeTextMembers = 0;
+  for (const archivePath of archiveMemberNames) {
+    if (!isRuntimeTextCandidate(archivePath) || archivePath.endsWith('/')) continue;
+    const contents = readRuntimeTextMember(archivePath);
+    if (contents === null) continue;
+    inspectedRuntimeTextMembers += 1;
+    if (legacyRuntimePath.test(contents)) runtimeTextFailures.push(`${archivePath}: contains legacy /data/data/com.termux runtime path`);
+    if (unresolvedCopperPlaceholder.test(contents)) runtimeTextFailures.push(`${archivePath}: contains unresolved @TERMUX_*@ bootstrap placeholder`);
+  }
+  if (runtimeTextFailures.length) {
+    throw new Error(`Bootstrap runtime text-path validation failed:\n${runtimeTextFailures.slice(0, 20).join('\n')}`);
+  }
+  for (const { archivePath, requiredFragments } of configuredStartupTextMembers) {
+    if (!directArchiveEntries.has(archivePath)) {
+      throw new Error(`Bootstrap is missing required direct startup text member: ${archivePath}`);
+    }
+    const contents = readRuntimeTextMember(archivePath);
+    if (contents === null) {
+      throw new Error(`Bootstrap startup member is not UTF-8 text: ${archivePath}`);
+    }
+    const missingFragments = requiredFragments.filter((fragment) => !contents.includes(fragment));
+    if (missingFragments.length) {
+      throw new Error(`Bootstrap startup member ${archivePath} is not fully repathed for Copper; missing: ${missingFragments.map((fragment) => JSON.stringify(fragment)).join(', ')}`);
+    }
+    console.log(`Copper repathed startup member verified: ${archivePath}`);
+  }
+  console.log(`Copper runtime text-path scan verified: ${inspectedRuntimeTextMembers} executable/configuration text members contain no legacy Termux root or unresolved bootstrap placeholder.`);
+
   for (const requiredFile of config.bootstrap.requiredFiles) {
     const normalizedRequiredFile = normalizedArchivePath(requiredFile);
     if (!normalizedRequiredFile) throw new Error(`Unsafe configured required runtime entry: ${requiredFile}`);
@@ -316,6 +424,7 @@ try {
     applicationId: config.applicationId,
     runtimePrefix: config.runtimePrefix,
     runtimeHome: config.runtimeHome,
+    startupTextMembers: configuredStartupTextMembers.map(({ archivePath }) => archivePath),
     file: basename(destination),
     sizeBytes: archiveSize,
     sha256: sha256(destination),

@@ -35,6 +35,7 @@ const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
+const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
 const lock = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.lock.json'), 'utf8'));
@@ -159,6 +160,42 @@ try {
   );
   writeFileSync(bootstrapBuildPath, bootstrapBuild);
 
+  // termux-tools generates the shell login and profile scripts from
+  // configure.ac. Its upstream defaults are deliberately the Termux app's
+  // package/root/prefix when these configure environment variables are absent.
+  // The earlier Copper patch only repathed package-builder properties, so this
+  // configure step silently embedded /data/data/com.termux in the generated
+  // init-termux-properties.sh. That script runs on every interactive login and
+  // was the source of the on-device mkdir/cp failures. Export each upstream
+  // configure input from the already-configured Copper runtime values before
+  // configure runs; keep the existing autoreconf step intact.
+  let termuxToolsRecipe = readFileSync(termuxToolsRecipePath, 'utf8');
+  const termuxToolsPreConfigure = [
+    'termux_step_pre_configure() {',
+    '\tautoreconf -vfi',
+    '}',
+  ].join('\n');
+  const copperTermuxToolsPreConfigure = [
+    'termux_step_pre_configure() {',
+    '\t# termux-tools configure.ac otherwise defaults these to com.termux.',
+    '\texport TERMUX_APP_PACKAGE="${TERMUX_APP__PACKAGE_NAME}"',
+    '\texport TERMUX_BASE_DIR="${TERMUX__ROOTFS}"',
+    '\texport TERMUX_CACHE_DIR="${TERMUX__CACHE_DIR}"',
+    '\texport TERMUX_PREFIX="${TERMUX__PREFIX}"',
+    '\texport TERMUX_ANDROID_HOME="${TERMUX__HOME}"',
+    '\texport TERMUX_PACKAGE_FORMAT',
+    '\texport TERMUX_PACKAGE_MANAGER',
+    '\tautoreconf -vfi',
+    '}',
+  ].join('\n');
+  termuxToolsRecipe = replaceExactly(
+    termuxToolsRecipe,
+    termuxToolsPreConfigure,
+    copperTermuxToolsPreConfigure,
+    'termux-tools configure environment repath hook'
+  );
+  writeFileSync(termuxToolsRecipePath, termuxToolsRecipe);
+
   // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
   // build-tools 30.0.3. The pinned package-builder image intentionally ships
   // newer common SDK parts instead. Letting Gradle install those missing parts
@@ -273,6 +310,7 @@ try {
       'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace before finish-build exits while retaining output .deb files, built-package markers, and shared toolchain cache.',
       'build-bootstraps.sh uses libbz2, the pinned source recipe that emits the bzip2 command subpackage, instead of the removed packages/bzip2 recipe.',
       'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
+      'termux-tools exports Copper application/rootfs/cache/prefix/home/package-manager values before configure, preventing its generated interactive-login scripts from falling back to /data/data/com.termux.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
       'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
       'libacl 2.4.0 retains its pinned SHA-256 but downloads from the same HTTPS Savannah mirror instead of the repeatedly unavailable origin URL.',

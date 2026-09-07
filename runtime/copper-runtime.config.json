@@ -31,6 +31,28 @@
       "bin/termux-exec-ld-preload-lib",
       "lib/libtermux-exec.so",
       "SYMLINKS.txt"
+    ],
+    "startupTextMembers": [
+      {
+        "archivePath": "etc/profile.d/init-termux-properties.sh",
+        "requiredFragments": [
+          "/data/data/com.copper.chat/files/home/.termux",
+          "/data/data/com.copper.chat/files/usr/share/examples/termux/termux.properties"
+        ]
+      },
+      {
+        "archivePath": "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh",
+        "requiredFragments": [
+          "#!/data/data/com.copper.chat/files/usr/bin/bash",
+          "export TERMUX_PREFIX=\"/data/data/com.copper.chat/files/usr\""
+        ]
+      },
+      {
+        "archivePath": "etc/profile.d/01-termux-bootstrap-second-stage-fallback.sh",
+        "requiredFragments": [
+          "/data/data/com.copper.chat/files/usr/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh"
+        ]
+      }
     ]
   },
   "temporaryBuildMirror": {
