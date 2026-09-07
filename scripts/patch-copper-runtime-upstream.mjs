@@ -79,6 +79,9 @@ try {
   if (!/^[A-Za-z0-9._-]+$/.test(config.buildName)) {
     throw new Error(`runtime buildName must be a whitespace-free make-safe token, received ${JSON.stringify(config.buildName)}.`);
   }
+  if (config.packageManager !== 'apt') {
+    throw new Error(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
+  }
 
   let properties = readFileSync(propertiesPath, 'utf8');
   properties = replaceExactly(properties, 'TERMUX__NAME="Termux"', `TERMUX__NAME="${config.buildName}"`, 'runtime build name');
@@ -147,6 +150,34 @@ try {
     'PACKAGES+=("bzip2")',
     'PACKAGES+=("libbz2") # Emits the bzip2 command subpackage.',
     'bootstrap bzip2 source recipe migration'
+  );
+  // build-bootstraps.sh has its own archive-assembly path, unlike
+  // build-package.sh. It reads properties.sh but never calls the package-build
+  // variable setup that normally exports TERMUX_PACKAGE_MANAGER. Consequently
+  // its second-stage template substituted an empty manager, producing the
+  // on-device `[: -: unary operator expected` at the pacman branch. Fix only
+  // that missing initializer and keep the Copper apt selection explicit.
+  const bootstrapPropertyImports = [
+    '. "${TERMUX_SCRIPTDIR}"/scripts/properties.sh',
+    '. "${TERMUX_SCRIPTDIR}"/scripts/build/termux_step_handle_buildarch.sh',
+  ].join('\n');
+  const copperBootstrapPropertyImports = [
+    '. "${TERMUX_SCRIPTDIR}"/scripts/properties.sh',
+    `TERMUX_PACKAGE_MANAGER="${config.packageManager}"`,
+    'export TERMUX_PACKAGE_MANAGER',
+    '. "${TERMUX_SCRIPTDIR}"/scripts/build/termux_step_handle_buildarch.sh',
+  ].join('\n');
+  bootstrapBuild = replaceExactly(
+    bootstrapBuild,
+    bootstrapPropertyImports,
+    copperBootstrapPropertyImports,
+    'bootstrap second-stage package-manager initializer'
+  );
+  bootstrapBuild = replaceExactly(
+    bootstrapBuild,
+    'add_termux_bootstrap_second_stage_files "$package_arch"',
+    'add_termux_bootstrap_second_stage_files "$TERMUX_ARCH"',
+    'bootstrap second-stage architecture argument'
   );
   // run-docker mounts the repository root with the hosted runner's checkout
   // permissions. The package-builder has already proven output/ is writable
@@ -309,6 +340,7 @@ try {
       'TERMUX_APP__APP_IDENTIFIER=\"copper\"',
       'Optional COPPER_BOOTSTRAP_PRUNE_BUILD_TREES hook in build-package.sh to discard each completed package workspace before finish-build exits while retaining output .deb files, built-package markers, and shared toolchain cache.',
       'build-bootstraps.sh uses libbz2, the pinned source recipe that emits the bzip2 command subpackage, instead of the removed packages/bzip2 recipe.',
+      `build-bootstraps.sh explicitly exports TERMUX_PACKAGE_MANAGER=${config.packageManager} and passes TERMUX_ARCH to the second-stage template, preventing blank package-manager/architecture substitutions in the archived bootstrap script.`,
       'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
       'termux-tools exports Copper application/rootfs/cache/prefix/home/package-manager values before configure, preventing its generated interactive-login scripts from falling back to /data/data/com.termux.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',

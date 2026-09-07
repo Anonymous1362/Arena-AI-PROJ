@@ -49,6 +49,9 @@ try {
   if (!/^[A-Za-z0-9._-]+$/.test(config.buildName)) {
     fail(`runtime buildName must be a whitespace-free make-safe token; received ${JSON.stringify(config.buildName)}.`);
   }
+  if (config.packageManager !== 'apt') {
+    fail(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
+  }
   if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
     fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
@@ -61,6 +64,15 @@ try {
   }
 
   const bootstrapBuild = readFileSync(bootstrapBuildPath, 'utf8');
+  const expectedBootstrapManagerSetup = [
+    '. "${TERMUX_SCRIPTDIR}"/scripts/properties.sh',
+    `TERMUX_PACKAGE_MANAGER="${config.packageManager}"`,
+    'export TERMUX_PACKAGE_MANAGER',
+    '. "${TERMUX_SCRIPTDIR}"/scripts/build/termux_step_handle_buildarch.sh',
+  ].join('\n');
+  if (!bootstrapBuild.includes(expectedBootstrapManagerSetup) || !bootstrapBuild.includes('add_termux_bootstrap_second_stage_files "$TERMUX_ARCH"')) {
+    fail('Generated bootstrap does not initialize the second-stage package manager and target architecture. Refusing a script that can emit an empty manager/architecture and fail at login.');
+  }
   const expectedArchiveMove = 'mv -f "${BOOTSTRAP_TMPDIR}/bootstrap-${1}.zip" "$TERMUX_BUILT_DEBS_DIRECTORY/"';
   if (!bootstrapBuild.includes(expectedArchiveMove)) {
     fail('Generated bootstrap must export its final ZIP to the package-builder output/ directory, not the potentially non-writable repository root.');
@@ -197,6 +209,7 @@ try {
   }
 
   console.log('Copper completed-package pruning verified before upstream finish-build exits its subshell.');
+  console.log(`Copper bootstrap second-stage generation verified: ${config.packageManager} manager and ${config.architecture} architecture are explicit.`);
   console.log('Copper bootstrap archive export verified: package-builder output/ is used instead of the repository root.');
   console.log('Copper attr and libacl sources verified: HTTPS Savannah mirror with their upstream SHA-256 pins retained.');
   console.log(`Copper default bootstrap dependency closure verified: ${bootstrapDependencyRecipePaths.size} recipe roots, no raw Savannah origin URLs.`);

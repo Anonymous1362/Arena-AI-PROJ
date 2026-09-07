@@ -44,7 +44,9 @@
         "archivePath": "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh",
         "requiredFragments": [
           "#!/data/data/com.copper.chat/files/usr/bin/bash",
-          "export TERMUX_PREFIX=\"/data/data/com.copper.chat/files/usr\""
+          "export TERMUX_PREFIX=\"/data/data/com.copper.chat/files/usr\"",
+          "export TERMUX_PACKAGE_MANAGER=\"apt\"",
+          "export TERMUX_PACKAGE_ARCH=\"aarch64\""
         ]
       },
       {
