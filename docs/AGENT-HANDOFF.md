@@ -60,9 +60,9 @@ No normal Copper APK currently embeds a verified runtime ZIP. The Terminal's `bu
 Do not advance to delivery, package-repository, or broader runtime work until the
 current terminal defect is repaired and proven on a real arm64 phone.
 
-1. The fresh-source device-candidate run [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585) **failed** at the final bootstrap text-path gate; its device APK job was skipped. It is not an installable candidate.
-2. The investigated root cause is limited to post-render `termux-core` annotation markers and one legacy `termux-exec` diagnostic-comment path. The deterministic repair keeps final archive validation strict and fails closed if either value survives.
-3. Run a new `[runtime-device-candidate]` source build. Only after its same-run source bootstrap, Android installer validation, arm64 APK build, and artifact upload pass may its APK be used.
+1. The first fresh-source device-candidate run [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585) **failed** at the final bootstrap text-path gate; its device APK job was skipped. It is not an installable candidate.
+2. The post-render `termux-core` annotation markers and `termux-exec` diagnostic-comment path are repaired deterministically without weakening archive validation. The next candidate run, [`34232466141`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34232466141), progressed beyond that failure but hit a Salsa HTTP 503 / incomplete-packfile error while cloning the pinned dpkg source.
+3. The exact `dpkg` 1.22.6 fallback is the official maintainer GitHub mirror, whose signed tag resolves to the same Salsa commit (`b2f9600…`). The patched recipe checks the full commit after clone; run a new `[runtime-device-candidate]` source build. Only after its same-run source bootstrap, Android installer validation, arm64 APK build, and artifact upload pass may its APK be used.
 4. On a real arm64 phone, install that exact artifact and record the terminal acceptance matrix: multi-character text, special characters, backspace/editing, Enter/Send, live Bash output, Ctrl-C, and an intentional exited-session diagnostic. Also confirm the keyboard leaves both Terminal and Chat composers reachable and pull-down panel dismissal is smooth.
 5. Do not describe Phase 0 as complete, the runtime as device-validated, or a candidate as released until that physical-device matrix passes. Preserve the manual Terminal/SAF boundary throughout.
 

@@ -64,8 +64,8 @@ the project owner's physical arm64 phone test. It embeds the exact verified
 Copper source-build bootstrap and labels itself a personal candidate in the
 Terminal screen.
 
-**There is currently no approved device-candidate APK to install.** The latest
-fresh-source candidate run, [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585), failed its archive text-path gate, so its candidate-APK job was correctly skipped. It found unresolved post-render `termux-core` annotation markers and a legacy Termux path in the generated `termux-exec-ld-preload-lib` helper. The deterministic source repair is being rebuilt; use only the subsequent same-run `Copper-runtime-device-candidate` artifact after all CI gates pass.
+**There is currently no approved device-candidate APK to install.** The first
+fresh-source candidate run, [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585), failed its archive text-path gate, so its candidate-APK job was correctly skipped. It found unresolved post-render `termux-core` annotation markers and a legacy Termux path in the generated `termux-exec-ld-preload-lib` helper. The source-level repair passed its reproduction checks, but the follow-up run [`34232466141`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34232466141) later encountered a Salsa HTTP 503 while cloning the pinned dpkg source. Its candidate-APK job was also correctly skipped. Use only the subsequent same-run `Copper-runtime-device-candidate` artifact after all CI gates pass.
 
 It is deliberately different from both the ordinary UI test APK and a future
 runtime release: it must not be redistributed or presented as released, and it

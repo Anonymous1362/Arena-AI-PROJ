@@ -37,6 +37,7 @@ const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
 const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
+const dpkgRecipePath = resolve(packagesRoot, 'packages/dpkg/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
@@ -300,6 +301,41 @@ try {
   );
   writeFileSync(termuxExecRecipePath, termuxExecRecipe);
 
+  // The first rebuilt candidate passed the text-path failure point but its
+  // source bootstrap later failed while cloning dpkg from Salsa (HTTP 503 and
+  // an incomplete packfile). Dpkg's official maintainer mirror on GitHub has
+  // the same signed 1.22.6 tag/commit, so change only this unavailable host and
+  // assert the exact reviewed commit after clone. This is a reproducible source
+  // fallback, not an unpinned alternate package or a broad Git URL rewrite.
+  let dpkgRecipe = readFileSync(dpkgRecipePath, 'utf8');
+  dpkgRecipe = replaceExactly(
+    dpkgRecipe,
+    'TERMUX_PKG_SRCURL=git+https://salsa.debian.org/dpkg-team/dpkg.git',
+    'TERMUX_PKG_SRCURL=git+https://github.com/guillemj/dpkg.git',
+    'dpkg 1.22.6 official GitHub mirror'
+  );
+  const dpkgPreConfigure = 'termux_step_pre_configure() {';
+  const copperDpkgPostGetSource = [
+    'termux_step_post_get_source() {',
+    '\tlocal copper_dpkg_expected_revision="b2f9600ead232a2dd3c27f8b52807a9ca5854d17"',
+    '\tlocal copper_dpkg_actual_revision',
+    '\tcopper_dpkg_actual_revision="$(git -C "$TERMUX_PKG_SRCDIR" rev-parse HEAD)" || return $?',
+    '\tif [ "$copper_dpkg_actual_revision" != "$copper_dpkg_expected_revision" ]; then',
+    '\t\techo "ERROR: dpkg 1.22.6 mirror revision mismatch: expected $copper_dpkg_expected_revision, got $copper_dpkg_actual_revision" >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '}',
+    '',
+    'termux_step_pre_configure() {',
+  ].join('\n');
+  dpkgRecipe = replaceExactly(
+    dpkgRecipe,
+    dpkgPreConfigure,
+    copperDpkgPostGetSource,
+    'dpkg post-clone revision verification hook'
+  );
+  writeFileSync(dpkgRecipePath, dpkgRecipe);
+
   // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
   // build-tools 30.0.3. The pinned package-builder image intentionally ships
   // newer common SDK parts instead. Letting Gradle install those missing parts
@@ -418,6 +454,7 @@ try {
       'termux-tools exports Copper application/rootfs/cache/prefix/home/package-manager values before configure, preventing its generated interactive-login scripts from falling back to /data/data/com.termux.',
       'termux-core normalizes only post-render annotation labels in its installed scripts and then rejects any remaining unquoted @TERMUX_*@ runtime placeholder before packaging.',
       'termux-exec repaths its installed ld-preload management script’s historical diagnostic comment to the configured Copper prefix and rejects any remaining legacy com.termux path before packaging.',
+      'dpkg 1.22.6 is cloned from the official GitHub maintainer mirror after the Salsa host returned HTTP 503; its signed tag’s exact b2f9600… commit is checked after clone.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
       'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
       'libacl 2.4.0 retains its pinned SHA-256 but downloads from the same HTTPS Savannah mirror instead of the repeatedly unavailable origin URL.',

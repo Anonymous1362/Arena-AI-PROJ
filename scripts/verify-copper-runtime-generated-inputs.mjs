@@ -37,6 +37,7 @@ const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
 const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
+const dpkgRecipePath = resolve(packagesRoot, 'packages/dpkg/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
@@ -53,8 +54,8 @@ try {
   if (config.packageManager !== 'apt') {
     fail(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(dpkgRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, dpkg recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -206,6 +207,23 @@ try {
   ];
   if (expectedTermuxExecRuntimeTextRepairFragments.some((fragment) => !termuxExecRecipe.includes(fragment))) {
     fail('Generated termux-exec recipe does not retain the installed script legacy-path repair and fail-closed check.');
+  }
+
+  // Salsa returned HTTP 503 while the full bootstrap cloned dpkg. The selected
+  // GitHub maintainer mirror exposes the same signed 1.22.6 tag target, and the
+  // generated recipe must verify that exact commit after cloning it.
+  const dpkgRecipe = readFileSync(dpkgRecipePath, 'utf8');
+  const expectedDpkgMirrorRepair = [
+    'TERMUX_PKG_SRCURL=git+https://github.com/guillemj/dpkg.git',
+    'TERMUX_PKG_GIT_BRANCH="${TERMUX_PKG_VERSION}"',
+    'termux_step_post_get_source() {',
+    '\tlocal copper_dpkg_expected_revision="b2f9600ead232a2dd3c27f8b52807a9ca5854d17"',
+    '\tcopper_dpkg_actual_revision="$(git -C "$TERMUX_PKG_SRCDIR" rev-parse HEAD)" || return $?',
+    '\tif [ "$copper_dpkg_actual_revision" != "$copper_dpkg_expected_revision" ]; then',
+    '\t\techo "ERROR: dpkg 1.22.6 mirror revision mismatch: expected $copper_dpkg_expected_revision, got $copper_dpkg_actual_revision" >&2',
+  ];
+  if (expectedDpkgMirrorRepair.some((fragment) => !dpkgRecipe.includes(fragment)) || dpkgRecipe.includes('salsa.debian.org/dpkg-team/dpkg.git')) {
+    fail('Generated dpkg recipe does not use the reviewed GitHub 1.22.6 mirror with its fail-closed post-clone revision check.');
   }
 
   // Use the same unquoted expansion as upstream termux_step_make. NUL output
