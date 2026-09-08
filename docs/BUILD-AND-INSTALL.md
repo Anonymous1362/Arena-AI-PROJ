@@ -64,8 +64,13 @@ the project owner's physical arm64 phone test. It embeds the exact verified
 Copper source-build bootstrap and labels itself a personal candidate in the
 Terminal screen.
 
-**There is currently no approved device-candidate APK to install.** The first
-fresh-source candidate run, [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585), failed its archive text-path gate, so its candidate-APK job was correctly skipped. It found unresolved post-render `termux-core` annotation markers and a legacy Termux path in the generated `termux-exec-ld-preload-lib` helper. The source-level repair passed its reproduction checks, but the follow-up run [`34232466141`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34232466141) later encountered a Salsa HTTP 503 while cloning the pinned dpkg source. Its candidate-APK job was also correctly skipped. Use only the subsequent same-run `Copper-runtime-device-candidate` artifact after all CI gates pass.
+**One personal device-candidate APK is available solely for Phase 0 testing.**
+It is the `Copper-runtime-device-candidate` artifact from successful
+[`CI run 34241766195`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34241766195), built from commit
+[`2064665`](https://github.com/Anonymous1362/Arena-AI-PROJ/commit/2064665cc4bc7b8a12457b2869272bf995333310). The arm64 source bootstrap, bundled Android-emulator installation validation, and candidate APK build all passed in that **same run**. Install only that exact named artifact for the physical-device acceptance matrix; older candidate runs failed and are invalid.
+
+This artifact is not a release, redistribution build, or evidence that Phase 0
+is complete. The remaining physical arm64-phone validation must still prove terminal input/session lifecycle behavior, usable Terminal and Chat composers under the keyboard, and smooth pull-down dismissal.
 
 It is deliberately different from both the ordinary UI test APK and a future
 runtime release: it must not be redistributed or presented as released, and it
