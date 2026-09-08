@@ -12,7 +12,7 @@ on:
       failed_run_id:
         description: "Failed run ID whose copper-runtime-bootstrap-build-log artifact should be relayed"
         required: true
-        default: "33846718528"
+        default: "34232466141"
         type: string
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
     env:
       # Push-triggered runs deliberately diagnose the incident that motivated
       # this workflow. Manual invocations can choose any retained failed run.
-      COPPER_FAILED_RUN_ID: ${{ inputs.failed_run_id || '33846718528' }}
+      COPPER_FAILED_RUN_ID: ${{ inputs.failed_run_id || '34232466141' }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Download retained failed bootstrap log
