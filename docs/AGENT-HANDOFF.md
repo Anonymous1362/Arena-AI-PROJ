@@ -55,18 +55,18 @@ The API-35 x86_64 GitHub emulator can validate installer behavior for the real a
 
 No normal Copper APK currently embeds a verified runtime ZIP. The Terminal's `bundle_missing` state is correct. Do not claim the user can yet install packages from a standard released build.
 
-## Current next phase — durable arm64 device delivery
+## Current phase — Phase 0 terminal stabilization
 
-Proceed in this order:
+Do not advance to delivery, package-repository, or broader runtime work until the
+current terminal defect is repaired and proven on a real arm64 phone.
 
-1. The local release-promotion gate is complete. Establish the actual Copper-controlled durable, immutable HTTPS asset/source delivery locations; do not use the expiring GitHub Actions artifact as an end-user channel.
-2. Complete the GPL/source and release-artifact obligations for the exact distributed bootstrap.
-3. Generate an offline Copper archive signing key and configure the real HTTPS package repository. Commit only the public key/fingerprint.
-4. Run `runtime:promote-release` only with the exact verified source-build ZIP/manifest and complete corresponding source, then independently verify the uploaded immutable bytes.
-5. Stage only that verified publishable release asset into an arm64 device-candidate APK.
-6. On a real arm64 phone, run the Copper Bash PTY test and manually verify terminal input/output/Ctrl-C plus SD-card project start directory.
-7. Add managed preflight/monitoring for live `pkg`/APT operations under the 2 GiB budget.
-8. Add the remaining explicit workspace-runner manifest, action logs, confirmations, cancellation, and escape/failure tests without weakening the already-enforced SAF boundary or exposing the Manual Terminal PTY to AI tools.
+1. The fresh-source device-candidate run [`34155773585`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34155773585) **failed** at the final bootstrap text-path gate; its device APK job was skipped. It is not an installable candidate.
+2. The investigated root cause is limited to post-render `termux-core` annotation markers and one legacy `termux-exec` diagnostic-comment path. The deterministic repair keeps final archive validation strict and fails closed if either value survives.
+3. Run a new `[runtime-device-candidate]` source build. Only after its same-run source bootstrap, Android installer validation, arm64 APK build, and artifact upload pass may its APK be used.
+4. On a real arm64 phone, install that exact artifact and record the terminal acceptance matrix: multi-character text, special characters, backspace/editing, Enter/Send, live Bash output, Ctrl-C, and an intentional exited-session diagnostic. Also confirm the keyboard leaves both Terminal and Chat composers reachable and pull-down panel dismissal is smooth.
+5. Do not describe Phase 0 as complete, the runtime as device-validated, or a candidate as released until that physical-device matrix passes. Preserve the manual Terminal/SAF boundary throughout.
+
+Later delivery/release tasks remain blocked until Phase 0 is closed.
 
 ## Commands worth running before a change
 

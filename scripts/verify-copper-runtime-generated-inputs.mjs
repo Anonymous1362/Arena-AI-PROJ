@@ -36,6 +36,7 @@ const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
+const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
@@ -52,8 +53,8 @@ try {
   if (config.packageManager !== 'apt') {
     fail(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -171,6 +172,40 @@ try {
   ].join('\n');
   if (!termuxToolsRecipe.includes(expectedTermuxToolsPreConfigure)) {
     fail('Generated termux-tools recipe does not export Copper paths before configure. Refusing a bootstrap whose interactive login can fall back to /data/data/com.termux.');
+  }
+
+  // termux-core injects its shared shell helpers after its first source render.
+  // The Copper hook may only rename the known annotation-comment markers; it
+  // must fail closed if any real unquoted @TERMUX_*@ placeholder remains in
+  // the installed scripts that will be packaged into the bootstrap.
+  const termuxCoreRecipe = readFileSync(termuxCoreRecipePath, 'utf8');
+  const expectedTermuxCoreRuntimeTextRepairFragments = [
+    'termux_step_post_make_install() {',
+    '\tlocal copper_core_scripts="$TERMUX_PREFIX/bin"',
+    '\twhile IFS= read -r -d "" copper_core_script; do',
+    '\t\tsed -E -i \'/^[[:space:]]*##### .*replaced at build time\\./ s/@(TERMUX[A-Z0-9_]*)@/[\\1]/g\' "$copper_core_script"',
+    '\tdone < <(find "$copper_core_scripts" -maxdepth 1 -type f -print0)',
+    '\tif grep -R -E -n \'@TERMUX(_[A-Z0-9_]+)?@\' "$copper_core_scripts"; then',
+    '\t\techo "ERROR: termux-core retained an unresolved runtime placeholder." >&2',
+  ];
+  if (expectedTermuxCoreRuntimeTextRepairFragments.some((fragment) => !termuxCoreRecipe.includes(fragment))) {
+    fail('Generated termux-core recipe does not retain the narrow post-render runtime-placeholder repair and fail-closed check.');
+  }
+
+  // termux-exec has one historical Termux path in an installed script comment.
+  // Repath the generated runtime member itself and fail closed rather than
+  // weakening the final archive path scan.
+  const termuxExecRecipe = readFileSync(termuxExecRecipePath, 'utf8');
+  const expectedTermuxExecRuntimeTextRepairFragments = [
+    'termux_step_post_make_install() {',
+    '\tlocal copper_exec_script="$TERMUX_PREFIX/bin/termux-exec-ld-preload-lib"',
+    '\tlocal copper_legacy_runtime_path="/data/data/com.termux/files/usr"',
+    '\tsed -i "s|$copper_legacy_runtime_path|$TERMUX__PREFIX|g" "$copper_exec_script"',
+    '\tif grep -F -q "$copper_legacy_runtime_path" "$copper_exec_script"; then',
+    '\t\techo "ERROR: termux-exec retained a legacy com.termux runtime path." >&2',
+  ];
+  if (expectedTermuxExecRuntimeTextRepairFragments.some((fragment) => !termuxExecRecipe.includes(fragment))) {
+    fail('Generated termux-exec recipe does not retain the installed script legacy-path repair and fail-closed check.');
   }
 
   // Use the same unquoted expansion as upstream termux_step_make. NUL output

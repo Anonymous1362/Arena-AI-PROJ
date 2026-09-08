@@ -35,6 +35,8 @@ const propertiesPath = resolve(packagesRoot, 'scripts/properties.sh');
 const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
+const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
+const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
@@ -227,6 +229,77 @@ try {
   );
   writeFileSync(termuxToolsRecipePath, termuxToolsRecipe);
 
+  // termux-core injects reusable shell functions after its first constant
+  // substitution pass. Its upstream marker comments intentionally preserve
+  // `@TERMUX_*@` labels, which made the Copper archive validation correctly
+  // reject the resulting runtime files as unresolved placeholders. Normalise
+  // only those generated comment labels after `make install`; real executable
+  // placeholders still remain failures, both here and in archive validation.
+  let termuxCoreRecipe = readFileSync(termuxCoreRecipePath, 'utf8');
+  const termuxCoreAutoUpdate = 'TERMUX_PKG_AUTO_UPDATE=true\n';
+  const copperTermuxCoreRuntimeTextRepair = [
+    'TERMUX_PKG_AUTO_UPDATE=true',
+    '',
+    'termux_step_post_make_install() {',
+    '\t# termux-core adds reusable functions after the initial source render.',
+    '\t# Rename only their literal annotation labels; do not mask executable placeholders.',
+    '\tlocal copper_core_scripts="$TERMUX_PREFIX/bin"',
+    '\tif [ ! -d "$copper_core_scripts" ]; then',
+    '\t\techo "ERROR: termux-core installed script directory is missing: $copper_core_scripts" >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '\tlocal copper_core_script',
+    '\twhile IFS= read -r -d \"\" copper_core_script; do',
+    '\t\tsed -E -i \'/^[[:space:]]*##### .*replaced at build time\\./ s/@(TERMUX[A-Z0-9_]*)@/[\\1]/g\' "$copper_core_script"',
+    '\tdone < <(find "$copper_core_scripts" -maxdepth 1 -type f -print0)',
+    '\tif grep -R -E -n \'@TERMUX(_[A-Z0-9_]+)?@\' "$copper_core_scripts"; then',
+    '\t\techo "ERROR: termux-core retained an unresolved runtime placeholder." >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '}',
+    '',
+  ].join('\n');
+  termuxCoreRecipe = replaceExactly(
+    termuxCoreRecipe,
+    termuxCoreAutoUpdate,
+    copperTermuxCoreRuntimeTextRepair,
+    'termux-core generated runtime placeholder-label repair hook'
+  );
+  writeFileSync(termuxCoreRecipePath, termuxCoreRecipe);
+
+  // termux-exec's generated management script contains a historical Termux
+  // path in a diagnostic comment. The comment is not executable, but it would
+  // make the runtime archive ambiguous and violate the Copper path gate. Repath
+  // the actual generated member after Make has produced it, then fail if that
+  // exact legacy path remains. No executable check is bypassed or ignored.
+  let termuxExecRecipe = readFileSync(termuxExecRecipePath, 'utf8');
+  const termuxExecAutoUpdate = 'TERMUX_PKG_AUTO_UPDATE=true\n';
+  const copperTermuxExecRuntimeTextRepair = [
+    'TERMUX_PKG_AUTO_UPDATE=true',
+    '',
+    'termux_step_post_make_install() {',
+    '\tlocal copper_exec_script="$TERMUX_PREFIX/bin/termux-exec-ld-preload-lib"',
+    '\tlocal copper_legacy_runtime_path="/data/data/com.termux/files/usr"',
+    '\tif [ ! -f "$copper_exec_script" ]; then',
+    '\t\techo "ERROR: termux-exec generated script is missing: $copper_exec_script" >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '\tsed -i "s|$copper_legacy_runtime_path|$TERMUX__PREFIX|g" "$copper_exec_script"',
+    '\tif grep -F -q "$copper_legacy_runtime_path" "$copper_exec_script"; then',
+    '\t\techo "ERROR: termux-exec retained a legacy com.termux runtime path." >&2',
+    '\t\treturn 1',
+    '\tfi',
+    '}',
+    '',
+  ].join('\n');
+  termuxExecRecipe = replaceExactly(
+    termuxExecRecipe,
+    termuxExecAutoUpdate,
+    copperTermuxExecRuntimeTextRepair,
+    'termux-exec generated runtime legacy-path repair hook'
+  );
+  writeFileSync(termuxExecRecipePath, termuxExecRecipe);
+
   // termux-am uses Android Gradle Plugin 7.4, which requires platform 33 and
   // build-tools 30.0.3. The pinned package-builder image intentionally ships
   // newer common SDK parts instead. Letting Gradle install those missing parts
@@ -343,6 +416,8 @@ try {
       `build-bootstraps.sh explicitly exports TERMUX_PACKAGE_MANAGER=${config.packageManager} and passes TERMUX_ARCH to the second-stage template, preventing blank package-manager/architecture substitutions in the archived bootstrap script.`,
       'build-bootstraps.sh exports bootstrap-<arch>.zip to output/, the package-builder writable output directory, instead of the repository-root bind mount.',
       'termux-tools exports Copper application/rootfs/cache/prefix/home/package-manager values before configure, preventing its generated interactive-login scripts from falling back to /data/data/com.termux.',
+      'termux-core normalizes only post-render annotation labels in its installed scripts and then rejects any remaining unquoted @TERMUX_*@ runtime placeholder before packaging.',
+      'termux-exec repaths its installed ld-preload management script’s historical diagnostic comment to the configured Copper prefix and rejects any remaining legacy com.termux path before packaging.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
       'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
       'libacl 2.4.0 retains its pinned SHA-256 but downloads from the same HTTPS Savannah mirror instead of the repeatedly unavailable origin URL.',
