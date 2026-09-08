@@ -136,14 +136,29 @@ on-device equivalents instead of being left on the list:
 
 Re-opened 2026-09-09 because a physical-device smoke test surfaced real bugs and one unresolved provenance question. **Do not mark this phase closed again until every item below is checked with real evidence.**
 
-### ⚠️ Open blocker: confirm the tested APK is actually current
+### ✅ RESOLVED — tested APK was built from the old `v1.0.0` tag, not current code
 
-Round 1 below was run against a **161 MB APK, downloaded from a workflow run showing 2 artifacts**. Nothing observed in that session — `Starting fallback run of termux bootstrap second stage`, `writeRuntimeSession`, the CPAN/Perl `dpkg-perl` postinst failure calling `Makefile.PL` via `linker64` — has any match anywhere in current `main` (checked as of commit `f5c5fcc`, 2026-09-02, via repo-wide code search). Every commit since Phase 5 explicitly documents *removing* Termux in favor of `copper-pty` + the built-in JS shell, and `docs/TERMINAL-AND-CODING-AGENTS.md` states plainly there is no Termux path. The current `android-apk.yml` workflow uploads exactly **one** artifact (`Copper-android`) — a run showing 2 artifacts is itself a signal this may be an older workflow revision.
+Root cause confirmed by comparing tags, not just guessed:
 
-- [ ] Open the **Actions** tab → find the specific workflow run that produced the installed APK → note the commit SHA at the top of that run
-- [ ] Compare that SHA against `f5c5fcc…` (Phase 6 merge, 2026-09-02) — if older, every Round 1 result below is against stale/superseded code and needs a full retest, not just a partial one
-- [ ] If stale: trigger a fresh `workflow_dispatch` run of `android-apk.yml` on current `main`, download the new `Copper-android` artifact, reinstall over the old copy, and re-run every check in Round 1
-- [ ] If it turns out to be current (surprising given the above): the Termux bootstrap failure is a real, reproducible bug with no matching source in `src/`, `modules/`, or `assets/` — start by trying `expo prebuild -p android --clean` against a fully wiped `android/` + `node_modules`, since a stale native-module cache injected at prebuild time is the next most likely explanation
+| Tag | Commit | Date (UTC) | Contains |
+|---|---|---|---|
+| `v1.0.0` | `70aa4d1` | 2026-09-02 02:31 | Phase 1 + CI/CD + Phase 3 **only** — predates Phase 4, 5, 5.1, 6 entirely |
+| `v1.1.0` | `9b40aab` | 2026-09-02 10:31 | Everything through Phase 6 (Termux removal, `copper-pty`, keyboard-inset rework, ANSI terminal, all of it) |
+
+The 161 MB APK almost certainly came from **`v1.0.0`**. That explains both open questions at once:
+- **The Termux bootstrap / `writeRuntimeSession` output** — real leftover behavior from the original pre-Phase-5 terminal implementation (PR #1's install docs even mention "Termux" as a build path). It was fully replaced in Phase 5/6, which `v1.0.0` predates. Not a live bug — just old code.
+- **"2 artifacts in the workflow section"** — pushing any `v*` tag fires **both** `android-apk.yml` and `ios-ipa.yml` simultaneously (each uploads exactly 1 artifact). Landing on the `v1.0.0` tag's checks page shows both runs together — 2 artifacts, only one of which (`Copper-android`) is Android's.
+
+**Action, Android-only (per user's request, not touching iOS/web tags):**
+- [ ] Don't reuse `v1.0.0` or cut a new tag (a new tag re-triggers iOS + web too). Instead, run `android-apk.yml` via **workflow_dispatch** directly off `main` — Actions tab → Android APK → Run workflow → branch `main`.
+- [ ] Download the resulting `Copper-android` artifact, reinstall over the old APK, and re-run every check in Round 1 from scratch — Round 1's results below are against Phase-3-era code and don't reflect current keyboard/terminal work either way.
+
+### ⚠️ New — user reports a failed Android workflow run (2026-09-09), log not yet captured
+
+Claude has no GitHub Actions run/log API in its current toolset (only repo contents, commits, tags, PRs) — could not pull the failure output directly. Needs the actual error text pasted in, or Arena agent (which can run this locally) to reproduce.
+
+- [ ] Paste the failing step name + error output from the run into this section (or have Arena agent fetch it) so the next pass can diagnose instead of guess
+- [ ] Once logged: common failure points for *this exact* `android-apk.yml` pipeline (Node 22 + `expo prebuild -p android --clean` + `gradlew assembleRelease`, all Android-scoped, no iOS/web involved) worth checking first — Gradle/AGP version drift after `prebuild --clean` regenerates `android/`, a native module (`copper-pty`) missing an Android manifest entry or failing to autolink, `--no-daemon` OOM against the 4g heap cap, or a dependency lockfile mismatch surfacing only in `npm ci`'s stricter install
 
 ### Round 1 — 2026-09-08/09 (tested by user, physical arm64 phone)
 
@@ -156,7 +171,7 @@ Round 1 below was run against a **161 MB APK, downloaded from a workflow run sho
   - [ ] No sheet/panel dismisses on outside-tap (tapping the background scrim) anywhere tested — only swipe-down or an explicit close button works. Check the shared bottom-sheet/modal component for a missing backdrop-press handler; this is likely one shared component, so one fix should cover every panel.
 - [x] **5. Pull-down/panel open, drag, dismiss animation** — smooth, no jump or glitchy closure. Confirmed working.
 
-**Next agent picking this up:** start with the open blocker above, not the numbered items — none of Round 1's results can be fully trusted until APK provenance is confirmed either way.
+**Next agent picking this up:** Round 1 was run against `v1.0.0` (pre-Phase-4/5/6 code) — confirmed, not suspected, now. Items 1, 2, 5 (input/send, session lifecycle, panel animation) are still reasonably good signal since that plumbing hasn't changed much. Items 3 (interrupt) and 4 (keyboard occlusion) must be fully retested on a `main`-built APK before doing any fix work — Phase 5 already touched keyboard insets once and item 4's Terminal-vs-Chat composer gap may or may not still exist post-Phase-5.
 
 ---
 
