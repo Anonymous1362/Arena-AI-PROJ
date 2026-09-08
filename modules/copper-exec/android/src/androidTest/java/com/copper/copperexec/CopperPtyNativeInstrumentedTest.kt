@@ -87,29 +87,40 @@ class CopperPtyNativeInstrumentedTest {
       val prefix = File(context.filesDir, "usr")
       val receivedOutput = StringBuilder()
       val receivedPrompt = CountDownLatch(1)
+      val receivedPerlCaretX = CountDownLatch(1)
       val cwd = context.cacheDir.apply { mkdirs() }
       val session = CopperRuntimeSessions.start(context, cwd, rows = 24, columns = 80) { event, body ->
         if (event == "runtimeOutput") {
           synchronized(receivedOutput) {
             receivedOutput.append(body["data"] as? String ?: "")
             if (receivedOutput.contains("copper-runtime-bash-ok:")) receivedPrompt.countDown()
+            if (receivedOutput.contains("copper-runtime-perl-caret-x:")) receivedPerlCaretX.countDown()
           }
         }
       }
       val sessionId = session["id"] as String
       try {
+        val runtimeProbe = """printf 'copper-runtime-bash-ok:%s\n' "${'$'}PREFIX"; "${'$'}PREFIX/bin/perl" -e 'print "copper-runtime-perl-caret-x:${'$'}^X\n"'""" + "\n"
         assertTrue(
           "Copper Bash must receive input through its PTY.",
-          CopperRuntimeSessions.write(sessionId, "printf 'copper-runtime-bash-ok:%s\\n' \"\$PREFIX\"\n") > 0
+          CopperRuntimeSessions.write(sessionId, runtimeProbe) > 0
         )
         assertTrue(
           "Copper Bash output was: $receivedOutput",
           receivedPrompt.await(20, TimeUnit.SECONDS)
         )
+        assertTrue(
+          "Copper Perl \$^X probe did not return; output was: $receivedOutput",
+          receivedPerlCaretX.await(20, TimeUnit.SECONDS)
+        )
         synchronized(receivedOutput) {
           assertTrue(
             "Copper Bash must use Copper's private prefix, output was: $receivedOutput",
             receivedOutput.contains("copper-runtime-bash-ok:${prefix.absolutePath}")
+          )
+          assertTrue(
+            "System-linker Perl must expose its real executable as \$^X; output was: $receivedOutput",
+            receivedOutput.contains("copper-runtime-perl-caret-x:${prefix.absolutePath}/bin/perl")
           )
         }
       } finally {
@@ -121,8 +132,69 @@ class CopperPtyNativeInstrumentedTest {
   }
 
   /**
+   * Verifies the terminal-control byte used by the visible Ctrl C affordance.
+   * This is a PTY foreground-process test, not a synthetic native signal: the
+   * running shell must receive byte 0x03 from the same bridge used by the
+   * terminal composer and report an interrupted exit.
+   */
+  @Test(timeout = 15_000)
+  fun sendsCtrlCToTheForegroundPtyProcess() {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val cwd = context.cacheDir.apply { mkdirs() }
+    val linker = if (Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) "/system/bin/linker64" else "/system/bin/linker"
+    val process = CopperPtyNative.nativeCreate(
+      linker,
+      cwd.absolutePath,
+      arrayOf(
+        linker,
+        "/system/bin/sh",
+        "-c",
+        """trap 'printf "copper-pty-interrupted\n"; exit 130' INT; printf 'copper-pty-ready\n'; while :; do sleep 30; done"""
+      ),
+      arrayOf(
+        "HOME=${cwd.absolutePath}",
+        "PATH=/system/bin:/system/xbin",
+        "TERM=xterm-256color",
+        "TMPDIR=${cwd.absolutePath}"
+      ),
+      rows = 24,
+      columns = 80
+    )
+
+    assertEquals("Native PTY must return a descriptor and child PID.", 2, process.size)
+    assertTrue("Native PTY descriptor must be non-negative.", process[0] >= 0)
+    assertTrue("Native PTY child PID must be positive.", process[1] > 0)
+    val output = StringBuilder()
+    val ready = CountDownLatch(1)
+    val reader = Thread {
+      val buffer = ByteArray(4 * 1024)
+      while (true) {
+        val count = CopperPtyNative.nativeRead(process[0], buffer)
+        if (count <= 0) break
+        synchronized(output) {
+          output.append(String(buffer, 0, count, StandardCharsets.UTF_8))
+          if (output.contains("copper-pty-ready")) ready.countDown()
+        }
+      }
+    }.apply { start() }
+
+    try {
+      assertTrue("Foreground shell never became ready; output was: $output", ready.await(5, TimeUnit.SECONDS))
+      val ctrlC = byteArrayOf(3)
+      assertEquals("PTY must deliver Ctrl C byte 0x03.", ctrlC.size, CopperPtyNative.nativeWrite(process[0], ctrlC))
+      assertEquals("Foreground shell must exit from Ctrl C.", 130, CopperPtyNative.nativeWait(process[1]))
+      reader.join(2_000)
+      synchronized(output) {
+        assertTrue("PTY output was: $output", output.contains("copper-pty-interrupted"))
+      }
+    } finally {
+      CopperPtyNative.nativeClose(process[0])
+    }
+  }
+
+  /**
    * Storage accounting is deliberately tested without a bundled bootstrap, so
-   * cache/home/repair measurements remain covered by Android instrumentation.
+   * cache/home/repair measurements remain covered by Android instrumentation,
    * The added leaf files are unique and cleaned up without touching a real
    * prefix.
    */
@@ -175,11 +247,12 @@ class CopperPtyNativeInstrumentedTest {
     // This mirrors the supported Android-10+ launch route for the Copper
     // runtime: exec the read-only system linker, which then loads the target.
     // It proves the PTY bridge preserves linker arguments and interactive I/O.
+    // The launched shell must receive its own target path as argv[0], never linker64.
     val linker = if (Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()) "/system/bin/linker64" else "/system/bin/linker"
     val process = CopperPtyNative.nativeCreate(
       linker,
       cwd.absolutePath,
-      arrayOf(linker, "/system/bin/sh", "-c", "read value; printf 'copper-pty-reply:%s\\n' \"\$value\"; exit 23"),
+      arrayOf(linker, "/system/bin/sh", "-c", "read value; printf 'copper-pty-reply:%s:%s\\n' \"\$value\" \"\$0\"; exit 23"),
       arrayOf(
         "HOME=${cwd.absolutePath}",
         "PATH=/system/bin:/system/xbin",
@@ -209,7 +282,10 @@ class CopperPtyNativeInstrumentedTest {
       }
 
       val terminalOutput = output.toString(StandardCharsets.UTF_8.name())
-      assertTrue("PTY output was: $terminalOutput", terminalOutput.contains("copper-pty-reply:copper-pty-input"))
+      assertTrue(
+        "PTY output must preserve target argv[0], not the linker path: $terminalOutput",
+        terminalOutput.contains("copper-pty-reply:copper-pty-input:/system/bin/sh")
+      )
       assertEquals(23, CopperPtyNative.nativeWait(process[1]))
     } finally {
       CopperPtyNative.nativeClose(descriptor)

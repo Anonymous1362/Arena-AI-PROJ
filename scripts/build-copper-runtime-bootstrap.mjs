@@ -379,6 +379,26 @@ try {
   }
   console.log(`Copper runtime text-path scan verified: ${inspectedRuntimeTextMembers} executable/configuration text members contain no legacy Termux root or unresolved bootstrap placeholder.`);
 
+  // This is the post-build regression evidence for the actual on-device
+  // failure: Perl uses /proc/self/exe for $^X, while termux-exec launches
+  // private ELF files through Android's linker. The compiled runtime must
+  // therefore retain the explicit termux-exec target-path contract before we
+  // ever present another arm64 bootstrap for physical-device testing.
+  const perlBinary = spawnSync('unzip', ['-p', expectedArchive, 'bin/perl'], {
+    encoding: 'buffer',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (perlBinary.status !== 0 || perlBinary.error) {
+    throw new Error(`Could not read compiled bin/perl for system-linker $^X validation:\n${commandFailureDetails(perlBinary)}`);
+  }
+  if (!perlBinary.stdout.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+    throw new Error('Compiled bin/perl is not a direct ELF archive member; review the system-linker $^X regression check deliberately.');
+  }
+  if (!perlBinary.stdout.includes(Buffer.from('TERMUX_EXEC__PROC_SELF_EXE'))) {
+    throw new Error('Compiled bin/perl is missing the TERMUX_EXEC__PROC_SELF_EXE $^X repair. Refusing the known-broken CPAN bootstrap path.');
+  }
+  console.log('Copper compiled Perl regression verified: system-linker $^X repair is present for CPAN child execution.');
+
   for (const requiredFile of config.bootstrap.requiredFiles) {
     const normalizedRequiredFile = normalizedArchivePath(requiredFile);
     if (!normalizedRequiredFile) throw new Error(`Unsafe configured required runtime entry: ${requiredFile}`);

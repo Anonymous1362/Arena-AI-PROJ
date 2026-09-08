@@ -1,167 +1,197 @@
-# Copper — Plain-English Delivery Roadmap
+# Copper Runtime — Device Readiness Roadmap
 
-> **Where we are now:** Copper has a real, Copper-branded arm64 runtime built from pinned Termux-derived sources, a native PTY bridge, a secure atomic installer, and a Terminal screen connected to persistent Copper Bash sessions. The source bootstrap and the Android installer have both been validated in CI.
->
-> **What is not done yet:** a normal user APK still does not contain the verified runtime bundle, so it correctly shows **“runtime bundle missing”** rather than pretending Android's system shell is Copper Bash.
+> **Current gate: Phase 0, real arm64 phone stabilization.** Copper has a
+> Copper-branded arm64 runtime built from pinned Termux-derived sources, an
+> atomic installer, and a persistent native PTY. It is **not** device-ready or
+> releasable until the physical-phone checklist below passes without bootstrap,
+> session-lifecycle, keyboard, or panel-dismissal failures.
 
-## How to read this roadmap
+This is the durable product/status tracker for work on
+`arena/01a06159-arena-ai-proj`. Read `docs/AGENT-HANDOFF.md` before changing
+runtime code, native terminal code, CI, or this checklist.
 
-- `[x]` **Done and evidenced** — implemented and checked by a real build, CI run, or device/emulator test.
-- `[ ]` **Still required** — not being represented as complete.
-- **Current phase** is the next dependency-ordered work. We do not skip ahead and call an incomplete terminal “finished.”
+## Status vocabulary
 
----
+- **CI source/build evidence** proves a specific source tree built and the
+  Android installer accepted its artifact. It does not prove first-launch
+  postinst behavior on arm64 hardware.
+- **Physical-device evidence** is required for a real Copper Bash claim.
+- **Candidate** means a personal, non-release APK artifact. It never means a
+  public runtime distribution, package update channel, or replacement for a
+  release/source-delivery process.
 
-## Phase 1 — Copper app foundation ✅
+## Non-negotiable runtime contract
 
-- [x] Copper brand, app identity, navigation, chat experience, provider settings, model selection, and usage tracking.
-- [x] Cloud/API-model approach — no bundled local LLM models using the device's storage or RAM.
-- [x] Agent file tools with a selected Android SAF workspace and path-jail checks.
-- [x] Voice input and spoken replies where the platform supports them.
-- [x] Clear confirmation for destructive agent file operations.
-- [x] Separate manual-terminal and AI-tool boundaries in the app design.
-
-**Meaning for you:** the ordinary Copper AI app foundation is already in place. The runtime work below adds a real local developer terminal without turning the AI into an unrestricted device shell.
-
----
-
-## Phase 2 — Storage rules and safety contract ✅
-
-- [x] **AI workspace:** restrict AI project/file work to the folder selected as `COPPER Projects`.
-- [x] **Multiple projects:** support named project folders inside that selected workspace.
-- [x] **Manual Terminal:** require the user to explicitly approve Android **All files access** before it can browse shared `/storage/...` locations.
-- [x] Prefer `/storage/0123-4567/Download/COPPER Projects` on the removable SD card as the manual terminal's starting directory when it exists.
-- [x] Keep the executable runtime and installed packages in Copper's private app storage, not on the SD card.
-- [x] Preserve the SD card for projects, generated artifacts, downloads, exports, and user-visible files.
-
-**Important Android reality:** arm64 compilation does **not** bypass Android sandboxing, SELinux, SAF/FUSE restrictions, or shared-storage execution limits. An unrooted device cannot safely run a full package runtime from `/storage/0123-4567/...`. The SD card is the project/data drive; Copper private storage is the executable Unix root.
-
----
-
-## Phase 3 — Build a real Copper Runtime ✅
-
-- [x] Adopt a Copper-branded, GPLv3-compatible, Termux-derived runtime approach without requiring the separate Termux app.
-- [x] Pin the upstream Termux source revisions, Copper patches, architecture, package name, and runtime prefix.
-- [x] Build a real arm64 (`aarch64`) bootstrap for Copper's `com.copper.chat` identity.
-- [x] Run the focused native PTY compile/emulator preflight before the expensive source build.
-- [x] Fix real upstream source-download failures with checksum-preserving, narrow repairs.
-- [x] Successfully complete the full arm64 source-bootstrap build in CI: [run `33871619836`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33871619836).
-- [x] Retain the successful temporary bootstrap artifact and its manifest as build evidence.
-
-**What this proves:** Copper produced its own arm64 runtime input from the pinned source recipe. It does **not** yet mean that every user APK includes that input.
+- Copper is a GPLv3-compatible, Copper-branded, Termux-derived runtime; it
+  does not require or impersonate the separately installed Termux app.
+- The runtime is built for `com.copper.chat`, arm64 (`aarch64` / `arm64-v8a`),
+  and `/data/data/com.copper.chat/files/usr`.
+- Executable packages live in Copper private storage. Projects and exports live
+  on shared/removable storage; Android does not allow an unrooted app to run
+  the package runtime from the SD card.
+- The Manual Terminal is a user-approved persistent PTY. AI file tools remain
+  independently limited to the selected SAF workspace and must not receive the
+  unrestricted terminal session API.
+- The managed private runtime budget is 2 GiB. The bootstrap installer enforces
+  its extraction limit; ongoing package-operation monitoring is later work.
+- Do not silently substitute Android `/system/bin/sh` for Copper Bash.
 
 ---
 
-## Phase 4 — Connect and verify the Android runtime ✅
+## Completed foundations (evidence retained)
 
-- [x] Native pseudo-terminal (PTY): persistent process, terminal input/output stream, resize, Ctrl-C/process-group hangup, and exit events.
-- [x] Copper Terminal UI connected to real persistent Copper Bash sessions — no one-shot Android `/system/bin/sh` is presented as a package terminal.
-- [x] Atomic installer: verify manifest hash, extract to staging, restore safe symlinks/executable modes, validate required files, then promote to the live prefix.
-- [x] Repair/remove controls, visible missing/ready/repair state, and runtime storage meter.
-- [x] Bootstrap extraction respects the managed 2 GiB cap and uses a linear-time quota check.
-- [x] Validate the exact successful arm64 artifact through the real Android installer in CI: [run `33914196546`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33914196546).
-- [x] Add a reusable verified-asset staging command that rejects mismatched ZIPs/manifests and refuses to stage the current non-publishable artifact as a release asset.
-- [x] Make the earlier full-source-build provenance visible as a separate CI success check before installer validation begins.
+- [x] Copper identity, pinned upstream input, package prefix patching, GPL
+  notices/source instructions, and an arm64-only runtime design.
+- [x] Native PTY lifecycle bridge, atomic archive installer/repair/remove flow,
+  runtime status and storage UI, and explicit Android All files approval for
+  the Manual Terminal.
+- [x] Manual terminal / AI SAF workspace separation.
+- [x] Same-run candidate chain: native module compile + Android emulator PTY
+  checks, arm64 source bootstrap, emulator installer validation, then a
+  personal arm64 APK containing that exact archive.
+- [x] CI run [`34241766195`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34241766195), commit `2064665`, completed that chain. Its personal artifact was
+  `Copper-runtime-device-candidate`, ID `10067075336`, with GitHub
+  artifact-envelope digest
+  `sha256:d857958f25da53e6c36e8774b3690c8b80604f99cb93f1b8b7e21b42de98b2ad`.
 
-### Why a source-build row can say “skipped” while runtime validation passes
-
-The CI job **Copper Runtime arm64 source build (opt-in)** intentionally runs only for commits marked `[runtime-preflight]` or `[runtime-bootstrap]`. It is a long Docker/source build and must not be blindly repeated for every UI or installer change.
-
-For runtime-asset validation commits, CI instead checks:
-
-1. the prior source-bootstrap run finished successfully;
-2. its exact commit, artifact name, artifact ID, and outer SHA-256 match the lock;
-3. the ZIP inside the artifact matches its own JSON manifest;
-4. the Android installer can install that exact ZIP.
-
-So a **skipped** source-build row on an installer-validation commit means **“not requested again,” not “missing or failed.”** The separate green **bootstrap provenance** check is the direct evidence that the earlier source build is the one being consumed.
+The candidate above is historical evidence only: real-phone testing found a
+first-launch failure, so it must not be re-promoted as ready.
 
 ---
 
-## APK versus HTTPS — two different jobs
+## Phase 0 — Real arm64 phone stabilization **← CURRENT**
 
-**Copper is installed on Android as an APK.** HTTPS is not a replacement app, a web version of the terminal, or a requirement for the base runtime to be downloaded every time Copper starts. **No separate website or web server is planned or needed for Copper to work.** The public GitHub repository is the online source-code project; that is different from a GitHub Release page containing installable files.
+### Real-phone result that blocks completion
 
-- **Phase 5 HTTPS asset/source URLs:** before a *released runtime APK* is made, the exact runtime ZIP that will be copied **into** that APK and its matching GPL corresponding-source bundle need durable, immutable, Copper-controlled locations. A GitHub Actions artifact expires, so it is evidence of a build—not a stable record of the bytes distributed in an APK.
-- **Phase 6 HTTPS package-repository URL:** after the base runtime is installed, `pkg`/APT needs a signed Copper package service if the user chooses to install or update packages. HTTPS protects transport; the offline archive key verifies that the package metadata is actually Copper's.
-- **Two kinds of test APK:** the ordinary UI test APK can be built now and intentionally reports `bundle_missing`. The next personal device-candidate APK will instead contain the exact verified arm64 runtime for the project owner's phone test, but is still **not** a runtime release or package-update validation.
+The historical candidate starts an interactive Copper Bash PTY and accepts
+normal typing/Enter/output. During its fallback first-launch bootstrap,
+`dpkg-perl.postinst` runs `cpan -Ti Locale::gettext` and fails:
 
-Nothing in this roadmap changes Copper into an HTTPS-only app or authorizes a release. Durable HTTPS/source requirements apply only before a permanent runtime distribution; a clearly labeled personal device candidate is the next phone-testing step.
+```text
+/apex/com.android.runtime/bin/linker64 Makefile.PL
+error: expected absolute path: "Makefile.PL"
+```
+
+This is **not** the earlier Salsa/dpkg mirror problem. The pinned Termux
+packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
+`dpkg-perl` subpackage is the source of the CPAN postinst.
+
+### Root cause and repair currently awaiting new CI/device evidence
+
+- [x] Root cause: Android system-linker execution makes `/proc/self/exe` name
+  `linker64`. Perl 5.42.2 uses that proc link to initialize `$^X`; CPAN then
+  invokes linker64 as if it were Perl and gives it relative `Makefile.PL`.
+- [x] Repair added: the generated pinned Perl package now patches `caretx.c`
+  to recognize termux-exec's documented, absolute
+  `TERMUX_EXEC__PROC_SELF_EXE` linker-launch contract and use Perl's preserved
+  `argv[0]` for `$^X`. This matters because the contract can name the original
+  `bin/cpan` script while `argv[0]` remains the real `bin/perl` interpreter.
+  The native first-Bash launch also supplies the contract because it
+  intentionally enters through linker64 before termux-exec can intercept the
+  first `execve`.
+- [x] Regression gates added: generated-input validation requires the exact Perl
+  patch; post-build archive validation requires compiled `bin/perl` to contain
+  the contract marker; a direct-linker PTY test asserts that the target receives
+  its own `argv[0]`, and the arm64 runtime test probes that `$^X` reports
+  Copper's real `bin/perl` path.
+- [x] Source-level repair evidence: the exact patch applied cleanly after
+  perl-cross 1.6.4 preparation, and generated-input verification passed
+  against the exact locked Termux packages checkout.
+- [ ] Required next evidence: a **new** same-commit candidate CI chain must
+  compile/test the native module, build the fresh arm64 source archive, pass
+  the compiled-Perl regression gate, validate its installer, and build its
+  personal APK. Do not reuse the historical artifact.
+- [ ] Required final evidence: clean fallback bootstrap on the physical arm64
+  phone. No linker `Makefile.PL` error, no hidden/suppressed postinst failure.
+
+The pinned `guillemj/dpkg` 1.22.6 GitHub mirror and exact commit validation
+remain required. Do not remove or weaken that independent source-fetch repair.
+
+### Terminal interaction/lifecycle acceptance
+
+- [x] Source repair: exit detail is recorded before an exited session leaves the
+  native active map; a stale write now has a meaningful exit code instead of
+  the opaque `Terminal session was not found` race.
+- [x] Source repair: the UI keeps failed write feedback next to **Send**, strips
+  Expo bridge wrapper text, and no longer mirrors the same raw rejection in a
+  non-error notice above terminal output.
+- [x] Automated native regression: the Android PTY test sends byte `0x03` to a
+  foreground shell and requires its `INT` trap / exit 130.
+- [ ] On phone: send a normal multi-character command, special characters,
+  editing/backspace, and Enter/**Send**; confirm live output and the retained
+  working directory.
+- [ ] On phone: run `sleep 30`, tap **Ctrl C**, wait for `^C`/prompt before any
+  other command, and record the result.
+- [ ] On phone: deliberately end/exit the shell, then tap Send once; verify a
+  clear single session-ended explanation—not an Expo bridge exception and not
+  duplicate/mismatched notices.
+
+### Keyboard, sheet, and mobile-polish acceptance
+
+- [x] Source repair: Terminal uses Android resize mode without a second
+  KeyboardAvoidingView padding pass; it no longer reserves navigation/tab
+  space below the composer while the IME is visible.
+- [x] Source repair: opening a Sheet dismisses the software keyboard; a
+  full-screen native Pressable now owns the outside-tap backdrop; sheet travel
+  distance updates during keyboard resize without restarting the opening
+  animation.
+- [ ] On phone: Terminal composer remains fully visible and directly attached
+  to the keyboard—no gray gap and no terminal input hidden under the IME.
+- [ ] On phone: open Chat overflow while the chat composer keyboard is visible;
+  the keyboard must dismiss before the non-input panel settles.
+- [ ] On phone: tap the dimmed area outside every Sheet and verify a smooth
+  single dismissal; drag-cancel must spring back without jumping or closing.
+- [ ] On phone: confirm close/open haptics and transitions feel responsive at
+  the device's normal refresh rate, without blocking input.
+
+### Phase 0 exit rule
+
+**Do not mark Phase 0 complete** until the user confirms every unchecked
+real-phone item for a newly built candidate. CI/emulator results are necessary
+but not substitutes for that confirmation.
 
 ---
 
-## Phase 5 — Make it usable on real arm64 phones **← CURRENT PHASE**
+## Next phases (blocked until Phase 0 passes)
 
-- [x] Define and test a fail-closed local promotion record/gate for a future runtime release: exact source-build ZIP/manifest, source provenance, corresponding source, repository/key identity, immutable URLs, and Copper release ID. It never uploads or publishes by itself.
-- [x] Build a clearly labeled personal arm64 device-candidate APK containing the exact verified source-build asset in `device-candidate` mode. CI passed native PTY compilation and bundled-runtime installation validation, then built the current arm64-only, frontend-corrected [`Copper-runtime-device-candidate` in run `33956253793`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/33956253793). It is for the project owner's phone test only, never a runtime release, and never silently substitutes an upstream/Termux bootstrap.
-- [ ] **Current work:** install that personal candidate on a real arm64 Android phone and run `runsCopperBashThroughPtyOnArm64WhenBundled`.
-- [ ] Confirm manually in Copper Terminal that Bash starts, accepts interactive input, streams output, handles Ctrl-C, and starts in the SD-card `COPPER Projects` directory after Android permission approval.
-- [ ] Keep the UI honest: label personal candidates as non-release; report missing, corrupt, mismatched, unsupported, or repair-required assets accurately.
-- [ ] Before any permanent runtime distribution, create durable Copper-controlled immutable HTTPS delivery locations for the verified runtime ZIP/manifest and corresponding source. The temporary CI artifact is not an end-user release channel.
-- [ ] Before any permanent runtime distribution, configure the real HTTPS package endpoint and offline archive key's **public** fingerprint, then prepare and independently verify the exact promoted bytes.
+### Phase 1 — Managed package operations and terminal resilience
 
-**Why the phone test is still needed:** GitHub's API-35 x86_64 emulator successfully validates the artifact and installer, but Android denies executing an app-private arm64 ELF through that emulator's native bridge. Copper therefore skips the arm64 Bash execution test there instead of falsely claiming that it ran. A real arm64 phone is the correct execution environment.
+- [ ] Package-operation preflight/monitoring for the 2 GiB managed budget.
+- [ ] Foreground/background lifecycle stress tests and clear recovery state.
+- [ ] Richer ANSI/alternate-screen rendering and scrollback controls, only
+  after the persistent terminal path is stable.
 
----
+### Phase 2 — Copper package/update delivery
 
-## Phase 6 — Safe package updates and the 2 GiB runtime budget
+- [ ] Establish a Copper-controlled HTTPS package endpoint.
+- [ ] Generate an offline archive signing key; commit/publicize only its public
+  fingerprint/keyring, never its private material.
+- [ ] Publish signed package metadata and verify it independently.
 
-- [ ] Create Copper's own HTTPS package repository endpoint.
-- [ ] Generate an offline archive signing key; publish only its public key/fingerprint and never commit the private key.
-- [ ] Publish signed Copper package metadata and packages built from the documented source/patch inputs.
-- [ ] Configure the runtime to use Copper's signed repository, not an unofficial or implied official Termux package service.
-- [ ] Add managed package-operation preflight: show expected download/install impact before `pkg`/APT changes.
-- [ ] Monitor active package operations and stop managed operations before the 2 GiB persistent runtime cap is crossed.
-- [ ] Show a useful storage breakdown: installed packages, APT archives/cache, build cache, shell/user state, remaining budget.
-- [ ] Make uninstall and cache cleanup reclaim space clearly.
+### Phase 3 — Permanent runtime release readiness
 
-**Cap wording:** this is an honest app-managed 2 GiB limit. Normal unrooted Android does not provide Copper a kernel-enforced per-directory quota, so Copper will not pretend otherwise.
+- [ ] Create immutable Copper-controlled HTTPS locations for the exact runtime
+  ZIP/manifest and corresponding GPL source bundle.
+- [ ] Run the existing fail-closed promotion gate against the exact promoted
+  bytes.
+- [ ] Explicitly authorize a release only after the above and Phase 0 are done.
 
----
-
-## Phase 7 — SD-card project development workflow
-
-- [ ] Add safe manual-terminal links/conveniences for the selected `COPPER Projects` tree.
-- [ ] Preserve per-chat project selection and context across chats.
-- [ ] Add an opt-in temporary internal build mirror only for tools whose executable dependencies cannot run from SD storage.
-- [ ] Sync changed source files and artifacts back to the selected SD-card project.
-- [ ] Guarantee temporary-mirror cleanup after success, failure, or cancellation.
-- [ ] Test SD-card removal/ejection, low storage, bad paths, cancellation, and recovery.
+No web-workflow work belongs in this roadmap unless the user explicitly changes
+scope.
 
 ---
 
-## Phase 8 — AI project runner (separate from Manual Terminal)
+## Continuation protocol
 
-- [ ] Keep AI operations restricted to the selected SAF `COPPER Projects` tree.
-- [ ] Define an explicit workspace-runner capability manifest for AI commands.
-- [ ] Do **not** expose the unrestricted Manual Terminal PTY to the AI tool registry.
-- [ ] Add visible confirmation, command logs, artifact records, and cancellation behavior for AI actions.
-- [ ] Test workspace escape attempts and permission/storage failure cases.
-
----
-
-## Phase 9 — Release gate
-
-Copper can call this a complete in-app local package terminal only when all of these are checked:
-
-- [ ] A verified runtime asset is deliberately included in a Copper APK.
-- [ ] Copper Bash, `pkg`, and `apt` execute on a real arm64 phone without the separately installed Termux app.
-- [ ] At least one real package operation is performed through Copper's signed package repository.
-- [ ] Interactive PTY sessions work through the visible Terminal UI, including input, output, resize, Ctrl-C, and cleanup.
-- [ ] Runtime/package storage is measured and the 2 GiB managed limit is enforced honestly.
-- [ ] AI workspace access remains jailed to `COPPER Projects`; broad manual terminal access remains a separately approved capability.
-- [ ] GPL/source, notices, signing-key, and package-repository obligations are complete for all distributed artifacts.
-- [ ] Physical-device, storage, package failure, and recovery tests pass.
-
----
-
-## Current truth in one sentence
-
-**Copper has a genuinely built and installer-validated arm64 runtime foundation plus a fail-closed release-promotion gate; the next job is to configure durable owner-controlled asset/source hosting and archive signing, promote a verified runtime into a testable arm64 device build, then complete signed packages, live quota controls, and the separate AI workspace runner.**
-
-For the detailed technical design, source provenance, and CI evidence, see [`docs/COPPER-RUNTIME.md`](docs/COPPER-RUNTIME.md).
-
-## Returning in a later Agent Mode chat
-
-- Use [`docs/AGENT-HANDOFF.md`](docs/AGENT-HANDOFF.md) as the durable project handoff. It records the branch, completed CI evidence, safety rules, known limitations, and the next exact tasks.
-- Use [`docs/AGENT-CAPABILITY-EVALUATION.md`](docs/AGENT-CAPABILITY-EVALUATION.md) for public calibration, then [`docs/AGENT-EVALUATION-OPERATOR-GUIDE.md`](docs/AGENT-EVALUATION-OPERATOR-GUIDE.md) for private holdouts, independently reviewed evidence, and an A/B/C production decision.
+1. Fetch `origin/arena/01a06159-arena-ai-proj`, inspect `ROADMAP.md`,
+   `docs/AGENT-HANDOFF.md`, `git status -sb`, recent commits, and relevant CI
+   before editing.
+2. Diagnose from real evidence; do not mask a package/bootstrap error or claim
+   a test passed when hardware has not run it.
+3. For a cohesive repair, run the strongest available local checks, commit and
+   push on this branch, then use **one** `[runtime-device-candidate]` marker
+   only when preflight evidence warrants the full same-commit candidate chain.
+4. Update this roadmap and the handoff with run/artifact IDs, physical results,
+   remaining blockers, and exact next commands. The user only needs to provide
+   real-device results, screenshots/logs, unpushed changes, or a different
+   branch/commit when applicable.

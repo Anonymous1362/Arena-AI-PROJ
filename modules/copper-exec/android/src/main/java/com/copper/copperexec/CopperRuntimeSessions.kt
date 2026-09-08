@@ -141,8 +141,13 @@ internal object CopperRuntimeSessions {
     )
   }
 
-  private fun session(sessionId: String): Session =
-    sessions[sessionId] ?: throw IllegalArgumentException("Terminal session was not found.")
+  private fun session(sessionId: String): Session = sessions[sessionId] ?: run {
+    val exit = recentExits[sessionId]
+    if (exit != null) {
+      throw IllegalStateException("Terminal session has already exited with code ${exit.exit}.")
+    }
+    throw IllegalArgumentException("Terminal session is no longer active.")
+  }
 
   private fun sessionInfo(session: Session): Map<String, Any?> = mapOf(
     "id" to session.id,
@@ -165,6 +170,11 @@ internal object CopperRuntimeSessions {
       add("TERMUX_APP__DATA_DIR=${context.dataDir.absolutePath}")
       add("TERMUX_EXEC__EXECVE_CALL__INTERCEPT=enable")
       add("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=enable")
+      // nativeCreate starts the first Bash through linker64 itself, before
+      // termux-exec can intercept an execve(). Mirror termux-exec's documented
+      // target-path contract for that first process; each intercepted child
+      // updates it to its own normalized executable path.
+      add("TERMUX_EXEC__PROC_SELF_EXE=${File(prefix, "bin/bash").absolutePath}")
       add("TMPDIR=${File(prefix, "tmp").absolutePath}")
       add("PATH=${File(prefix, "bin").absolutePath}:/system/bin:/system/xbin")
       add("SHELL=${File(prefix, "bin/bash").absolutePath}")
@@ -246,7 +256,6 @@ internal object CopperRuntimeSessions {
         }
       }
       val wasOpen = session.closed.compareAndSet(false, true)
-      sessions.remove(session.id, session)
       val detail = ExitDetail(
         sessionId = session.id,
         exit = exitCode,
@@ -254,7 +263,11 @@ internal object CopperRuntimeSessions {
         outputTail = outputTail(session),
         exitedAtEpochMs = System.currentTimeMillis()
       )
+      // Publish the retained exit detail before removing the active session.
+      // A UI write can otherwise land in the tiny remove→record window and
+      // receive an opaque “session was not found” bridge rejection.
       recordExit(detail)
+      sessions.remove(session.id, session)
       try {
         closeDescriptor(session)
       } catch (_: Exception) {

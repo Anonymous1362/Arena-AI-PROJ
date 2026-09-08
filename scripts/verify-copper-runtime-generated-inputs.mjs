@@ -37,6 +37,7 @@ const buildPackagePath = resolve(packagesRoot, 'build-package.sh');
 const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
 const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
+const perlCaretXPatchPath = resolve(packagesRoot, 'packages/perl/0001-termux-exec-caret-x.patch');
 const dpkgRecipePath = resolve(packagesRoot, 'packages/dpkg/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
@@ -54,8 +55,8 @@ try {
   if (config.packageManager !== 'apt') {
     fail(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(dpkgRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, dpkg recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(perlCaretXPatchPath) || !existsSync(dpkgRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, Perl system-linker patch, dpkg recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -209,6 +210,26 @@ try {
     fail('Generated termux-exec recipe does not retain the installed script legacy-path repair and fail-closed check.');
   }
 
+  // The first real arm64 device launch reached dpkg-perl's CPAN postinst, then
+  // failed because Perl's $^X came from /proc/self/exe (linker64). For a
+  // termux-exec linker launch, its contract identifies the special case, then
+  // Perl must use its preserved interpreter argv[0]; the contract can name a
+  // script such as bin/cpan rather than the interpreter itself. Keep the
+  // source patch exact: a missing/rebased patch must stop before Docker instead
+  // of silently shipping the known-broken first-launch path.
+  const perlCaretXPatch = readFileSync(perlCaretXPatchPath, 'utf8');
+  const expectedPerlCaretXPatch = [
+    '--- a/caretx.c',
+    '+++ b/caretx.c',
+    '#ifdef __ANDROID__',
+    'PerlEnv_getenv("TERMUX_EXEC__PROC_SELF_EXE")',
+    "termux_exec_proc_self_exe[0] == '/'",
+    'sv_setpv(caret_x, PL_origargv[0]);',
+  ];
+  if (expectedPerlCaretXPatch.some((fragment) => !perlCaretXPatch.includes(fragment))) {
+    fail('Generated Perl system-linker $^X patch is incomplete. CPAN must receive Perl’s real interpreter argv[0] rather than Android linker64.');
+  }
+
   // Salsa returned HTTP 503 while the full bootstrap cloned dpkg. The selected
   // GitHub maintainer mirror exposes the same signed 1.22.6 tag target, and the
   // generated recipe must verify that exact commit after cloning it.
@@ -269,6 +290,7 @@ try {
   console.log(`Copper generated bootstrap recipes verified: ${bootstrapPackages.length} direct package entries map to pinned source recipes.`);
   console.log(`Copper generated termux-core make arguments verified: ${makeArguments.length} assignments, no bare make targets.`);
   console.log('Copper generated termux-tools configure environment verified: login/profile paths cannot fall back to com.termux.');
+  console.log('Copper generated Perl patch verified: the TERMUX_EXEC__PROC_SELF_EXE contract selects Perl’s interpreter argv[0] for system-linker CPAN children.');
   console.log(`  TERMUX__NAME: ${config.buildName}`);
   console.log(`  Product display name: ${config.displayName}`);
 } catch (error) {

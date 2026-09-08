@@ -37,6 +37,7 @@ const bootstrapBuildPath = resolve(packagesRoot, 'scripts/build-bootstraps.sh');
 const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const termuxCoreRecipePath = resolve(packagesRoot, 'packages/termux-core/build.sh');
 const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.sh');
+const perlCaretXPatchPath = resolve(packagesRoot, 'packages/perl/0001-termux-exec-caret-x.patch');
 const dpkgRecipePath = resolve(packagesRoot, 'packages/dpkg/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
@@ -301,6 +302,43 @@ try {
   );
   writeFileSync(termuxExecRecipePath, termuxExecRecipe);
 
+  // Android's linker is the real executable for a private runtime ELF launched
+  // through system_linker_exec, so /proc/self/exe points at linker64. Perl uses
+  // that proc link for $^X; CPAN then tries to execute linker64 with a relative
+  // Makefile.PL argument, which Android correctly rejects. termux-exec already
+  // exports a target-path contract in TERMUX_EXEC__PROC_SELF_EXE. The marker
+  // identifies a linker launch, while Perl's preserved argv[0] remains the
+  // actual interpreter even when the target was a script such as bin/cpan.
+  // Apply this narrow Perl source patch so the runtime uses that safe route.
+  // It is a package patch (rather than an on-device workaround), so the actual
+  // perl binary used by dpkg-perl's first-launch CPAN postinst is repaired.
+  const perlCaretXPatch = [
+    '--- a/caretx.c',
+    '+++ b/caretx.c',
+    '@@ -56,6 +56,19 @@',
+    '     win32_free(ansi);',
+    '     return;',
+    ' #else',
+    '+#ifdef __ANDROID__',
+    '+    /* termux-exec invokes private app-data ELF files through Android\'s',
+    '+     * linker. In that launch mode /proc/self/exe names linker64, which makes',
+    '+     * $^X unusable for CPAN child commands. termux-exec sets its target-path',
+    '+     * contract for this launch; argv[0] is the real interpreter even when',
+    '+     * that contract names an original script such as bin/cpan. */',
+    '+    const char *const termux_exec_proc_self_exe =',
+    '+        PerlEnv_getenv("TERMUX_EXEC__PROC_SELF_EXE");',
+    '+    if (termux_exec_proc_self_exe && termux_exec_proc_self_exe[0] == \'/\') {',
+    '+        sv_setpv(caret_x, PL_origargv[0]);',
+    '+        return;',
+    '+    }',
+    '+#endif',
+    '     /* We can try a platform-specific one if possible; if it fails, or we',
+    '      * aren\'t running on a suitable platform, we\'ll fall back to argv[0]. */',
+    ' # ifdef USE_KERN_PROC_PATHNAME',
+    '',
+  ].join('\n');
+  writeFileSync(perlCaretXPatchPath, perlCaretXPatch);
+
   // The first rebuilt candidate passed the text-path failure point but its
   // source bootstrap later failed while cloning dpkg from Salsa (HTTP 503 and
   // an incomplete packfile). Dpkg's official maintainer mirror on GitHub has
@@ -454,6 +492,7 @@ try {
       'termux-tools exports Copper application/rootfs/cache/prefix/home/package-manager values before configure, preventing its generated interactive-login scripts from falling back to /data/data/com.termux.',
       'termux-core normalizes only post-render annotation labels in its installed scripts and then rejects any remaining unquoted @TERMUX_*@ runtime placeholder before packaging.',
       'termux-exec repaths its installed ld-preload management script’s historical diagnostic comment to the configured Copper prefix and rejects any remaining legacy com.termux path before packaging.',
+      'Perl recognizes termux-exec’s TERMUX_EXEC__PROC_SELF_EXE contract and uses its preserved interpreter argv[0] for $^X on Android system-linker launches, so CPAN runs Perl rather than linker64 when building Locale::gettext during dpkg-perl postinst.',
       'dpkg 1.22.6 is cloned from the official GitHub maintainer mirror after the Salsa host returned HTTP 503; its signed tag’s exact b2f9600… commit is checked after clone.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
       'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',

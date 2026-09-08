@@ -44,6 +44,15 @@ function sessionExitNotice(detail: CopperRuntimeSessionExit) {
     : `Copper Bash exited with code ${detail.exit} before it could receive input. Open a new session to try again.`;
 }
 
+function terminalWriteError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || 'Copper could not send that input.');
+  // Expo prefixes rejected async functions with bridge metadata. Keep the
+  // actionable native cause beside the composer rather than rendering that
+  // opaque wrapper both above the terminal and below the Send button.
+  const cause = raw.split(/\s*→\s*Caused by:\s*/).pop()?.trim();
+  return cause || raw;
+}
+
 function installStageTitle(stage: CopperRuntimeInstallProgress['stage']) {
   switch (stage) {
     case 'checking': return 'Preparing installation';
@@ -390,11 +399,11 @@ export default function TerminalScreen() {
       } catch {
         // Preserve the original bridge error if diagnostics are unavailable.
       }
-      const message = (error as Error).message || 'Copper could not send that input.';
-      // Keep failure feedback beside the control the person just tapped. The
-      // older general notice sits above terminal output and was easy to miss.
+      const message = terminalWriteError(error);
+      // Keep write failures beside the control the person just tapped. Do not
+      // mirror a bridge rejection into the general notice above terminal
+      // output; doing so produced two mismatched presentations on the phone.
       setCommandError(message);
-      setNotice(message);
       haptics.error();
     } finally {
       setSendingCommand(false);
@@ -402,12 +411,29 @@ export default function TerminalScreen() {
   };
 
   const interruptSession = async () => {
-    if (!session) return;
+    if (!session || sendingCommand || busyAction) return;
     try {
-      await CopperExec.writeRuntimeSession(session.id, '\u0003');
+      // Deliver the terminal-control byte through the same persistent PTY as
+      // typed input. The native Android test asserts this reaches the
+      // foreground process group rather than merely changing UI state.
+      const written = await CopperExec.writeRuntimeSession(session.id, '\u0003');
+      if (written <= 0) throw new Error('Copper Bash did not accept Ctrl-C.');
+      setNotice('Sent Ctrl-C to the live Copper Bash session.');
       haptics.selection();
+      requestAnimationFrame(() => commandInputRef.current?.focus());
     } catch (error) {
-      setNotice((error as Error).message);
+      try {
+        const exited = await CopperExec.getRuntimeSessionExitDetail(session.id);
+        if (exited) {
+          closeTerminalFromExit(exited);
+          return;
+        }
+      } catch {
+        // Preserve a concise local control error when native diagnostics are
+        // momentarily unavailable.
+      }
+      setNotice(`Could not send Ctrl-C: ${terminalWriteError(error)}`);
+      haptics.error();
     }
   };
 
@@ -416,7 +442,11 @@ export default function TerminalScreen() {
     setBusyAction('close');
     try {
       await CopperExec.closeRuntimeSession(session.id);
+      // Clear the synchronous ref too: React state alone leaves a small window
+      // in which a just-closed session can still be selected by Send/Ctrl-C.
+      sessionIdRef.current = null;
       setSession(null);
+      setCommandError(null);
       setNotice('Copper terminal session closed.');
     } catch (error) {
       setNotice((error as Error).message);
@@ -445,7 +475,9 @@ export default function TerminalScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.bg }}
-      behavior="padding"
+      // Android is already configured for resize mode. Adding a second padding
+      // avoidance pass leaves a visible empty band above the IME on real phones.
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={{ flex: 1 }}>
         <View style={{ paddingTop: insets.top + spacing(2), paddingHorizontal: spacing(4), paddingBottom: spacing(3) }}>
@@ -476,7 +508,14 @@ export default function TerminalScreen() {
         <ScrollView
           ref={terminalScrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: tabBarHeight + spacing(3) }}
+          contentContainerStyle={{
+            paddingHorizontal: spacing(4),
+            paddingTop: spacing(1),
+            // The composer consumes layout space while a session is open. When
+            // Android resizes for the IME, leave only normal scroll breathing
+            // room rather than an obsolete tab-bar-sized gray gap.
+            paddingBottom: keyboardVisible ? spacing(3) : tabBarHeight + spacing(3),
+          }}
           keyboardShouldPersistTaps="handled"
         >
           <Card style={{ marginBottom: spacing(3) }}>
@@ -581,9 +620,10 @@ export default function TerminalScreen() {
           backgroundColor: colors.surface,
           paddingHorizontal: spacing(3),
           paddingTop: spacing(2),
-          // The tab bar is hidden while the keyboard is up. Keeping its full
-          // reservation made the composer float over the terminal output.
-          paddingBottom: keyboardVisible ? Math.max(spacing(2), insets.bottom + 4) : tabBarHeight + spacing(2),
+          // Android resize mode has already moved this view above the IME. Do
+          // not add the gesture/navigation inset again while typing: that was
+          // the persistent gray gap between the terminal composer and keyboard.
+          paddingBottom: keyboardVisible ? spacing(2) : tabBarHeight + spacing(2),
         }}>
           <Text numberOfLines={1} selectable style={{ color: colors.textFaint, fontSize: 11.5, marginBottom: spacing(1.5), fontFamily: mono }}>
             {session.cwd}

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import type { DimensionValue } from 'react-native';
 import Animated, {
   Extrapolation,
@@ -20,10 +20,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/src/utils/haptics';
 
 /**
- * Lightweight, dependency-free bottom sheet built on Reanimated + Gesture
- * Handler. One UI-thread value owns both drag and dismissal, so a downward
- * swipe cannot reset to the open position for a frame before it closes.
- * Works on iOS, Android and web (PWA).
+ * Lightweight bottom sheet built on Reanimated + Gesture Handler.
+ *
+ * The backdrop is an actual full-screen Pressable (not an absolutely-positioned
+ * child inside a zero-sized animation wrapper), so an outside tap always
+ * dismisses. A single travel value owns opening, dragging, and closing; window
+ * resize caused by Android keyboard dismissal updates the distance without
+ * restarting the opening animation.
  */
 
 interface SheetProps {
@@ -37,31 +40,65 @@ interface SheetProps {
   plain?: boolean;
 }
 
-
 export function Sheet({ visible, onClose, title, children, maxHeight = '72%', plain = false }: SheetProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  // A fixed 700px travel distance can leave tall sheets visible on Android.
   const collapsed = Math.ceil(windowHeight + insets.bottom + 40);
+  const collapsedDistance = useSharedValue(collapsed);
   const translateY = useSharedValue(collapsed);
   const dismissing = useSharedValue(false);
+  const [mounted, setMounted] = useState(visible);
+  const wasVisibleRef = useRef(visible);
+  const dismissedBySheetRef = useRef(false);
+
+  // Android's resize mode changes windowHeight as the keyboard closes. Keep
+  // the off-screen distance current, but do not reset an already-open panel to
+  // the bottom and spring it in again (the old source of the visible jump).
+  useEffect(() => {
+    collapsedDistance.set(collapsed);
+    if (!mounted) translateY.set(collapsed);
+  }, [collapsed, collapsedDistance, mounted, translateY]);
 
   useEffect(() => {
-    if (visible) {
-      dismissing.set(false);
-      translateY.set(collapsed);
-      translateY.set(withSpring(0, Spring.snappy));
-    } else {
-      dismissing.set(true);
-      translateY.set(withTiming(collapsed, { duration: 190 }));
-    }
-  }, [collapsed, dismissing, translateY, visible]);
+    const wasVisible = wasVisibleRef.current;
+    wasVisibleRef.current = visible;
 
-  const close = useCallback(() => {
+    if (visible) {
+      dismissedBySheetRef.current = false;
+      setMounted(true);
+      dismissing.set(false);
+      translateY.set(collapsedDistance.get());
+      translateY.set(withSpring(0, Spring.snappy));
+      // A non-input panel must never leave the chat keyboard exposed beneath
+      // it. The composer retains focus when no sheet is open.
+      Keyboard.dismiss();
+      return;
+    }
+
+    if (!wasVisible) return;
+    if (dismissedBySheetRef.current) {
+      // An outside tap, close button, or swipe already finished its exit
+      // animation before invoking the controlled onClose callback.
+      setMounted(false);
+      return;
+    }
+
+    dismissing.set(true);
+    translateY.set(withTiming(collapsedDistance.get(), { duration: 190 }, (finished) => {
+      if (finished) runOnJS(setMounted)(false);
+    }));
+  }, [collapsedDistance, dismissing, translateY, visible]);
+
+  const requestClose = useCallback(() => {
+    if (!visible || dismissing.get()) return;
+    dismissedBySheetRef.current = true;
+    dismissing.set(true);
     haptics.light();
-    onClose();
-  }, [onClose]);
+    translateY.set(withTiming(collapsedDistance.get(), { duration: 190 }, (finished) => {
+      if (finished) runOnJS(onClose)();
+    }));
+  }, [collapsedDistance, dismissing, onClose, translateY, visible]);
 
   const pan = useMemo(
     () =>
@@ -70,21 +107,20 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
         .failOffsetX([-36, 36])
         .onUpdate((event) => {
           if (dismissing.get()) return;
-          translateY.set(Math.min(collapsed, Math.max(0, event.translationY)));
+          const travel = collapsedDistance.get();
+          translateY.set(Math.min(travel, Math.max(0, event.translationY)));
         })
         .onEnd((event) => {
           if (dismissing.get()) return;
-          const shouldClose = event.translationY > Math.min(140, collapsed * 0.18) || event.velocityY > 1_100;
+          const travel = collapsedDistance.get();
+          const shouldClose = event.translationY > Math.min(140, travel * 0.18) || event.velocityY > 1_100;
           if (shouldClose) {
-            dismissing.set(true);
-            translateY.set(withTiming(collapsed, { duration: 190 }, (finished) => {
-              if (finished) runOnJS(close)();
-            }));
+            runOnJS(requestClose)();
           } else {
             translateY.set(withSpring(0, Spring.gentle));
           }
         }),
-    [close, collapsed, dismissing, translateY]
+    [collapsedDistance, dismissing, requestClose, translateY]
   );
 
   const sheetStyle = useAnimatedStyle(() => ({
@@ -92,34 +128,29 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   }));
 
   const backdropStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateY.get(), [0, collapsed], [1, 0], Extrapolation.CLAMP),
+    opacity: interpolate(translateY.get(), [0, collapsedDistance.get()], [1, 0], Extrapolation.CLAMP),
   }));
 
-  const isPct = typeof maxHeight === 'string';
-
   return (
-    <View pointerEvents={visible ? 'box-none' : 'none'} style={StyleSheet.absoluteFill}>
+    <View pointerEvents={mounted ? 'box-none' : 'none'} style={StyleSheet.absoluteFill}>
       <Animated.View
-        pointerEvents={visible ? 'auto' : 'none'}
+        pointerEvents={mounted ? 'auto' : 'none'}
         style={[
           StyleSheet.absoluteFill,
           { backgroundColor: colors.backdrop },
           backdropStyle,
         ]}
       >
-        <PressableScale
-          haptic="none"
-          scale={1}
-          opacityOnPress={1}
-          onPress={close}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss sheet"
+          onPress={requestClose}
           style={StyleSheet.absoluteFill}
-        >
-          <View style={StyleSheet.absoluteFill} />
-        </PressableScale>
+        />
       </Animated.View>
 
       <Animated.View
-        pointerEvents={visible ? 'auto' : 'none'}
+        pointerEvents={mounted ? 'auto' : 'none'}
         style={[
           styles.sheet,
           {
@@ -147,7 +178,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
                     >
                       {title}
                     </Animated.Text>
-                    <PressableScale haptic="none" onPress={close} style={styles.closeBtn}>
+                    <PressableScale haptic="none" onPress={requestClose} style={styles.closeBtn}>
                       <Ionicons name="close" size={20} color={colors.textSub} />
                     </PressableScale>
                   </View>
