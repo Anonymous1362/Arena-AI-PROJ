@@ -134,21 +134,22 @@ try {
     fail(`Generated default bootstrap dependency closure still uses the unreliable Savannah origin URL in: ${rawSavannahOriginRecipes.join(', ')}. Use the reviewed HTTPS mirror with the existing recipe checksum before starting Docker.`);
   }
 
-  // The full package graph reached attr and then libacl, where their pinned
-  // Savannah origin endpoints exhausted curl's retry budget with 502/zero-byte
-  // responses. The Copper patch changes only those exact source hosts to the
-  // HTTPS mirror while retaining upstream cryptographic release checksums.
+  // The new candidate reached attr but static download-mirror.savannah.gnu.org
+  // exhausted curl's retry budget on connection timeouts. Use only the two
+  // affected recipes' Open Computing Facility endpoints: they are active,
+  // official Savannah mirrors, and the original SHA-256 pins still authenticate
+  // every downloaded release byte before extraction.
   const attrRecipe = readFileSync(attrRecipePath, 'utf8');
-  const expectedAttrSource = 'TERMUX_PKG_SRCURL="https://download-mirror.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"';
+  const expectedAttrSource = 'TERMUX_PKG_SRCURL="https://mirrors.ocf.berkeley.edu/nongnu/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"';
   const expectedAttrSha256 = 'TERMUX_PKG_SHA256=d42fa374513180bb48cb11a46696f488240e5124ff1e6ad88b0abff706985612';
   if (!attrRecipe.includes(expectedAttrSource) || !attrRecipe.includes(expectedAttrSha256)) {
-    fail('Generated attr recipe must use the exact HTTPS Savannah mirror and retain attr 2.6.0’s pinned SHA-256.');
+    fail('Generated attr recipe must use the exact official Savannah OCF HTTPS mirror and retain attr 2.6.0’s pinned SHA-256.');
   }
   const libaclRecipe = readFileSync(libaclRecipePath, 'utf8');
-  const expectedLibaclSource = 'TERMUX_PKG_SRCURL=https://download-mirror.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz';
+  const expectedLibaclSource = 'TERMUX_PKG_SRCURL=https://mirrors.ocf.berkeley.edu/nongnu/acl/acl-${TERMUX_PKG_VERSION}.tar.gz';
   const expectedLibaclSha256 = 'TERMUX_PKG_SHA256=73c853c3d44e1f693e5a96a986f1bd19d3d0dac2c7d453e796177774bc4e5f6a';
   if (!libaclRecipe.includes(expectedLibaclSource) || !libaclRecipe.includes(expectedLibaclSha256)) {
-    fail('Generated libacl recipe must use the exact HTTPS Savannah mirror and retain libacl 2.4.0’s pinned SHA-256.');
+    fail('Generated libacl recipe must use the exact official Savannah OCF HTTPS mirror and retain libacl 2.4.0’s pinned SHA-256.');
   }
 
   const properties = readFileSync(propertiesPath, 'utf8');
@@ -285,7 +286,7 @@ try {
   console.log('Copper completed-package pruning verified before upstream finish-build exits its subshell.');
   console.log(`Copper bootstrap second-stage generation verified: ${config.packageManager} manager and ${config.architecture} architecture are explicit.`);
   console.log('Copper bootstrap archive export verified: package-builder output/ is used instead of the repository root.');
-  console.log('Copper attr and libacl sources verified: HTTPS Savannah mirror with their upstream SHA-256 pins retained.');
+  console.log('Copper attr and libacl sources verified: official Savannah OCF HTTPS mirror with their upstream SHA-256 pins retained.');
   console.log(`Copper default bootstrap dependency closure verified: ${bootstrapDependencyRecipePaths.size} recipe roots, no raw Savannah origin URLs.`);
   console.log(`Copper generated bootstrap recipes verified: ${bootstrapPackages.length} direct package entries map to pinned source recipes.`);
   console.log(`Copper generated termux-core make arguments verified: ${makeArguments.length} assignments, no bare make targets.`);

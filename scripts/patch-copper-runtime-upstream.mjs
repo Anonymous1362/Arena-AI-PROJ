@@ -440,30 +440,33 @@ try {
   );
   writeFileSync(termuxAmRecipePath, termuxAmRecipe);
 
-  // The complete bootstrap failed only because the pinned attr source endpoint
-  // spent its entire retry budget returning 502/zero-byte responses. Keep the
-  // identical release and SHA-256 pin, but use Savannah's HTTPS mirror rather
-  // than the unavailable plain-HTTP endpoint. This is deliberately scoped to
-  // the exact pinned recipe, not a broad source-URL rewrite.
+  // The fresh candidate reached attr but the static Savannah download-mirror
+  // host exhausted its retry budget on connection timeouts. Use the Open
+  // Computing Facility's HTTPS endpoint: it is an active, official Savannah
+  // mirror listed in releases/00_MIRRORS.txt and serves the exact pinned
+  // release. The existing SHA-256 is still verified before extraction, so the
+  // endpoint changes availability only—not the trusted source bytes. Scope
+  // this to the two affected, exact pinned recipes rather than rewriting
+  // download behavior for every package in the large bootstrap closure.
   let attrRecipe = readFileSync(attrRecipePath, 'utf8');
   attrRecipe = replaceExactly(
     attrRecipe,
     'TERMUX_PKG_SRCURL="http://download.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"',
-    'TERMUX_PKG_SRCURL="https://download-mirror.savannah.gnu.org/releases/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"',
-    'attr 2.6.0 HTTPS source mirror'
+    'TERMUX_PKG_SRCURL="https://mirrors.ocf.berkeley.edu/nongnu/attr/attr-${TERMUX_PKG_VERSION}.tar.gz"',
+    'attr 2.6.0 official Savannah OCF HTTPS mirror'
   );
   writeFileSync(attrRecipePath, attrRecipe);
 
-  // libacl is the next bootstrap dependency using the same Savannah release
-  // infrastructure. The attr preflight proved the HTTPS mirror path; switch
-  // this exact pinned ACL release before it can fail late in the full graph.
-  // Its upstream SHA-256 remains unchanged and is verified before extraction.
+  // libacl is the next bootstrap dependency served from the same unavailable
+  // central infrastructure. Keep its exact source version/checksum and switch
+  // it to the same independently hosted official Savannah OCF mirror before it
+  // can cause a later full-build failure.
   let libaclRecipe = readFileSync(libaclRecipePath, 'utf8');
   libaclRecipe = replaceExactly(
     libaclRecipe,
     'TERMUX_PKG_SRCURL=https://download.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz',
-    'TERMUX_PKG_SRCURL=https://download-mirror.savannah.gnu.org/releases/acl/acl-${TERMUX_PKG_VERSION}.tar.gz',
-    'libacl 2.4.0 HTTPS source mirror'
+    'TERMUX_PKG_SRCURL=https://mirrors.ocf.berkeley.edu/nongnu/acl/acl-${TERMUX_PKG_VERSION}.tar.gz',
+    'libacl 2.4.0 official Savannah OCF HTTPS mirror'
   );
   writeFileSync(libaclRecipePath, libaclRecipe);
 
@@ -495,8 +498,8 @@ try {
       'Perl recognizes termux-exec’s TERMUX_EXEC__PROC_SELF_EXE contract and uses its preserved interpreter argv[0] for $^X on Android system-linker launches, so CPAN runs Perl rather than linker64 when building Locale::gettext during dpkg-perl postinst.',
       'dpkg 1.22.6 is cloned from the official GitHub maintainer mirror after the Salsa host returned HTTP 503; its signed tag’s exact b2f9600… commit is checked after clone.',
       'termux-am builds against an isolated writable SDK under its temporary package directory, with platforms;android-33 and build-tools;30.0.3 explicitly provisioned before Gradle runs.',
-      'attr 2.6.0 retains its pinned SHA-256 but downloads from Savannah’s HTTPS mirror instead of the unavailable plain-HTTP origin URL.',
-      'libacl 2.4.0 retains its pinned SHA-256 but downloads from the same HTTPS Savannah mirror instead of the repeatedly unavailable origin URL.',
+      'attr 2.6.0 retains its pinned SHA-256 and downloads from the independently hosted Open Computing Facility HTTPS mirror listed by Savannah after the static download-mirror host timed out.',
+      'libacl 2.4.0 retains its pinned SHA-256 and uses the same official Savannah Open Computing Facility mirror before it can fail late in the full bootstrap graph.',
     ],
     note: 'The Java package namespace and full terminal UI are intentionally not changed by this bootstrap/package phase. The later native integration phase must patch matching runtime constants and retain upstream notices.',
   };

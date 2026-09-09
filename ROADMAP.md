@@ -97,10 +97,23 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
 - [x] Source-level repair evidence: the exact patch applied cleanly after
   perl-cross 1.6.4 preparation, and generated-input verification passed
   against the exact locked Termux packages checkout.
+- [x] Candidate CI native evidence: [run `34276222236`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34276222236), commit `0f81a07`, passed the native PTY compilation/instrumentation gate,
+  including the direct-linker target-`argv[0]` assertion. This is compile/test
+  evidence only; it is not arm64 phone evidence.
+- [x] Candidate CI root cause: that same run's **source bootstrap** failed while
+  fetching pinned `attr-2.6.0`: static
+  `download-mirror.savannah.gnu.org` exhausted curl's retry budget with
+  connection timeouts. Installer validation and APK construction were correctly
+  skipped, so there is no new artifact to test or reuse.
+- [x] Follow-up source repair staged: `attr` and next dependency `libacl` now
+  use the independently hosted Open Computing Facility HTTPS endpoints listed
+  in Savannah's active `00_MIRRORS.txt`. Their release versions and existing
+  SHA-256 pins are unchanged; the package builder still verifies the exact
+  source bytes before extraction.
 - [ ] Required next evidence: a **new** same-commit candidate CI chain must
   compile/test the native module, build the fresh arm64 source archive, pass
   the compiled-Perl regression gate, validate its installer, and build its
-  personal APK. Do not reuse the historical artifact.
+  personal APK. Do not reuse the historical artifact or failed run.
 - [ ] Required final evidence: clean fallback bootstrap on the physical arm64
   phone. No linker `Makefile.PL` error, no hidden/suppressed postinst failure.
 
