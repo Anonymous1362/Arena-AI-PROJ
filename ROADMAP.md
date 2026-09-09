@@ -90,10 +90,11 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   intentionally enters through linker64 before termux-exec can intercept the
   first `execve`.
 - [x] Regression gates added: generated-input validation requires the exact Perl
-  patch; post-build archive validation requires compiled `bin/perl` to contain
-  the contract marker; a direct-linker PTY test asserts that the target receives
-  its own `argv[0]`, and the arm64 runtime test probes that `$^X` reports
-  Copper's real `bin/perl` path.
+  patch; post-build archive validation requires the direct `bin/perl` launcher
+  plus its compiled `CORE/libperl.so` to carry the contract marker (the patched
+  `caretx.c` is linked into the shared core); a direct-linker PTY test asserts
+  that the target receives its own `argv[0]`, and the arm64 runtime test probes
+  that `$^X` reports Copper's real `bin/perl` path.
 - [x] Source-level repair evidence: the exact patch applied cleanly after
   perl-cross 1.6.4 preparation, and generated-input verification passed
   against the exact locked Termux packages checkout.
@@ -105,15 +106,26 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   `download-mirror.savannah.gnu.org` exhausted curl's retry budget with
   connection timeouts. Installer validation and APK construction were correctly
   skipped, so there is no new artifact to test or reuse.
-- [x] Follow-up source repair staged: `attr` and next dependency `libacl` now
-  use the independently hosted Open Computing Facility HTTPS endpoints listed
-  in Savannah's active `00_MIRRORS.txt`. Their release versions and existing
+- [x] Follow-up source repair: `attr` and next dependency `libacl` use the
+  independently hosted Open Computing Facility HTTPS endpoints listed in
+  Savannah's active `00_MIRRORS.txt`. Their release versions and existing
   SHA-256 pins are unchanged; the package builder still verifies the exact
   source bytes before extraction.
+- [x] Candidate CI root cause: [run `34365287051`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34365287051), commit `0c73a83`, passed native validation and progressed beyond the source-download
+  problem, but its completed archive was rejected by an incorrect evidence
+  gate. Perl builds with `-Duseshrplib`; `caretx.c` is in shared
+  `CORE/libperl.so`, while the gate searched only the thin `bin/perl` launcher
+  for the marker. Installer validation and APK construction were correctly
+  skipped, so there is no new artifact.
+- [x] Follow-up gate repair staged: archive verification now checks that
+  `bin/perl` is a direct ELF launcher and finds exactly one direct
+  `lib/perl5/.../*-android/CORE/libperl.so` ELF member containing
+  `TERMUX_EXEC__PROC_SELF_EXE`. It does not accept a marker from an unrelated
+  archive member.
 - [ ] Required next evidence: a **new** same-commit candidate CI chain must
   compile/test the native module, build the fresh arm64 source archive, pass
-  the compiled-Perl regression gate, validate its installer, and build its
-  personal APK. Do not reuse the historical artifact or failed run.
+  the corrected compiled-Perl regression gate, validate its installer, and
+  build its personal APK. Do not reuse the historical artifact or failed run.
 - [ ] Required final evidence: clean fallback bootstrap on the physical arm64
   phone. No linker `Makefile.PL` error, no hidden/suppressed postinst failure.
 

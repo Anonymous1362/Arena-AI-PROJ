@@ -179,8 +179,8 @@ try {
   // required by termux-tools. Their emitted .debs and built-package markers
   // are reused by build-bootstraps.
   const preflightPackages = [
-    { name: 'attr', purpose: 'attr HTTPS Savannah source delivery and checksum' },
-    { name: 'libacl', purpose: 'libacl HTTPS Savannah source delivery and checksum' },
+    { name: 'attr', purpose: 'attr official Savannah OCF source delivery and checksum' },
+    { name: 'libacl', purpose: 'libacl official Savannah OCF source delivery and checksum' },
     { name: 'termux-am', purpose: 'Android Gradle package build' },
     { name: 'termux-tools', purpose: 'Copper interactive login/profile configuration' },
   ];
@@ -381,23 +381,44 @@ try {
 
   // This is the post-build regression evidence for the actual on-device
   // failure: Perl uses /proc/self/exe for $^X, while termux-exec launches
-  // private ELF files through Android's linker. The compiled runtime must
-  // therefore retain the explicit termux-exec target-path contract before we
-  // ever present another arm64 bootstrap for physical-device testing.
+  // private ELF files through Android's linker. `useshrplib` puts caretx.c in
+  // Perl's CORE libperl.so, while bin/perl is only the ELF launcher. Validate
+  // both roles explicitly: the launcher must be a direct executable and the
+  // one direct CORE library must carry the compiled repair. Looking only in
+  // bin/perl caused the 0c73a83 candidate to reject a successfully built Perl
+  // before installer validation, even though it had progressed past the source
+  // build and source-download gates.
   const perlBinary = spawnSync('unzip', ['-p', expectedArchive, 'bin/perl'], {
     encoding: 'buffer',
     maxBuffer: 32 * 1024 * 1024,
   });
   if (perlBinary.status !== 0 || perlBinary.error) {
-    throw new Error(`Could not read compiled bin/perl for system-linker $^X validation:\n${commandFailureDetails(perlBinary)}`);
+    throw new Error(`Could not read compiled bin/perl launcher for system-linker $^X validation:\n${commandFailureDetails(perlBinary)}`);
   }
   if (!perlBinary.stdout.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
-    throw new Error('Compiled bin/perl is not a direct ELF archive member; review the system-linker $^X regression check deliberately.');
+    throw new Error('Compiled bin/perl launcher is not a direct ELF archive member; review the system-linker $^X regression check deliberately.');
   }
-  if (!perlBinary.stdout.includes(Buffer.from('TERMUX_EXEC__PROC_SELF_EXE'))) {
-    throw new Error('Compiled bin/perl is missing the TERMUX_EXEC__PROC_SELF_EXE $^X repair. Refusing the known-broken CPAN bootstrap path.');
+  const perlCoreLibraries = archiveMemberNames.filter((archivePath) => (
+    /^lib\/perl5\/[^/]+\/[^/]+-android\/CORE\/libperl\.so$/.test(archivePath)
+  ));
+  if (perlCoreLibraries.length !== 1) {
+    throw new Error(`Expected exactly one direct Perl CORE libperl.so archive member for $^X validation, found ${perlCoreLibraries.length}: ${perlCoreLibraries.join(', ') || '(none)'}.`);
   }
-  console.log('Copper compiled Perl regression verified: system-linker $^X repair is present for CPAN child execution.');
+  const [perlCoreLibraryPath] = perlCoreLibraries;
+  const perlCoreLibrary = spawnSync('unzip', ['-p', expectedArchive, perlCoreLibraryPath], {
+    encoding: 'buffer',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (perlCoreLibrary.status !== 0 || perlCoreLibrary.error) {
+    throw new Error(`Could not read compiled ${perlCoreLibraryPath} for system-linker $^X validation:\n${commandFailureDetails(perlCoreLibrary)}`);
+  }
+  if (!perlCoreLibrary.stdout.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+    throw new Error(`Compiled ${perlCoreLibraryPath} is not a direct ELF archive member; review the system-linker $^X regression check deliberately.`);
+  }
+  if (!perlCoreLibrary.stdout.includes(Buffer.from('TERMUX_EXEC__PROC_SELF_EXE'))) {
+    throw new Error(`Compiled ${perlCoreLibraryPath} is missing the TERMUX_EXEC__PROC_SELF_EXE $^X repair. Refusing the known-broken CPAN bootstrap path.`);
+  }
+  console.log(`Copper compiled Perl regression verified: bin/perl launcher and ${perlCoreLibraryPath} contain the expected system-linker $^X execution path.`);
 
   for (const requiredFile of config.bootstrap.requiredFiles) {
     const normalizedRequiredFile = normalizedArchivePath(requiredFile);

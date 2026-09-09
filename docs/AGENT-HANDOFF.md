@@ -94,8 +94,9 @@ Source diagnosis against the **exact lock**
   for the initial Bash, because native code intentionally invokes linker64
   before termux-exec can intercept that initial `execve`.
 - `scripts/verify-copper-runtime-generated-inputs.mjs` fails closed unless the
-  exact patch is present; `scripts/build-copper-runtime-bootstrap.mjs` fails
-  unless compiled `bin/perl` contains `TERMUX_EXEC__PROC_SELF_EXE`.
+  exact patch is present. `scripts/build-copper-runtime-bootstrap.mjs` verifies
+  a direct `bin/perl` launcher and the one direct shared
+  `lib/perl5/.../CORE/libperl.so` member that actually contains `caretx.c`.
 - The direct-linker PTY test now asserts the target receives its own `argv[0]`,
   not linker64. The arm64 bundled-runtime instrumentation test then probes
   `copper-runtime-perl-caret-x:<prefix>/bin/perl`. It is intentionally skipped
@@ -106,23 +107,32 @@ Do **not** remove or weaken the independent pinned `dpkg` repair: use the
 `b2f9600ead232a2dd3c27f8b52807a9ca5854d17` after clone. It fixes the earlier
 Salsa transport failure, not this CPAN/runtime defect.
 
-## Latest candidate CI result and follow-up source repair
+## Candidate CI results and current archive-gate repair
 
 - Candidate CI [run `34276222236`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34276222236) for commit `0f81a07` passed TypeScript, Android/web smoke checks, and the
-  native PTY compile/instrumentation gate. It then failed its arm64 source
-  bootstrap; bundled installer validation and personal APK jobs were skipped.
-  There is no new artifact.
-- The source failure is not a Kotlin, C, archive, or Perl-patch compile failure.
-  Its check annotations show `attr-2.6.0` repeatedly timing out at static
-  `download-mirror.savannah.gnu.org` until curl exhausted its retry budget.
-- The working-tree follow-up changes only `attr` and the next dependency,
-  `libacl`, to `https://mirrors.ocf.berkeley.edu/nongnu/...`. Open Computing
-  Facility is an active official Savannah mirror listed in the project's
-  `releases/00_MIRRORS.txt`; both recipes retain their upstream pinned
-  SHA-256 checksums, so the mirror changes availability only, not source trust.
-- The official OCF endpoints were independently confirmed to return the expected
-  `attr-2.6.0` and `acl-2.4.0` release streams. The package builder's existing
-  SHA-256 verification remains the final byte-level acceptance gate.
+  native PTY compile/instrumentation gate. Its arm64 source bootstrap failed
+  while `attr-2.6.0` repeatedly timed out at static
+  `download-mirror.savannah.gnu.org`; bundled installer validation and personal
+  APK jobs were skipped. There is no artifact.
+- Commit `0c73a83` moved only `attr` and next dependency `libacl` to
+  `https://mirrors.ocf.berkeley.edu/nongnu/...`. Open Computing Facility is an
+  active official Savannah mirror listed in `releases/00_MIRRORS.txt`; the
+  existing upstream SHA-256 values remain the final byte-level acceptance gate.
+  Its endpoints were independently confirmed to return the expected release
+  streams.
+- Candidate CI [run `34365287051`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34365287051) passed native validation and progressed beyond the source-download
+  failure. The completed archive was then rejected by the post-build marker
+  gate; installer/APK jobs were skipped and no artifact exists.
+- That failure is a gate implementation bug, not evidence that Perl did not
+  compile or that the patch did not apply. The pinned Perl recipe passes
+  `-Duseshrplib`, and upstream `Makefile.SH` places `caretx.o` in
+  `perllib_objs`, which builds `lib/perl5/.../CORE/libperl.so`. The old gate
+  searched the thin `bin/perl` launcher for the source-marker string.
+- The working-tree repair still requires `bin/perl` to be a direct ELF, then
+  requires exactly one direct Android `CORE/libperl.so` archive member to be an
+  ELF containing `TERMUX_EXEC__PROC_SELF_EXE`. It will reject a missing,
+  ambiguous, non-ELF, or unpatched core library rather than accept an unrelated
+  archive member.
 
 ## Terminal and mobile repair contained in candidate commit `0f81a07`
 
@@ -153,22 +163,23 @@ complete just because TypeScript passes.
 | Perl patch application after perl-cross 1.6.4 preparation | Passed (perl-cross does not overwrite `caretx.c`) |
 | `npm ci --ignore-scripts` + `npm run typecheck` | Passed |
 | `npx expo prebuild --platform android --clean` | Passed; Expo emitted pre-existing configuration advisories only |
-| `git diff --check` | Passed at the time of the Phase 0 candidate commit; rerun after the OCF mirror follow-up |
+| `git diff --check` | Passed at the time of the OCF mirror candidate commit; rerun after the CORE libperl gate repair |
 | Candidate CI `34276222236`: native PTY compilation/instrumentation | **Passed** on commit `0f81a07`, including raw Ctrl-C and direct-linker target-`argv[0]` coverage |
 | Candidate CI `34276222236`: arm64 source bootstrap | **Failed** only at pinned `attr-2.6.0` download: static `download-mirror.savannah.gnu.org` timed out until curl exhausted its retry budget. No archive/APK was produced. |
+| Candidate CI `34365287051`: source build through archive validation | **Reached the final marker gate** after the OCF source repair; the gate incorrectly searched thin `bin/perl` instead of the shared CORE `libperl.so` that contains `caretx.c`. Installer/APK were skipped; no artifact was produced. |
 | Local Gradle native compile | Not available: this sandbox has no Java/JDK; installing `openjdk-17-jdk-headless` failed because the Debian mirror was unreachable. This is an environment limitation, **not** a local compile pass; CI has now supplied native compilation evidence. |
 
 ## Required next actions
 
 1. Re-run `npm run typecheck`, `node --check` for changed scripts, generated
-   exact-lock patch/verify test, and `git diff --check` after the official OCF
-   mirror follow-up. Confirm generated `attr` and `libacl` recipes retain the
-   exact OCF URL plus original SHA-256 pins.
-2. Commit/push the cohesive source-availability repair using **exactly one**
+   exact-lock patch/verify test, and `git diff --check` after the CORE `libperl`
+   gate repair. Confirm the source recipe still enables shared libperl and the
+   verifier still requires the precise generated Perl patch.
+2. Commit/push the cohesive archive-gate repair using **exactly one**
    `[runtime-device-candidate]` marker only after those preflights pass. The
    marker drives a fresh same-commit native compile, full arm64 source build,
-   compiled-Perl gate, installer validation, and personal APK. Do not dispatch
-   ordinary workflows; this integration returns 403 for manual dispatch.
+   corrected compiled-Perl gate, installer validation, and personal APK. Do not
+   dispatch ordinary workflows; this integration returns 403 for manual dispatch.
 3. Watch the candidate CI. If it fails, retrieve the retained failure log or
    inspect job/check annotations and fix the root cause before another marker.
    Do not rerun unchanged, use failed-run output as success evidence, or use the
@@ -188,6 +199,9 @@ complete just because TypeScript passes.
 - `34276222236` passed native validation but failed later on the static Savannah
   `attr` connection timeout; installer/APK jobs were skipped. Do not treat it as
   an artifact candidate or rerun its unchanged source URLs.
+- `34365287051` reached final archive verification after the OCF mirror repair,
+  but was rejected by the old thin-`bin/perl` marker check. It is not evidence of
+  an absent Perl patch and has no artifact; do not rerun its unchanged gate.
 - `gh workflow run` is HTTP 403 here; use the controlled marker only after
   preflight evidence.
 - `gh run download` of historical artifact `10067075336` returned GitHub/Azure
