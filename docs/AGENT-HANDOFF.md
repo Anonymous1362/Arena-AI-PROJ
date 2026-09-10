@@ -83,7 +83,7 @@ Source diagnosis against the **exact lock**
   value can name the original script (for example `bin/cpan`), while Android's
   post-linker `argv[0]` is the real interpreter (`bin/perl`).
 
-### Repair staged in the working tree (not yet CI proven)
+### Repair is CI-proven; real arm64 hardware remains the required evidence
 
 - `scripts/patch-copper-runtime-upstream.mjs` writes a deterministic pinned
   Perl patch, `packages/perl/0001-termux-exec-caret-x.patch`. On Android it
@@ -128,11 +128,19 @@ Salsa transport failure, not this CPAN/runtime defect.
   `-Duseshrplib`, and upstream `Makefile.SH` places `caretx.o` in
   `perllib_objs`, which builds `lib/perl5/.../CORE/libperl.so`. The old gate
   searched the thin `bin/perl` launcher for the source-marker string.
-- The working-tree repair still requires `bin/perl` to be a direct ELF, then
-  requires exactly one direct Android `CORE/libperl.so` archive member to be an
-  ELF containing `TERMUX_EXEC__PROC_SELF_EXE`. It will reject a missing,
-  ambiguous, non-ELF, or unpatched core library rather than accept an unrelated
-  archive member.
+- The corrected repair requires `bin/perl` to be a direct ELF, then requires
+  exactly one direct Android `CORE/libperl.so` archive member to be an ELF
+  containing `TERMUX_EXEC__PROC_SELF_EXE`. It rejects a missing, ambiguous,
+  non-ELF, or unpatched core library rather than accepting an unrelated archive
+  member.
+- Candidate CI [run `34396030483`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34396030483) for commit `da321a4` passed native PTY validation, fresh arm64
+  source build, corrected archive validation, bundled arm64 installer
+  validation, and personal arm64 APK construction. No failure-diagnostic step
+  ran. Its personal-device artifact is `Copper-runtime-device-candidate`, ID
+  `10125842639`, envelope digest
+  `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`,
+  retained until `2026-09-23T21:31:10Z`. It is only for the owner's physical
+  test and is not a release.
 
 ## Terminal and mobile repair contained in candidate commit `0f81a07`
 
@@ -151,10 +159,10 @@ Salsa transport failure, not this CPAN/runtime defect.
   not restart its opening animation when Android resizes after keyboard
   dismissal.
 
-These source changes require CI and physical-device evidence; do not call them
-complete just because TypeScript passes.
+The required CI chain has now passed; physical-device evidence is still
+mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 
-## Checks already performed for the staged repair
+## Checks and candidate-chain evidence
 
 | Check | Result |
 | --- | --- |
@@ -163,34 +171,32 @@ complete just because TypeScript passes.
 | Perl patch application after perl-cross 1.6.4 preparation | Passed (perl-cross does not overwrite `caretx.c`) |
 | `npm ci --ignore-scripts` + `npm run typecheck` | Passed |
 | `npx expo prebuild --platform android --clean` | Passed; Expo emitted pre-existing configuration advisories only |
-| `git diff --check` | Passed at the time of the OCF mirror candidate commit; rerun after the CORE libperl gate repair |
+| `git diff --check` | Passed before commit `da321a4` |
 | Candidate CI `34276222236`: native PTY compilation/instrumentation | **Passed** on commit `0f81a07`, including raw Ctrl-C and direct-linker target-`argv[0]` coverage |
 | Candidate CI `34276222236`: arm64 source bootstrap | **Failed** only at pinned `attr-2.6.0` download: static `download-mirror.savannah.gnu.org` timed out until curl exhausted its retry budget. No archive/APK was produced. |
-| Candidate CI `34365287051`: source build through archive validation | **Reached the final marker gate** after the OCF source repair; the gate incorrectly searched thin `bin/perl` instead of the shared CORE `libperl.so` that contains `caretx.c`. Installer/APK were skipped; no artifact was produced. |
-| Local Gradle native compile | Not available: this sandbox has no Java/JDK; installing `openjdk-17-jdk-headless` failed because the Debian mirror was unreachable. This is an environment limitation, **not** a local compile pass; CI has now supplied native compilation evidence. |
+| Candidate CI `34365287051`: source build through archive validation | **Reached the final marker gate** after the OCF source repair; the old gate incorrectly searched thin `bin/perl` instead of the shared CORE `libperl.so` that contains `caretx.c`. Installer/APK were skipped; no artifact was produced. |
+| Candidate CI `34396030483`: complete same-commit chain | **Passed** on `da321a4`: native PTY compile/instrumentation, fresh arm64 source bootstrap and corrected CORE-libperl gate, bundled arm64 installation validation, and personal arm64 APK build/upload. |
+| Local Gradle native compile | Not available: this sandbox has no Java/JDK; installing `openjdk-17-jdk-headless` failed because the Debian mirror was unreachable. This is an environment limitation, **not** a local compile pass; the complete candidate CI now supplies native compilation evidence. |
 
 ## Required next actions
 
-1. Re-run `npm run typecheck`, `node --check` for changed scripts, generated
-   exact-lock patch/verify test, and `git diff --check` after the CORE `libperl`
-   gate repair. Confirm the source recipe still enables shared libperl and the
-   verifier still requires the precise generated Perl patch.
-2. Commit/push the cohesive archive-gate repair using **exactly one**
-   `[runtime-device-candidate]` marker only after those preflights pass. The
-   marker drives a fresh same-commit native compile, full arm64 source build,
-   corrected compiled-Perl gate, installer validation, and personal APK. Do not
-   dispatch ordinary workflows; this integration returns 403 for manual dispatch.
-3. Watch the candidate CI. If it fails, retrieve the retained failure log or
-   inspect job/check annotations and fix the root cause before another marker.
-   Do not rerun unchanged, use failed-run output as success evidence, or use the
-   old APK.
-4. If CI is green, give the user the new run/artifact ID and request only the
-   Phase 0 physical checklist from `ROADMAP.md`: clean fallback bootstrap,
-   normal send/input/output, Ctrl-C (`sleep 30`, wait for interruption),
-   stale-session feedback, Terminal keyboard attachment, Chat overflow keyboard
-   dismissal, and outside-tap/sheet animation.
-5. Update this handoff and `ROADMAP.md` with real results. Phase 0 stays blocked
-   until the user confirms every device row.
+1. Download `Copper-runtime-device-candidate` (artifact `10125842639`) from
+   [run `34396030483`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34396030483) before `2026-09-23T21:31:10Z`. Its outer GitHub artifact-envelope
+   digest is `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`.
+   Install only its contained `Copper-runtime-device-candidate.apk`; the
+   accompanying manifest/receipt identify the exact source-built runtime. Do
+   not redistribute it or call it a release.
+2. Request and record **only** the real-phone Phase 0 checklist from
+   `ROADMAP.md`: clean fallback bootstrap, normal Send/input/output, Ctrl-C
+   (`sleep 30`, wait for interruption before another command), stale-session
+   feedback, Terminal keyboard attachment, Chat overflow keyboard dismissal,
+   and outside-tap/sheet animation/haptics.
+3. If the new physical candidate fails, obtain the exact visible error,
+   screenshots, and reproduction steps; diagnose the actual failure before any
+   next marker commit. Do not reuse either failed historical run or suppress a
+   bootstrap/postinst error.
+4. Update this handoff and `ROADMAP.md` with the real-device result. Phase 0
+   stays blocked until the user confirms every device row.
 
 ## Do not repeat these dead ends
 

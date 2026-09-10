@@ -76,7 +76,7 @@ This is **not** the earlier Salsa/dpkg mirror problem. The pinned Termux
 packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
 `dpkg-perl` subpackage is the source of the CPAN postinst.
 
-### Root cause and repair currently awaiting new CI/device evidence
+### Root cause and repair — CI verified; physical-device evidence outstanding
 
 - [x] Root cause: Android system-linker execution makes `/proc/self/exe` name
   `linker64`. Perl 5.42.2 uses that proc link to initialize `$^X`; CPAN then
@@ -117,17 +117,24 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   `CORE/libperl.so`, while the gate searched only the thin `bin/perl` launcher
   for the marker. Installer validation and APK construction were correctly
   skipped, so there is no new artifact.
-- [x] Follow-up gate repair staged: archive verification now checks that
-  `bin/perl` is a direct ELF launcher and finds exactly one direct
+- [x] Follow-up gate repair: archive verification now checks that `bin/perl`
+  is a direct ELF launcher and finds exactly one direct
   `lib/perl5/.../*-android/CORE/libperl.so` ELF member containing
   `TERMUX_EXEC__PROC_SELF_EXE`. It does not accept a marker from an unrelated
   archive member.
-- [ ] Required next evidence: a **new** same-commit candidate CI chain must
-  compile/test the native module, build the fresh arm64 source archive, pass
-  the corrected compiled-Perl regression gate, validate its installer, and
-  build its personal APK. Do not reuse the historical artifact or failed run.
-- [ ] Required final evidence: clean fallback bootstrap on the physical arm64
-  phone. No linker `Makefile.PL` error, no hidden/suppressed postinst failure.
+- [x] Same-commit candidate CI: [run `34396030483`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34396030483), commit `da321a4`, passed **all** required gates: native
+  PTY compilation/instrumentation, fresh arm64 source bootstrap including the
+  corrected compiled-Perl archive gate, bundled-runtime installer validation,
+  and personal arm64 APK construction. Failure-diagnostics steps were skipped.
+  The new personal-test artifact is `Copper-runtime-device-candidate`, ID
+  `10125842639`, GitHub artifact-envelope digest
+  `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`.
+  It expires at `2026-09-23T21:31:10Z`; download it from that CI run. It is not
+  a public release and must not be redistributed as one.
+- [ ] Required final evidence: install that **new** candidate on the physical
+  arm64 phone and complete every unchecked Phase 0 row below. In particular,
+  confirm a clean fallback bootstrap with no linker `Makefile.PL` error and no
+  hidden/suppressed postinst failure.
 
 The pinned `guillemj/dpkg` 1.22.6 GitHub mirror and exact commit validation
 remain required. Do not remove or weaken that independent source-fetch repair.
