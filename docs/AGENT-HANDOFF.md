@@ -138,9 +138,20 @@ Salsa transport failure, not this CPAN/runtime defect.
   validation, and personal arm64 APK construction. No failure-diagnostic step
   ran. Its personal-device artifact is `Copper-runtime-device-candidate`, ID
   `10125842639`, envelope digest
-  `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`,
-  retained until `2026-09-23T21:31:10Z`. It is only for the owner's physical
-  test and is not a release.
+  `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`.
+  Its 14-day retention elapsed before physical testing, so it is no longer
+  available. It was only for the owner's test and never a release.
+- Candidate CI [run `45428745456`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45428745456) for reissue commit `cecdcb6` passed native PTY,
+  TypeScript, Android/web smoke, and release-gate checks. It failed **before**
+  the full bootstrap at focused `attr` preflight; installer/APK jobs were
+  skipped. The exact annotation says only `Copper attr package preflight failed
+  with exit code 1`. Its 1.8 KB retained build log returned Azure-blob `EOF`
+  through both `gh run download` and GitHub log retrieval in this sandbox, so
+  the underlying cause is deliberately still unknown.
+- The next candidate's CI diagnostics must always emit a bounded raw final log
+  context into check annotations on failure. This is diagnostic-only: it does
+  not loosen archive validation, suppress a failure, or turn arbitrary log text
+  into a claimed root cause.
 
 ## Terminal and mobile repair contained in candidate commit `0f81a07`
 
@@ -175,28 +186,29 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 | Candidate CI `34276222236`: native PTY compilation/instrumentation | **Passed** on commit `0f81a07`, including raw Ctrl-C and direct-linker target-`argv[0]` coverage |
 | Candidate CI `34276222236`: arm64 source bootstrap | **Failed** only at pinned `attr-2.6.0` download: static `download-mirror.savannah.gnu.org` timed out until curl exhausted its retry budget. No archive/APK was produced. |
 | Candidate CI `34365287051`: source build through archive validation | **Reached the final marker gate** after the OCF source repair; the old gate incorrectly searched thin `bin/perl` instead of the shared CORE `libperl.so` that contains `caretx.c`. Installer/APK were skipped; no artifact was produced. |
-| Candidate CI `34396030483`: complete same-commit chain | **Passed** on `da321a4`: native PTY compile/instrumentation, fresh arm64 source bootstrap and corrected CORE-libperl gate, bundled arm64 installation validation, and personal arm64 APK build/upload. |
-| Local Gradle native compile | Not available: this sandbox has no Java/JDK; installing `openjdk-17-jdk-headless` failed because the Debian mirror was unreachable. This is an environment limitation, **not** a local compile pass; the complete candidate CI now supplies native compilation evidence. |
+| Candidate CI `34396030483`: complete same-commit chain | **Passed** on `da321a4`: native PTY compile/instrumentation, fresh arm64 source bootstrap and corrected CORE-libperl gate, bundled arm64 installation validation, and personal arm64 APK build/upload. Its 14-day personal artifact has since expired. |
+| Candidate CI `45428745456`: reissue | **Failed before full bootstrap** at focused `attr` preflight. Native PTY/typecheck/Android/web/release-gate jobs passed; installer/APK jobs were skipped. The precise package-builder cause is not yet known because the retained log's Azure endpoint returned `EOF`. |
+| Local Gradle native compile | Not available: this sandbox has no Java/JDK or Docker daemon. This is an environment limitation, **not** a local compile pass; GitHub candidate CI supplies native compilation evidence. |
 
 ## Required next actions
 
-1. Download `Copper-runtime-device-candidate` (artifact `10125842639`) from
-   [run `34396030483`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/34396030483) before `2026-09-23T21:31:10Z`. Its outer GitHub artifact-envelope
-   digest is `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`.
-   Install only its contained `Copper-runtime-device-candidate.apk`; the
-   accompanying manifest/receipt identify the exact source-built runtime. Do
-   not redistribute it or call it a release.
-2. Request and record **only** the real-phone Phase 0 checklist from
-   `ROADMAP.md`: clean fallback bootstrap, normal Send/input/output, Ctrl-C
-   (`sleep 30`, wait for interruption before another command), stale-session
-   feedback, Terminal keyboard attachment, Chat overflow keyboard dismissal,
-   and outside-tap/sheet animation/haptics.
-3. If the new physical candidate fails, obtain the exact visible error,
-   screenshots, and reproduction steps; diagnose the actual failure before any
-   next marker commit. Do not reuse either failed historical run or suppress a
-   bootstrap/postinst error.
-4. Update this handoff and `ROADMAP.md` with the real-device result. Phase 0
-   stays blocked until the user confirms every device row.
+1. Push the diagnostic-only failure-context repair with one fresh
+   `[runtime-device-candidate]` marker. It must rerun the same full candidate
+   chain and make the terminal part of a failure log inspectable through check
+   annotations even if GitHub artifact blobs return `EOF` externally.
+2. If focused `attr` preflight fails again, use that raw annotated context to
+   identify the exact package-builder/source/transport failure. Repair the
+   verified cause—not the generic Node wrapper—and rerun only after local
+   preflights pass. Do not bypass `attr`, substitute unpinned bytes, or weaken
+   archive/installer validation to manufacture an APK.
+3. If the chain becomes green, download the newly produced
+   `Copper-runtime-device-candidate` within its 14-day retention and then
+   request the physical-phone checklist from `ROADMAP.md`: clean fallback
+   bootstrap, normal Send/input/output, Ctrl-C, stale-session feedback,
+   Terminal keyboard attachment, Chat overflow keyboard dismissal, and smooth
+   outside-tap/sheet animation/haptics.
+4. Update this handoff and `ROADMAP.md` with the failure root cause or real
+   device result. Phase 0 remains blocked until every device row passes.
 
 ## Do not repeat these dead ends
 

@@ -129,8 +129,19 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   The new personal-test artifact is `Copper-runtime-device-candidate`, ID
   `10125842639`, GitHub artifact-envelope digest
   `sha256:f53a3a41b2b489329b8d3d6a8de0979977ce90cda009bdecb8c4467a3eb89a37`.
-  It expires at `2026-09-23T21:31:10Z`; download it from that CI run. It is not
-  a public release and must not be redistributed as one.
+  Its 14-day GitHub artifact retention elapsed before device testing, so it is
+  now unavailable; it was never a public release.
+- [x] Candidate reissue attempt: [run `45428745456`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45428745456), commit `cecdcb6`, passed native PTY, TypeScript, Android/web
+  smoke, and release-gate checks, but stopped before the full bootstrap in the
+  focused `attr` package preflight. Its only authoritative annotation is
+  `Copper attr package preflight failed with exit code 1`; installer/APK jobs
+  were correctly skipped. The retained `copper-runtime-bootstrap-build-log`
+  artifact could not be read from this sandbox because GitHub's Azure blob
+  endpoint returned `EOF`, so no unverified root cause is claimed.
+- [ ] Required next evidence: a fresh candidate must expose the bounded final
+  source-build log in its check annotations, identify and repair the exact
+  current `attr` preflight cause, then pass the complete same-commit CI chain
+  before another physical-phone APK is requested.
 - [ ] Required final evidence: install that **new** candidate on the physical
   arm64 phone and complete every unchecked Phase 0 row below. In particular,
   confirm a clean fallback bootstrap with no linker `Makefile.PL` error and no

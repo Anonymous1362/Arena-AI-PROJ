@@ -324,15 +324,39 @@ jobs:
             } | awk 'NF && !seen[$0]++' | tail -20
           )
           if [ "${#diagnostics[@]}" -eq 0 ]; then
-            echo "::error title=Copper bootstrap::Bootstrap failed without a recognizable diagnostic. Open the retained build log artifact; no ordinary build-output lines were relabeled as errors."
-            exit 0
+            echo "::error title=Copper bootstrap::Bootstrap failed without a recognized terminating error; the bounded final log excerpt below is the diagnostic evidence."
+          else
+            for line in "${diagnostics[@]}"; do
+              line="${line//'%'/'%25'}"
+              line="${line//$'\r'/'%0D'}"
+              line="${line//$'\n'/'%0A'}"
+              echo "::error title=Copper bootstrap::$line"
+            done
           fi
-          for line in "${diagnostics[@]}"; do
-            line="${line//'%'/'%25'}"
-            line="${line//$'\r'/'%0D'}"
-            line="${line//$'\n'/'%0A'}"
-            echo "::error title=Copper bootstrap::$line"
-          done
+
+          # The current candidate stopped in a focused `attr` preflight whose
+          # causal package-builder line did not match the narrow error patterns
+          # above. Uploads are authoritative, but their Azure blob endpoint can
+          # return EOF to clients outside Actions. On every failed build, relay
+          # the bounded terminal context through check annotations as well. It
+          # is explicitly labelled raw context, never reclassified as a build
+          # error, and escaping prevents upstream text from injecting commands.
+          python3 - "$LOG" <<'PY'
+          from pathlib import Path
+          import sys
+
+          text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          limit = 12_000
+          if len(text) > limit:
+              text = "[Earlier build output omitted; final 12,000 characters follow.]\n" + text[-limit:]
+          chunk_size = 3_000
+          chunks = [text[index:index + chunk_size] for index in range(0, len(text), chunk_size)] or ["The build log was empty."]
+          for index, chunk in enumerate(chunks, start=1):
+              encoded = (chunk.replace("%", "%25")
+                              .replace("\r", "%0D")
+                              .replace("\n", "%0A"))
+              print(f"::error title=Copper bootstrap log tail ({index}/{len(chunks)})::{encoded}")
+          PY
 
       - name: Upload bootstrap build log on failure
         if: ${{ failure() }}
