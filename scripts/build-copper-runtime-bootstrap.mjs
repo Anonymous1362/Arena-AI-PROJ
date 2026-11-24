@@ -212,9 +212,28 @@ try {
     throw new Error('Docker is required for a reproducible bootstrap build. Install/enable Docker, then rerun this command.');
   }
 
+  // `run-docker.sh` defaults to the floating upstream `package-builder:latest`
+  // image. That image advanced after the pinned packages revision: the pinned
+  // recipe requires NDK r29, while latest no longer shipped that directory.
+  // Build the image from this exact locked checkout's Dockerfile and setup
+  // scripts instead. Those scripts download/checksum the NDK selected by the
+  // same pinned `properties.sh`, so the builder/toolchain cannot drift apart.
+  const builderImage = `copper-termux-package-builder:${lock.upstream.termuxPackages.revision.slice(0, 12)}`;
+  const builderImageContext = resolve(packagesRoot, 'scripts');
+  console.log(`Building exact pinned Termux package-builder image ${builderImage} from ${builderImageContext}.`);
+  const builderImageBuild = spawnSync('docker', ['build', '--tag', builderImage, builderImageContext], {
+    stdio: 'inherit',
+  });
+  if (builderImageBuild.status !== 0 || builderImageBuild.error) {
+    throw new Error(`Could not build the exact pinned Termux package-builder image:\n${commandFailureDetails(builderImageBuild)}`);
+  }
+
   const buildEnvironment = {
     ...process.env,
     CI: 'true',
+    // Do not accept the upstream floating image here: it may not carry the NDK
+    // selected by the exact locked packages checkout.
+    TERMUX_BUILDER_IMAGE_NAME: builderImage,
     // The Copper patch makes this safe: completed per-package work trees are
     // reclaimed after their .debs are emitted, while output/, the installed
     // prefix, and the shared cross-toolchain cache remain available.

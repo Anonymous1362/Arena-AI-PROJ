@@ -133,15 +133,20 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   now unavailable; it was never a public release.
 - [x] Candidate reissue attempt: [run `45428745456`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45428745456), commit `cecdcb6`, passed native PTY, TypeScript, Android/web
   smoke, and release-gate checks, but stopped before the full bootstrap in the
-  focused `attr` package preflight. Its only authoritative annotation is
-  `Copper attr package preflight failed with exit code 1`; installer/APK jobs
-  were correctly skipped. The retained `copper-runtime-bootstrap-build-log`
-  artifact could not be read from this sandbox because GitHub's Azure blob
-  endpoint returned `EOF`, so no unverified root cause is claimed.
-- [ ] Required next evidence: a fresh candidate must expose the bounded final
-  source-build log in its check annotations, identify and repair the exact
-  current `attr` preflight cause, then pass the complete same-commit CI chain
-  before another physical-phone APK is requested.
+  focused `attr` package preflight; installer/APK jobs were correctly skipped.
+  The new bounded check annotation exposed the root cause:
+  `ERROR: NDK (/home/builder/lib/android-ndk-r29) not pointing at a directory!`
+  This is **not** an `attr` source/checksum failure. The exact locked packages
+  revision needs NDK r29, while floating upstream
+  `ghcr.io/termux/package-builder:latest` had advanced without that directory.
+- [x] Follow-up builder-image repair staged: the bootstrap script now builds a
+  local Docker image from the exact pinned Termux packages checkout's
+  `scripts/Dockerfile`/setup scripts, whose checked NDK download is r29, and
+  forces every focused preflight/full bootstrap command to use that image. It
+  does not substitute packages or weaken source/archive validation.
+- [ ] Required next evidence: a fresh candidate must build that exact
+  compatibility image, pass the focused preflights and complete same-commit CI
+  chain, then produce a new personal APK before physical-phone testing resumes.
 - [ ] Required final evidence: install that **new** candidate on the physical
   arm64 phone and complete every unchecked Phase 0 row below. In particular,
   confirm a clean fallback bootstrap with no linker `Makefile.PL` error and no
