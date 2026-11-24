@@ -40,6 +40,7 @@ const termuxExecRecipePath = resolve(packagesRoot, 'packages/termux-exec/build.s
 const perlCaretXPatchPath = resolve(packagesRoot, 'packages/perl/0001-termux-exec-caret-x.patch');
 const dpkgRecipePath = resolve(packagesRoot, 'packages/dpkg/build.sh');
 const termuxToolsRecipePath = resolve(packagesRoot, 'packages/termux-tools/build.sh');
+const termuxAmRecipePath = resolve(packagesRoot, 'packages/termux-am/build.sh');
 const attrRecipePath = resolve(packagesRoot, 'packages/attr/build.sh');
 const libaclRecipePath = resolve(packagesRoot, 'packages/libacl/build.sh');
 const config = JSON.parse(readFileSync(resolve(root, 'runtime/copper-runtime.config.json'), 'utf8'));
@@ -55,8 +56,8 @@ try {
   if (config.packageManager !== 'apt') {
     fail(`Copper's current bootstrap layout requires packageManager "apt", received ${JSON.stringify(config.packageManager)}.`);
   }
-  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(perlCaretXPatchPath) || !existsSync(dpkgRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
-    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, Perl system-linker patch, dpkg recipe, termux-tools recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
+  if (!existsSync(propertiesPath) || !existsSync(buildPackagePath) || !existsSync(bootstrapBuildPath) || !existsSync(termuxCoreRecipePath) || !existsSync(termuxExecRecipePath) || !existsSync(perlCaretXPatchPath) || !existsSync(dpkgRecipePath) || !existsSync(termuxToolsRecipePath) || !existsSync(termuxAmRecipePath) || !existsSync(attrRecipePath) || !existsSync(libaclRecipePath)) {
+    fail('Missing generated termux-packages properties, package builder, bootstrap script, termux-core recipe, termux-exec recipe, Perl system-linker patch, dpkg recipe, termux-tools recipe, termux-am recipe, attr recipe, or libacl recipe. Run runtime:upstream and runtime:patch first.');
   }
 
   const buildPackage = readFileSync(buildPackagePath, 'utf8');
@@ -175,6 +176,25 @@ try {
   ].join('\n');
   if (!termuxToolsRecipe.includes(expectedTermuxToolsPreConfigure)) {
     fail('Generated termux-tools recipe does not export Copper paths before configure. Refusing a bootstrap whose interactive login can fall back to /data/data/com.termux.');
+  }
+
+  // GitHub-hosted source builds can receive Maven Central HTTP 429 while
+  // termux-am resolves its legacy Android Gradle Plugin dependencies. The
+  // generated recipe must serialize its Gradle workers and retry only that
+  // explicit transport status with bounded backoff; unrelated compile/package
+  // failures must still stop on their first attempt.
+  const termuxAmRecipe = readFileSync(termuxAmRecipePath, 'utf8');
+  const expectedTermuxAmMaven429Handling = [
+    'for copper_termux_am_attempt in 1 2 3 4 5; do',
+    ' --no-daemon --max-workers=1 :app:assembleRelease 2>&1 | tee "$copper_termux_am_log"; then',
+    'if ! grep -F -q "Received status code 429" "$copper_termux_am_log"; then',
+    'refusing to retry an unrelated build failure.',
+    'copper_termux_am_delay=$((30 * 2 ** (copper_termux_am_attempt - 1)))',
+    'sleep "$copper_termux_am_delay"',
+    'Maven Central returned HTTP 429 for termux-am after 5 bounded Gradle attempts.',
+  ];
+  if (expectedTermuxAmMaven429Handling.some((fragment) => !termuxAmRecipe.includes(fragment))) {
+    fail('Generated termux-am recipe does not retain bounded Maven Central HTTP 429 retry handling with fail-closed non-429 errors.');
   }
 
   // termux-core injects its shared shell helpers after its first source render.

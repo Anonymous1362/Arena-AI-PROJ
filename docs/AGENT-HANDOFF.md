@@ -154,8 +154,15 @@ Salsa transport failure, not this CPAN/runtime defect.
   scripts, then supplies it through `TERMUX_BUILDER_IMAGE_NAME` to every
   focused preflight/full bootstrap. Its `setup-android-sdk.sh` downloads and
   SHA-256 verifies NDK r29. The repair is fail-closed: if the exact image cannot
-  build, the bootstrap fails before it can use a floating image. CI still emits
-  bounded raw final log context on failure; this does not loosen validation.
+  build, the bootstrap fails before it can use a floating image. Candidate CI
+  [run `45464263481`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45464263481), commit `001d7a8`, passed that former NDK/attr/libacl blocker.
+- That same run then stopped at `termux-am` Gradle dependency resolution: many
+  Maven Central POM requests returned HTTP `429 Too Many Requests`. It is a
+  transient external Maven rate limit, not a source/compiler/NDK failure.
+  Generated `termux-am` now runs one Gradle worker and retries only a log-proven
+  Maven HTTP-429 failure up to five times with 30/60/120/240-second backoff;
+  the retained Gradle cache is reused. A non-429 Gradle failure is immediately
+  fatal. CI still emits bounded raw final log context; no validation is loosened.
 
 ## Terminal and mobile repair contained in candidate commit `0f81a07`
 
@@ -192,19 +199,21 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 | Candidate CI `34365287051`: source build through archive validation | **Reached the final marker gate** after the OCF source repair; the old gate incorrectly searched thin `bin/perl` instead of the shared CORE `libperl.so` that contains `caretx.c`. Installer/APK were skipped; no artifact was produced. |
 | Candidate CI `34396030483`: complete same-commit chain | **Passed** on `da321a4`: native PTY compile/instrumentation, fresh arm64 source bootstrap and corrected CORE-libperl gate, bundled arm64 installation validation, and personal arm64 APK build/upload. Its 14-day personal artifact has since expired. |
 | Candidate CI `45428745456`: reissue | **Failed before full bootstrap** at focused `attr` preflight. Native PTY/typecheck/Android/web/release-gate jobs passed; installer/APK jobs were skipped. Raw check-log context proved the floating package-builder image lacked the pinned revision's required NDK r29 directory. |
-| Builder-image compatibility repair | Staged: build a local image from the exact pinned Termux Dockerfile/setup scripts and force it through `TERMUX_BUILDER_IMAGE_NAME`; this removes the floating-image NDK mismatch. |
+| Builder-image compatibility repair | **Passed** in candidate CI `45464263481`: image from the exact pinned Dockerfile/setup scripts restored the locked NDK r29 and progressed beyond attr/libacl. |
+| Candidate CI `45464263481`: termux-am preflight | **Failed** only while Gradle resolved legacy dependencies from Maven Central, which returned HTTP 429. Installer/APK jobs were skipped. |
+| Generated termux-am HTTP-429 handling | Passed: exact-lock verifier and `bash -n` passed; a controlled Gradle double verified a 429 retries using retained cache and a non-429 failure stops at its first attempt. |
 | Local Gradle/native package compile | Not available: this sandbox has no Java/JDK or Docker daemon. This is an environment limitation, **not** a local compile pass; GitHub candidate CI supplies native compilation evidence. |
 
 ## Required next actions
 
-1. Run local Node/exact-lock generator verification and commit/push the pinned
-   builder-image repair with one fresh `[runtime-device-candidate]` marker.
-   Its CI must first build the exact image from the locked checkout, then run
-   the existing focused preflights/full source bootstrap unchanged.
-2. If that image build or `attr` preflight fails, use the bounded raw log
-   annotation to repair the exact verified cause. Do not bypass `attr`, use a
-   floating package-builder image, substitute unpinned bytes, or weaken
-   archive/installer validation to manufacture an APK.
+1. Run local Node/exact-lock generator verification and commit/push the bounded
+   Maven-Central-429 termux-am retry repair with one fresh
+   `[runtime-device-candidate]` marker. CI must rebuild the exact pinned NDK
+   image, then run focused preflights/full source bootstrap unchanged.
+2. If Gradle still stops, use the bounded raw log context to distinguish an
+   exhausted HTTP-429 retry budget from any non-429 build error. Repair only the
+   verified cause; do not substitute dependencies, use a floating builder image,
+   or weaken archive/installer validation to manufacture an APK.
 3. If the chain becomes green, download the newly produced
    `Copper-runtime-device-candidate` within its 14-day retention and then
    request the physical-phone checklist from `ROADMAP.md`: clean fallback

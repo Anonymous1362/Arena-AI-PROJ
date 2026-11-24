@@ -139,14 +139,25 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   This is **not** an `attr` source/checksum failure. The exact locked packages
   revision needs NDK r29, while floating upstream
   `ghcr.io/termux/package-builder:latest` had advanced without that directory.
-- [x] Follow-up builder-image repair staged: the bootstrap script now builds a
+- [x] Follow-up builder-image repair verified: the bootstrap script builds a
   local Docker image from the exact pinned Termux packages checkout's
   `scripts/Dockerfile`/setup scripts, whose checked NDK download is r29, and
-  forces every focused preflight/full bootstrap command to use that image. It
-  does not substitute packages or weaken source/archive validation.
-- [ ] Required next evidence: a fresh candidate must build that exact
-  compatibility image, pass the focused preflights and complete same-commit CI
-  chain, then produce a new personal APK before physical-phone testing resumes.
+  forces every focused preflight/full bootstrap command to use that image.
+  [Run `45464263481`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45464263481) passed the former NDK/`attr`/`libacl` point, proving the
+  floating-image mismatch is removed.
+- [x] Candidate CI root cause: that run, commit `001d7a8`, then stopped in the
+  focused `termux-am` preflight while Gradle resolved its legacy Android Gradle
+  Plugin dependencies. Maven Central returned HTTP `429 Too Many Requests` for
+  many POM downloads. This is a transient external dependency-resolution rate
+  limit, not a Copper source/compiler/NDK error; installer/APK jobs were
+  correctly skipped.
+- [x] Follow-up Gradle transport repair staged: generated `termux-am` now uses
+  one Gradle worker and retains its cache across up to five bounded exponential
+  retry attempts **only** when its log contains Maven Central HTTP 429. Any
+  other Gradle failure returns immediately and remains fail-closed.
+- [ ] Required next evidence: a fresh candidate must pass the exact builder
+  image, `termux-am` Maven retry path, focused preflights, and complete
+  same-commit CI chain before another physical-phone APK is requested.
 - [ ] Required final evidence: install that **new** candidate on the physical
   arm64 phone and complete every unchecked Phase 0 row below. In particular,
   confirm a clean fallback bootstrap with no linker `Makefile.PL` error and no
