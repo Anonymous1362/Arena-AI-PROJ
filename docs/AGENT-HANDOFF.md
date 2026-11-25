@@ -163,6 +163,15 @@ Salsa transport failure, not this CPAN/runtime defect.
   Maven HTTP-429 failure up to five times with 30/60/120/240-second backoff;
   the retained Gradle cache is reused. A non-429 Gradle failure is immediately
   fatal. CI still emits bounded raw final log context; no validation is loosened.
+- Candidate CI [run `45476235786`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45476235786), commit `830f663`, passed the entire same-commit chain:
+  native PTY, exact pinned builder image, fresh arm64 source bootstrap,
+  installer validation, and personal arm64 APK construction. The green run
+  passed `termux-am`; it does not claim that a 429 happened on that run. Its
+  personal artifact is `Copper-runtime-device-candidate`, ID `14970840364`,
+  envelope digest
+  `sha256:0c6dd8b69244806f6ca941a79121dd3587e1d5397de769f25dd79ae2045fe0c8`,
+  retained until `2026-12-08T22:10:17Z`. It is only for the owner's physical
+  test and never a release.
 
 ## Terminal and mobile repair contained in candidate commit `0f81a07`
 
@@ -202,26 +211,27 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 | Builder-image compatibility repair | **Passed** in candidate CI `45464263481`: image from the exact pinned Dockerfile/setup scripts restored the locked NDK r29 and progressed beyond attr/libacl. |
 | Candidate CI `45464263481`: termux-am preflight | **Failed** only while Gradle resolved legacy dependencies from Maven Central, which returned HTTP 429. Installer/APK jobs were skipped. |
 | Generated termux-am HTTP-429 handling | Passed: exact-lock verifier and `bash -n` passed; a controlled Gradle double verified a 429 retries using retained cache and a non-429 failure stops at its first attempt. |
+| Candidate CI `45476235786`: complete same-commit chain | **Passed** on `830f663`: native PTY, exact builder image, fresh arm64 source build, bundled arm64 installation validation, and personal APK upload. Artifact `14970840364` is retained until `2026-12-08T22:10:17Z`. |
 | Local Gradle/native package compile | Not available: this sandbox has no Java/JDK or Docker daemon. This is an environment limitation, **not** a local compile pass; GitHub candidate CI supplies native compilation evidence. |
 
 ## Required next actions
 
-1. Run local Node/exact-lock generator verification and commit/push the bounded
-   Maven-Central-429 termux-am retry repair with one fresh
-   `[runtime-device-candidate]` marker. CI must rebuild the exact pinned NDK
-   image, then run focused preflights/full source bootstrap unchanged.
-2. If Gradle still stops, use the bounded raw log context to distinguish an
-   exhausted HTTP-429 retry budget from any non-429 build error. Repair only the
-   verified cause; do not substitute dependencies, use a floating builder image,
-   or weaken archive/installer validation to manufacture an APK.
-3. If the chain becomes green, download the newly produced
-   `Copper-runtime-device-candidate` within its 14-day retention and then
-   request the physical-phone checklist from `ROADMAP.md`: clean fallback
-   bootstrap, normal Send/input/output, Ctrl-C, stale-session feedback,
-   Terminal keyboard attachment, Chat overflow keyboard dismissal, and smooth
-   outside-tap/sheet animation/haptics.
-4. Update this handoff and `ROADMAP.md` with the repair result or real-device
-   result. Phase 0 remains blocked until every device row passes.
+1. Download `Copper-runtime-device-candidate` (artifact `14970840364`) from
+   [run `45476235786`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45476235786) before `2026-12-08T22:10:17Z`. Its outer GitHub artifact-envelope
+   digest is `sha256:0c6dd8b69244806f6ca941a79121dd3587e1d5397de769f25dd79ae2045fe0c8`.
+   Install only its contained `Copper-runtime-device-candidate.apk`; the
+   accompanying manifest/receipt identify the exact source-built runtime. Do
+   not redistribute it or call it a release.
+2. For a clean bootstrap result, use a fresh Copper app-data state after backing
+   up any wanted projects. Record the physical-phone Phase 0 checklist from
+   `ROADMAP.md`: clean fallback bootstrap, normal Send/input/output, Ctrl-C,
+   stale-session feedback, Terminal keyboard attachment, Chat overflow keyboard
+   dismissal, and outside-tap/sheet animation/haptics.
+3. If the new physical candidate fails, obtain the exact visible error,
+   screenshots, and reproduction steps; diagnose that verified failure before a
+   further candidate commit. Do not suppress a bootstrap/postinst error.
+4. Update this handoff and `ROADMAP.md` with the real-device result. Phase 0
+   remains blocked until every device row passes.
 
 ## Do not repeat these dead ends
 

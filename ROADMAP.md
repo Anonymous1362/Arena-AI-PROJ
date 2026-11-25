@@ -151,13 +151,20 @@ packages checkout is `e480d5053cdb260babda82d3d863393b70833c18`; its
   many POM downloads. This is a transient external dependency-resolution rate
   limit, not a Copper source/compiler/NDK error; installer/APK jobs were
   correctly skipped.
-- [x] Follow-up Gradle transport repair staged: generated `termux-am` now uses
+- [x] Follow-up Gradle transport repair verified: generated `termux-am` uses
   one Gradle worker and retains its cache across up to five bounded exponential
   retry attempts **only** when its log contains Maven Central HTTP 429. Any
-  other Gradle failure returns immediately and remains fail-closed.
-- [ ] Required next evidence: a fresh candidate must pass the exact builder
-  image, `termux-am` Maven retry path, focused preflights, and complete
-  same-commit CI chain before another physical-phone APK is requested.
+  other Gradle failure returns immediately and remains fail-closed. The green
+  candidate passed `termux-am`; it does not falsely claim Maven emitted a 429
+  on that particular successful run.
+- [x] Same-commit candidate CI: [run `45476235786`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45476235786), commit `830f663`, passed **all** required gates: native PTY
+  compilation/instrumentation, exact pinned builder image, fresh arm64 source
+  bootstrap, bundled-runtime installer validation, and personal arm64 APK
+  construction. The new personal-test artifact is
+  `Copper-runtime-device-candidate`, ID `14970840364`, GitHub artifact-envelope
+  digest `sha256:0c6dd8b69244806f6ca941a79121dd3587e1d5397de769f25dd79ae2045fe0c8`.
+  It expires at `2026-12-08T22:10:17Z`; download it from that CI run. It is not
+  a public release and must not be redistributed as one.
 - [ ] Required final evidence: install that **new** candidate on the physical
   arm64 phone and complete every unchecked Phase 0 row below. In particular,
   confirm a clean fallback bootstrap with no linker `Makefile.PL` error and no
