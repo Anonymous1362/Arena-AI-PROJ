@@ -229,6 +229,21 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 | Candidate CI `45476235786`: complete same-commit chain | **Passed** on `830f663`: native PTY, exact builder image, fresh arm64 source build, bundled arm64 installation validation, and personal APK upload. Artifact `14970840364` is retained until `2026-12-08T22:10:17Z`. |
 | Local Gradle/native package compile | Not available: this sandbox has no Java/JDK or Docker daemon. This is an environment limitation, **not** a local compile pass; GitHub candidate CI supplies native compilation evidence. |
 
+## Broader-app progress (2026-09-02)
+
+- `src/store/chatImport.ts` now makes Data & privacy import a boundary: it
+  accepts Copper full-backup and single-chat exports, constructs only the
+  supported persisted conversation shape, drops malformed and duplicate
+  conversation/message records, and strips raw tool-call payloads from replay
+  tails. The UI reports records imported versus ignored.
+- Importing a chat whose provider does not exist locally can no longer cause a
+  silent fallback through another provider. Target resolution fails explicitly,
+  while the chat send flow opens model recovery before mutating the transcript.
+- Local evidence passed for this increment: clean `npm ci --ignore-scripts`,
+  TypeScript typecheck, controlled sanitizer/duplicate-store/provider-resolution
+  behavior tests, and an Expo web export. These checks do not replace later
+  mobile UI interaction evidence.
+
 ## Required next actions
 
 1. Start with a broader-app audit: inspect the current product surface,

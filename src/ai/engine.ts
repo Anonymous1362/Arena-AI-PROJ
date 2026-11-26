@@ -13,14 +13,22 @@ export class NoEngineError extends Error {
 
 /** Resolve the active model into a remote target, or throw a friendly error. */
 export function resolveRemoteTarget(state: SettingsState, model: ActiveModel): RemoteTarget {
-  const profileId = model?.profileId ?? state.activeProfileId;
-  const profile = state.profiles.find((p) => p.id === profileId) ?? state.profiles[0];
-  if (!profile) throw new NoEngineError();
+  const modelName = typeof model?.model === 'string' ? model.model.trim() : '';
+  const profileId = typeof model?.profileId === 'string' ? model.profileId : '';
+  if (!modelName || !profileId) throw new NoEngineError();
+
+  // A conversation records the provider that supplied its selected model. Do
+  // not silently send an imported or stale conversation through an unrelated
+  // first provider just because that original profile no longer exists.
+  const profile = state.profiles.find((p) => p.id === profileId);
+  if (!profile) {
+    throw new Error(
+      `The provider for “${modelName}” is no longer configured. Pick a model or add its provider in Settings → Providers.`
+    );
+  }
   if (!profile.baseUrl?.trim()) {
     throw new Error(`“${profile.name}” has no base URL — edit it in Settings → Providers.`);
   }
-  const modelName = model?.model ?? '';
-  if (!modelName) throw new NoEngineError();
   return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: modelName, headers: profile.headers };
 }
 

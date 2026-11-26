@@ -78,7 +78,8 @@ export interface ChatsState {
   dropMessagesAfter: (convId: string, msgId: string) => void;
 
   clearAllChats: () => void;
-  importConversations: (convs: Conversation[]) => void;
+  /** Adds only conversations whose ids are not already stored; returns added count. */
+  importConversations: (convs: Conversation[]) => number;
 }
 
 /* ---------------------------------- store ---------------------------------- */
@@ -176,12 +177,21 @@ export const useChatsStore = create<ChatsState>()(
 
       clearAllChats: () => set({ conversations: [] }),
 
-      importConversations: (convs) =>
+      importConversations: (convs) => {
+        let imported = 0;
         set((s) => {
           const existing = new Set(s.conversations.map((c) => c.id));
-          const fresh = convs.filter((c) => c && c.id && !existing.has(c.id));
+          const fresh: Conversation[] = [];
+          for (const conversation of convs) {
+            if (!conversation?.id || existing.has(conversation.id)) continue;
+            existing.add(conversation.id);
+            fresh.push(conversation);
+          }
+          imported = fresh.length;
           return { conversations: [...fresh, ...s.conversations] };
-        }),
+        });
+        return imported;
+      },
     }),
     {
       name: 'aurora/chats/v1',

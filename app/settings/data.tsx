@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, spacing } from '@/src/theme';
-import { useChatsStore, type Conversation } from '@/src/store/chats';
+import { useChatsStore } from '@/src/store/chats';
+import { sanitizeImportedConversations } from '@/src/store/chatImport';
 import { useSettingsStore } from '@/src/store/settings';
 import { AppHeader } from '@/src/components/AppHeader';
 import { Banner, Button, Card } from '@/src/components/ui';
@@ -38,12 +39,25 @@ export default function DataSettingsScreen() {
 
   const importBackup = async () => {
     try {
-      const data = (await readPickedJson()) as { conversations?: Conversation[] };
-      const convs = Array.isArray(data) ? data : data?.conversations;
-      if (!Array.isArray(convs)) throw new Error('No conversations found in that file.');
-      importConversations(convs);
+      const parsed = sanitizeImportedConversations(await readPickedJson());
+      if (!parsed) throw new Error('No conversations found in that file.');
+      if (!parsed.conversations.length) {
+        throw new Error('No valid conversations found in that file.');
+      }
+      const imported = importConversations(parsed.conversations);
+      const skipped =
+        parsed.skippedConversations +
+        parsed.skippedMessages +
+        (parsed.conversations.length - imported);
+      const skippedNote = skipped
+        ? ` Ignored ${skipped} malformed or duplicate record${skipped === 1 ? '' : 's'}.`
+        : '';
       haptics.success();
-      setNote(`Imported ${convs.length} conversation${convs.length === 1 ? '' : 's'}.`);
+      if (!imported) {
+        setNote(`No new conversations were imported; matching conversation ids are already on this device.${skippedNote}`);
+      } else {
+        setNote(`Imported ${imported} conversation${imported === 1 ? '' : 's'}.${skippedNote}`);
+      }
     } catch (e) {
       if ((e as Error).message !== 'No file selected.') {
         setNote(`Import failed: ${(e as Error).message}`);

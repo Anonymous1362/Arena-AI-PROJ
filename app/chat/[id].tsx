@@ -103,6 +103,8 @@ export default function ChatScreen() {
   const setConversationSystemPrompt = useChatsStore((s) => s.setConversationSystemPrompt);
   const sendOnEnter = useSettingsStore((s) => s.behavior.sendOnEnter);
   const globalSystemPrompt = useSettingsStore((s) => s.generation.systemPrompt);
+  const activeModel = useSettingsStore((s) => s.activeModel);
+  const profiles = useSettingsStore((s) => s.profiles);
   const msgFontSize = useTheme().msgFontSize;
   const streaming = useStreamingStore((s) => !!s.ids[id!]);
 
@@ -270,7 +272,8 @@ export default function ChatScreen() {
 
   if (!conv) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
 
-  const engineReady = !!conv.model || !!useSettingsStore.getState().activeModel;
+  const selectedModel = conv.model ?? activeModel;
+  const engineReady = !!selectedModel && profiles.some((profile) => profile.id === selectedModel.profileId);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

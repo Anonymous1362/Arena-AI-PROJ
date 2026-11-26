@@ -12,7 +12,7 @@
 | Provider setup | **Active audit** | Provider presets, custom endpoints, connection test, and model picker exist; verify first-run and failure paths. |
 | Chat experience | **Active audit** | Streaming, edit/retry, attachments, exports, prompt library, speech, search, pinning, and per-chat prompts exist; verify behavior and edge cases. |
 | Agent/workspace | **Active audit** | Tool controls and Android SAF workspace boundaries exist; verify clear setup and permission/recovery flows. |
-| Data/privacy | **Active audit** | Local chat persistence plus JSON export/import and erase controls exist; verify malformed-backup handling and data lifecycle. |
+| Data/privacy | **Active audit** | JSON imports are schema-sanitized and deduplicated before persistence; verify end-to-end data lifecycle and destructive-action recovery. |
 | Cross-platform polish | **Queued after core-flow fixes** | Exercise Android, iOS/PWA, mobile keyboard, accessibility, offline/error states, and build/install paths. |
 | Terminal/runtime/device gate | **Deferred** | Not complete or releasable. Resume with a fresh candidate during final hardening. |
 
@@ -47,12 +47,23 @@
   an extra navigation step through the provider overview.
 - [x] TypeScript and a production Expo web export passed for that onboarding
   routing change.
+- [x] Backup import now accepts Copper full and single-chat JSON exports while
+  copying only validated conversation fields into persistence. It discards
+  malformed records, duplicate conversation/message ids, unsupported nested
+  data, and raw provider tool-call payloads; the UI reports imported versus
+  ignored records.
+- [x] A chat whose saved provider is missing now opens model recovery before a
+  send, rather than appending a failed turn or sending that model name through
+  an unrelated configured provider.
 
 ## Near-term active work
 
-- [ ] Produce and verify a concrete provider/first-message flow checklist.
-- [ ] Harden backup import validation before accepting arbitrary JSON into the
-  persisted conversation store.
+- [ ] Produce and verify a concrete provider/first-message flow checklist,
+  including invalid credentials, endpoints, model discovery, cancellation, and
+  recovery after changing providers.
+- [ ] Exercise chat JSON export/import and erase/reset controls through the
+  actual mobile and web UI, including an imported chat with an unavailable
+  provider.
 - [ ] Continue the broader-app audit as cohesive, tested fixes; record each
   result here and in `docs/AGENT-HANDOFF.md`.
 

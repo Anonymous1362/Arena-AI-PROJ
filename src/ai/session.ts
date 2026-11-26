@@ -68,6 +68,16 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
     throwNoModel(conv);
     return;
   }
+  // A conversation can outlive a provider (or arrive from another device in a
+  // backup). Route that state to the model picker before we add a user message
+  // and a failed empty assistant bubble.
+  if (!settings.profiles.some((profile) => profile.id === model.profileId)) {
+    throwNoModel(conv);
+    return;
+  }
+  // Validate the selected provider before mutating persisted chat history.
+  // Configuration errors should be recoverable without creating a phantom turn.
+  const target = resolveRemoteTarget(settings, model);
 
   // 1) shape the message list
   if (opts.editMessageId) {
@@ -193,8 +203,6 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   const agentMode = settings.agentScope.enabled && model.kind === 'remote';
 
   try {
-    const target = resolveRemoteTarget(settings, model);
-
     if (agentMode) {
       await runAgentTurn({
         target,
