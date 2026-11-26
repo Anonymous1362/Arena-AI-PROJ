@@ -306,7 +306,10 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior="padding"
+        // Android already uses softwareKeyboardLayoutMode: resize. Adding
+        // KeyboardAvoidingView padding there can leave the composer under or
+        // above the IME after a resize; iOS still needs the padding behavior.
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
         {banner ? (

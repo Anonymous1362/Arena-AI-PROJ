@@ -81,6 +81,10 @@
 - [x] Prompt-library row management controls are now separate from selecting a
   prompt, so Edit/Delete no longer risk selecting and closing the sheet at the
   same time on touch devices.
+- [x] The Android chat composer now relies on the app's configured native
+  keyboard resize mode instead of layering `KeyboardAvoidingView` padding on
+  top; iOS retains native padding avoidance. Android/Hermes and web exports
+  passed, while physical-phone IME interaction remains a required check.
 
 ## Near-term active work
 

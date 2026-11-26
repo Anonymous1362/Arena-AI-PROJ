@@ -288,6 +288,11 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   pressables, preventing nested touch handling from both choosing a prompt and
   closing the sheet while trying to manage it. TypeScript and an Expo web export
   passed; touch-device interaction remains part of final UI evidence.
+- Chat IME follow-up: Android now relies on the configured native
+  `softwareKeyboardLayoutMode: resize` without an additional
+  `KeyboardAvoidingView` padding layer; iOS keeps padding avoidance. TypeScript,
+  Android Hermes-bundle export, and web export passed. This is not a claim of
+  physical-phone keyboard acceptance; that remains an explicit UI gate.
 
 ## Required next actions
 
