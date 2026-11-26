@@ -187,7 +187,7 @@ export default function ChatsScreen() {
           <FeatureRow icon="lock-closed" title="Private by design" sub="Conversations and keys stay on this device. Nothing is tracked." />
           <View style={{ gap: spacing(2), marginTop: spacing(3), marginBottom: spacing(2) }}>
             <Button label="Get started" onPress={() => { setWelcome(false); setOnboarded(true); }} />
-            <Button label="Connect a provider" variant="ghost" icon="cube-outline" onPress={() => { setWelcome(false); setOnboarded(true); router.push('/providers'); }} />
+            <Button label="Connect a provider" variant="ghost" icon="cube-outline" onPress={() => { setWelcome(false); setOnboarded(true); router.push('/settings/api'); }} />
           </View>
         </View>
       </Sheet>
