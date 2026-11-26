@@ -237,8 +237,17 @@ function simulateShell(command: string, cwdLabel: string): Promise<ToolResult> {
         }
         case 'touch': {
           if (!firstOp) return { ok: false, output: 'touch: missing operand' };
-          await writeAgentFile(firstOp, '').catch(async () => writeAgentFile(firstOp, ''));
-          return { ok: true, output: `touched ${firstOp}` };
+          // Expo/SAF has no portable mtime-only operation. Never emulate touch
+          // by overwriting an existing file with an empty string: preserve its
+          // contents and create a zero-byte file only when it is missing.
+          try {
+            const info = await statAgentPath(firstOp);
+            if (/type:\s*directory/i.test(info)) return { ok: false, output: `touch: ${firstOp}: is a directory` };
+            return { ok: true, output: `${firstOp} already exists (contents unchanged)` };
+          } catch {
+            await writeAgentFile(firstOp, '');
+            return { ok: true, output: `created ${firstOp}` };
+          }
         }
         case 'mkdir':
           return { ok: true, output: await mkdirAgent(firstOp) };

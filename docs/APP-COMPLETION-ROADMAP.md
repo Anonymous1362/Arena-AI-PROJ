@@ -85,6 +85,9 @@
   keyboard resize mode instead of layering `KeyboardAvoidingView` padding on
   top; iOS retains native padding avoidance. Android/Hermes and web exports
   passed, while physical-phone IME interaction remains a required check.
+- [x] The agent's workspace `touch` command now preserves an existing file
+  instead of truncating it. It creates only a missing file and rejects a
+  directory operand; controlled shell behavior and web export passed.
 
 ## Near-term active work
 

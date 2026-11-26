@@ -293,6 +293,10 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   `KeyboardAvoidingView` padding layer; iOS keeps padding avoidance. TypeScript,
   Android Hermes-bundle export, and web export passed. This is not a claim of
   physical-phone keyboard acceptance; that remains an explicit UI gate.
+- Agent workspace shell follow-up: `touch` now checks for an existing target,
+  preserves file contents, creates only a missing zero-byte file, and rejects a
+  directory target. A controlled compiled-module shell harness and web export
+  passed.
 
 ## Required next actions
 
