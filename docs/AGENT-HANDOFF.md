@@ -374,7 +374,13 @@ Changes:
 - `docs/PROVIDER-FIRST-MESSAGE-CHECKLIST.md` — the first near-term checklist,
   with code-covered versus real-key/device rows separated.
 
-Checks run locally: `npx tsc --noEmit` (pass) and
-`npx expo export --platform web` (pass). No real API key, no physical device,
-and no GitHub CI observation were available here; the unchecked provider rows
-remain real-run evidence work.
+Checks run locally: `npx tsc --noEmit` (pass),
+`npx expo export --platform web` (pass), and
+`npx expo export --platform android` (pass, Hermes bundle). No real API key, no
+physical device, and no GitHub CI observation were available here; the
+unchecked provider rows remain real-run evidence work.
+
+Remote state: this continuation is pushed. `arena/01a06159-arena-ai-proj`
+advanced `b3e3a2e..e289be3` as a fast-forward, so a fresh session can start from
+the remote tip. Nothing was merged, tagged, released, or opened as a pull
+request.
