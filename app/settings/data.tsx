@@ -9,6 +9,7 @@ import { sanitizeImportedConversations } from '@/src/store/chatImport';
 import { useSettingsStore } from '@/src/store/settings';
 import { AppHeader } from '@/src/components/AppHeader';
 import { Banner, Button, Card } from '@/src/components/ui';
+import { stopAllGenerations } from '@/src/ai/session';
 import { haptics } from '@/src/utils/haptics';
 import { readPickedJson, shareJson } from '@/src/utils/share';
 
@@ -103,7 +104,7 @@ export default function DataSettingsScreen() {
               onPress={() =>
                 Alert.alert('Delete all chats?', 'Every conversation will be erased from this device. Export first if you care about them.', [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete all', style: 'destructive', onPress: () => { haptics.warning(); clearAllChats(); } },
+                  { text: 'Delete all', style: 'destructive', onPress: () => { stopAllGenerations(); haptics.warning(); clearAllChats(); } },
                 ])
               }
             />
@@ -114,7 +115,7 @@ export default function DataSettingsScreen() {
               onPress={() =>
                 Alert.alert('Reset settings?', 'Providers, API keys, downloads list and preferences are reset. Chats are kept.', [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Reset', style: 'destructive', onPress: () => { haptics.warning(); resetAll(); } },
+                  { text: 'Reset', style: 'destructive', onPress: () => { stopAllGenerations(); haptics.warning(); resetAll(); } },
                 ])
               }
             />

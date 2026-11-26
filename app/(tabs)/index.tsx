@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useChatsStore, selectSortedConversations, type Conversation } from '@/src/store/chats';
 import { useSettingsStore } from '@/src/store/settings';
-import { useStreamingStore } from '@/src/ai/session';
+import { stopGeneration, useStreamingStore } from '@/src/ai/session';
 import { ConversationRow } from '@/src/components/ConversationRow';
 import { EmptyState } from '@/src/components/EmptyState';
 import { PressableScale } from '@/src/components/PressableScale';
@@ -84,6 +84,9 @@ export default function ChatsScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
+          // Deleting a live row must also stop its provider request; otherwise
+          // it continues charging/running after its only UI was removed.
+          stopGeneration(conv.id);
           haptics.warning();
           deleteConversation(conv.id);
         },

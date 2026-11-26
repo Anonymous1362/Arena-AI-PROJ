@@ -73,6 +73,9 @@
   replacing the visible answer with only the final continuation segment.
 - [x] Stopping an agent now interrupts its transient 429/5xx retry backoff
   immediately instead of leaving the chat in a several-second pending state.
+- [x] Clearing, deleting, or resetting chat data now aborts affected in-flight
+  provider requests first, avoiding hidden continued work/usage after the
+  conversation or provider configuration has been removed.
 
 ## Near-term active work
 

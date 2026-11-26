@@ -43,6 +43,11 @@ export function stopGeneration(convId: string): void {
   active.get(convId)?.abort.abort();
 }
 
+/** Cancel every in-flight provider request before destructive data changes. */
+export function stopAllGenerations(): void {
+  for (const convId of active.keys()) stopGeneration(convId);
+}
+
 /* -------------------------------- the session -------------------------------- */
 
 export interface SendOptions {

@@ -275,6 +275,11 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   Tapping Stop rejects the pending delay immediately and completes the turn as
   aborted instead of waiting 2.5–4 seconds before another attempt. A controlled
   429-plus-abort test and TypeScript check passed.
+- Destructive data actions now abort active provider requests before deleting a
+  conversation, clearing a chat, deleting all chats, or resetting settings. This
+  prevents a hidden generation from continuing after its UI/configuration is
+  gone. A controlled two-conversation cancellation test and TypeScript check
+  passed.
 
 ## Required next actions
 

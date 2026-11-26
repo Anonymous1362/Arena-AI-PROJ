@@ -261,6 +261,9 @@ export default function ChatScreen() {
           onPress={() => {
             setMenuSheet(false);
             if (!conv) return;
+            // Clearing a running conversation is destructive too: abort first
+            // so its provider request cannot continue in the background.
+            stopGeneration(conv.id);
             for (const m of [...conv.messages]) deleteMessage(conv.id, m.id);
             haptics.warning();
           }}
