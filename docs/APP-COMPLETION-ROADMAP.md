@@ -55,6 +55,11 @@
 - [x] A chat whose saved provider is missing now opens model recovery before a
   send, rather than appending a failed turn or sending that model name through
   an unrelated configured provider.
+- [x] Provider setup now uses Gemini's OpenAI-compatibility root correctly,
+  no longer advertises an unsupported direct Anthropic integration, and lets a
+  user save/select a model ID when a compatible endpoint does not list models.
+  Editing an endpoint, key, or headers clears only that provider's stale model
+  cache.
 
 ## Near-term active work
 

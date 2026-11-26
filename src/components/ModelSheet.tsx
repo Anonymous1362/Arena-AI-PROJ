@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTheme, radius, spacing } from '@/src/theme';
@@ -39,8 +39,10 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
   const modelCache = useSettingsStore((s) => s.modelCache);
   const setActiveModel = useSettingsStore((s) => s.setActiveModel);
   const cacheModels = useSettingsStore((s) => s.cacheModels);
+  const updateProfile = useSettingsStore((s) => s.updateProfile);
 
   const [loadingProfile, setLoadingProfile] = useState<string | null>(null);
+  const [customModels, setCustomModels] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!visible) return;
@@ -71,6 +73,23 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
       onClose();
     },
     [onClose, onPicked, setActiveModel]
+  );
+
+  const useCustomModel = useCallback(
+    (profileId: string) => {
+      const model = customModels[profileId]?.trim();
+      if (!model) return;
+      const profile = profiles.find((item) => item.id === profileId);
+      if (!profile) return;
+      // Keep an explicitly entered model available on later visits, including
+      // providers that intentionally do not expose /models.
+      updateProfile(profileId, {
+        suggestedModels: [...new Set([...(profile.suggestedModels ?? []), model])],
+      });
+      setCustomModels((current) => ({ ...current, [profileId]: '' }));
+      pick({ kind: 'remote', profileId, model });
+    },
+    [customModels, pick, profiles, updateProfile]
   );
 
   const capsIcon = (profileId: string): keyof typeof Ionicons.glyphMap => {
@@ -122,7 +141,7 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>Connect a provider</Text>
                 <Text style={{ color: colors.textSub, fontSize: 12.5, marginTop: 1 }}>
-                  Gemini’s free tier, OpenRouter, Groq, OpenAI, Claude, Ollama — your keys, stored on-device.
+                  Gemini’s free tier, OpenRouter, Groq, OpenAI, and Ollama — your keys, stored on-device.
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.textFaint} />
@@ -142,38 +161,66 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
                     </View>
                   ) : null}
                 </View>
-                {(modelCache[p.id]?.models?.length ? modelCache[p.id].models.slice(0, 60) : (p.suggestedModels ?? [])).map((m) => (
-                  <PressableScale key={`${p.id}::${m}`} haptic="selection" scale={0.98} opacityOnPress={0.8} onPress={() => pick({ kind: 'remote', profileId: p.id, model: m })}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                        paddingVertical: spacing(2.4),
-                        paddingHorizontal: spacing(1),
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                        borderBottomColor: colors.border,
-                      }}
-                    >
-                      <Ionicons name="cube-outline" size={15} color={isCurrent(p.id, m) ? colors.accent : colors.textFaint} />
-                      <Text
-                        numberOfLines={1}
+                {[...new Set([...(p.suggestedModels ?? []), ...(modelCache[p.id]?.models ?? [])])]
+                  .slice(0, 60)
+                  .map((m) => (
+                    <PressableScale key={`${p.id}::${m}`} haptic="selection" scale={0.98} opacityOnPress={0.8} onPress={() => pick({ kind: 'remote', profileId: p.id, model: m })}>
+                      <View
                         style={{
-                          color: isCurrent(p.id, m) ? colors.accent : colors.text,
-                          fontSize: 14.5,
-                          fontWeight: isCurrent(p.id, m) ? '700' : '500',
-                          flex: 1,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          paddingVertical: spacing(2.4),
+                          paddingHorizontal: spacing(1),
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: colors.border,
                         }}
                       >
-                        {m}
-                      </Text>
-                      <RadioDot on={isCurrent(p.id, m)} />
-                    </View>
-                  </PressableScale>
-                ))}
+                        <Ionicons name="cube-outline" size={15} color={isCurrent(p.id, m) ? colors.accent : colors.textFaint} />
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            color: isCurrent(p.id, m) ? colors.accent : colors.text,
+                            fontSize: 14.5,
+                            fontWeight: isCurrent(p.id, m) ? '700' : '500',
+                            flex: 1,
+                          }}
+                        >
+                          {m}
+                        </Text>
+                        <RadioDot on={isCurrent(p.id, m)} />
+                      </View>
+                    </PressableScale>
+                  ))}
                 {loadingProfile === p.id ? (
                   <Text style={{ color: colors.textFaint, fontSize: 12, padding: spacing(2) }}>Fetching models…</Text>
                 ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(2), paddingHorizontal: spacing(1) }}>
+                  <TextInput
+                    value={customModels[p.id] ?? ''}
+                    onChangeText={(text) => setCustomModels((current) => ({ ...current, [p.id]: text }))}
+                    onSubmitEditing={() => useCustomModel(p.id)}
+                    placeholder="Enter a model ID"
+                    placeholderTextColor={colors.textFaint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    style={{ flex: 1, color: colors.text, fontSize: 13.5, backgroundColor: colors.surface2, borderRadius: radius.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingHorizontal: spacing(2.5), paddingVertical: spacing(2) }}
+                  />
+                  <PressableScale
+                    haptic="selection"
+                    disabled={!customModels[p.id]?.trim()}
+                    onPress={() => useCustomModel(p.id)}
+                    style={{ opacity: customModels[p.id]?.trim() ? 1 : 0.45 }}
+                  >
+                    <View style={{ backgroundColor: colors.accentSoft, borderRadius: radius.sm, paddingHorizontal: spacing(3), paddingVertical: spacing(2.2) }}>
+                      <Text style={{ color: colors.accent, fontSize: 13, fontWeight: '700' }}>Use</Text>
+                    </View>
+                  </PressableScale>
+                </View>
+                <Text style={{ color: colors.textFaint, fontSize: 11.5, marginTop: spacing(1), paddingHorizontal: spacing(1) }}>
+                  Use a model ID when this provider does not list models.
+                </Text>
               </View>
             ))}
           </>

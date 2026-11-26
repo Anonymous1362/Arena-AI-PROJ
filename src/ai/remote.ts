@@ -27,17 +27,6 @@ export interface RemotePreset {
 export const PROVIDER_PRESETS: RemotePreset[] = [
   {
     pricing: 'paid',
-    pricingNote: 'Pay per token. No free tier.',
-    id: 'anthropic',
-    name: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com/v1',
-    keyUrl: 'https://console.anthropic.com/settings/keys',
-    note: 'Claude models via the native Messages-compatible gateway (OpenAI-compatible base).',
-    suggestedModels: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-haiku-4-5'],
-    caps: ['tools', 'vision', 'reasoning'],
-  },
-  {
-    pricing: 'paid',
     pricingNote: 'Pay per token.',
     id: 'openai',
     name: 'OpenAI',
@@ -51,7 +40,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     pricingNote: 'Generous free tier at AI Studio — best first pick.',
     id: 'google',
     name: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/open',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyUrl: 'https://aistudio.google.com/app/apikey',
     note: 'Gemini via the OpenAI-compatible endpoint. Generous free tier.',
     suggestedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
@@ -174,14 +163,15 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
 export function chatCompletionsUrl(baseUrl: string): string {
   const b = baseUrl.trim().replace(/\/+$/, '');
   if (b.endsWith('/chat/completions')) return b;
-  if (/\/v\d+$/.test(b)) return `${b}/chat/completions`;
+  // Google's OpenAI compatibility root ends in /openai rather than /v1.
+  if (/\/(?:v\d+|openai)$/.test(b)) return `${b}/chat/completions`;
   return `${b}/v1/chat/completions`;
 }
 
 export function modelsUrl(baseUrl: string): string {
   const b = baseUrl.trim().replace(/\/+$/, '');
   if (b.endsWith('/chat/completions')) return `${b.replace(/\/chat\/completions$/, '')}/models`;
-  if (/\/v\d+$/.test(b)) return `${b}/models`;
+  if (/\/(?:v\d+|openai)$/.test(b)) return `${b}/models`;
   return `${b}/v1/models`;
 }
 

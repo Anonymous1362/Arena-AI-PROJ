@@ -60,7 +60,7 @@ export default function SettingsScreen() {
         <ListNavItem
           icon="key-outline"
           label="Providers"
-          sublabel="Gemini, OpenAI, Claude, OpenRouter, Ollama…"
+          sublabel="Gemini, OpenAI, OpenRouter, Ollama…"
           badge={profiles.length}
           onPress={() => router.push('/settings/api')}
         />

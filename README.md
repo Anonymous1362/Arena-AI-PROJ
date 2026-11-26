@@ -5,7 +5,7 @@ A production-ready **AI agent app** for **iOS, Android and Web/PWA**, built with
 - 🧠 **Agent mode** — dynamic thinking plans with AI-named steps, tool calling, auto-continue on token/tool limits
 - 🖥️ **Terminal panel** — watch commands run live: command, output, exit status, one-tap copy
 - 📁 **Project-safe file tools** — on Android, the AI is confined to a selected external/SD-card project workspace; the separate manual terminal can be granted all shared-storage access
-- ☁️ **Any provider** — Anthropic, OpenAI, Gemini (free tier), Groq, OpenRouter, Together, Mistral, DeepSeek, xAI, Ollama/LM Studio on your LAN, or anything OpenAI-compatible
+- ☁️ **Any OpenAI-compatible provider** — OpenAI, Gemini (free tier), Groq, OpenRouter, Together, Mistral, DeepSeek, xAI, Ollama/LM Studio on your LAN, or an OpenAI-compatible gateway for other models
 - 👁️ **Vision** — attach images for multimodal models
 - ✨ **Premium feel** — springy haptics, gesture sheets, swipeable rows, streaming markdown, warm light/dark themes
 - 🔒 **Private by design** — no backend, no accounts, no telemetry. Keys and chats stay on-device.

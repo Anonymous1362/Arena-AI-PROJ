@@ -243,6 +243,15 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   TypeScript typecheck, controlled sanitizer/duplicate-store/provider-resolution
   behavior tests, and an Expo web export. These checks do not replace later
   mobile UI interaction evidence.
+- Provider follow-up: the Gemini preset now targets the OpenAI-compatibility
+  root and URL construction recognizes that root without adding an extra `/v1`.
+  The unsupported direct Anthropic preset was removed rather than advertising a
+  protocol Copper does not implement. The model sheet now permits a user to
+  persist/select a manual model ID for compatible endpoints that omit `/models`;
+  changing a provider's endpoint, key, or headers drops only its stale model
+  cache. TypeScript, controlled URL/cache behavior checks, and an Expo web
+  export passed for this increment; actual credential/network/mobile flows
+  remain required evidence.
 
 ## Required next actions
 

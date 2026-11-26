@@ -136,9 +136,16 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       updateProfile: (id, patch) =>
-        set((s) => ({
-          profiles: s.profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-        })),
+        set((s) => {
+          // Endpoint credentials and model availability may have changed. Do
+          // not offer a stale /models response after that kind of edit.
+          const connectionChanged = 'baseUrl' in patch || 'apiKey' in patch || 'headers' in patch;
+          const { [id]: _discardedCache, ...withoutProfileCache } = s.modelCache;
+          return {
+            profiles: s.profiles.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+            modelCache: connectionChanged ? withoutProfileCache : s.modelCache,
+          };
+        }),
 
       removeProfile: (id) =>
         set((s) => {

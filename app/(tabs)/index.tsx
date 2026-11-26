@@ -183,7 +183,7 @@ export default function ChatsScreen() {
             An agent that finishes the job. Bring your own model.
           </Text>
           <FeatureRow icon="hammer-outline" title="A real agent" sub="Plans steps, runs commands, reads & writes files — then verifies its work." />
-          <FeatureRow icon="layers-outline" title="Any model you like" sub="Gemini (free tier), Claude, GPT, Grok, DeepSeek, OpenRouter, Ollama — your keys." />
+          <FeatureRow icon="layers-outline" title="Any model you like" sub="Gemini (free tier), GPT, Grok, DeepSeek, OpenRouter, Ollama — your keys." />
           <FeatureRow icon="lock-closed" title="Private by design" sub="Conversations and keys stay on this device. Nothing is tracked." />
           <View style={{ gap: spacing(2), marginTop: spacing(3), marginBottom: spacing(2) }}>
             <Button label="Get started" onPress={() => { setWelcome(false); setOnboarded(true); }} />
