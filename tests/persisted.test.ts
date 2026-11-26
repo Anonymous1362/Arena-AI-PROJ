@@ -186,5 +186,32 @@ test('usage rehydration clamps invalid counters and limits', () => {
 
   assert.deepEqual(merged.events, [{ t: 10, p: 'p1', m: 'gpt', tin: 5, tout: 7 }]);
   assert.deepEqual(merged.totals, { requests: 0, tokensIn: 0, tokensOut: 3 });
-  assert.deepEqual(merged.limits, { hour: 1, day: 300 });
+  assert.deepEqual(merged.limits, { hour: 5, day: 300 });
+});
+
+test('generation and usage bounds match the screens that enforce them', () => {
+  const huge = mergeSettingsState(
+    {
+      generation: {
+        maxTokens: 10_000_000,
+        temperature: 9,
+        topP: -3,
+        systemPrompt: 'keep me',
+      },
+    },
+    settingsBase()
+  );
+  assert.equal(huge.generation.maxTokens, 8192);
+  assert.equal(huge.generation.temperature, 2);
+  assert.equal(huge.generation.topP, 0);
+  assert.equal(huge.generation.systemPrompt, 'keep me');
+
+  const tiny = mergeSettingsState({ generation: { maxTokens: 0 } }, settingsBase());
+  assert.equal(tiny.generation.maxTokens, 128);
+
+  const limits = mergeUsageState(
+    { limits: { hour: 100_000, day: 0 } },
+    { events: [], totals: { requests: 0, tokensIn: 0, tokensOut: 0 }, limits: { hour: 30, day: 300 } }
+  );
+  assert.deepEqual(limits.limits, { hour: 500, day: 25 });
 });

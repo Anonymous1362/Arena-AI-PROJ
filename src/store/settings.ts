@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { mergeSettingsState } from '@/src/store/persisted';
+import { clampGeneration, mergeSettingsState } from '@/src/store/persisted';
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -167,7 +167,8 @@ export const useSettingsStore = create<SettingsState>()(
           modelCache: { ...s.modelCache, [profileId]: { models, fetchedAt: Date.now() } },
         })),
 
-      patchGeneration: (patch) => set((s) => ({ generation: { ...s.generation, ...patch } })),
+      patchGeneration: (patch) =>
+        set((s) => ({ generation: clampGeneration({ ...s.generation, ...patch }) })),
       // AI workspace containment is a product safety rule, not an optional
       // UI preference. The Manual Terminal has its own explicit Android
       // permission gate and cannot be inherited by agent tools.

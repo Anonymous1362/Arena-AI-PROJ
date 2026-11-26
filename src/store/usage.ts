@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { mergeUsageState } from '@/src/store/persisted';
+import { clampUsageLimits, mergeUsageState } from '@/src/store/persisted';
 
 /**
  * Live usage tracking: rolling windows (1h / 24h), token accounting and
@@ -59,7 +59,8 @@ export const useUsageStore = create<UsageState>()(
         });
       },
 
-      setLimits: (patch) => set((s) => ({ limits: { ...s.limits, ...patch } })),
+      setLimits: (patch) =>
+        set((s) => ({ limits: clampUsageLimits({ ...s.limits, ...patch }) })),
 
       reset: () =>
         set({

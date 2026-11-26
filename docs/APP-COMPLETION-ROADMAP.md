@@ -135,9 +135,17 @@
   counts every request including auto-titles, but the title request bypassed the
   usage store, so the rolling window, per-provider totals and limits undercounted
   one request per titled conversation.
+- [x] Generation and usage bounds are enforced where the values are stored, not
+  only by the settings screens. `maxTokens` is clamped to 128–8192 before it can
+  be sent as `max_tokens`, so a restored or hand-edited `10000000` is no longer
+  forwarded verbatim (rejected by providers) and `1` no longer produces an
+  unusable reply. Temperature, top-P and the hourly/daily soft limits use the
+  same ranges their steppers allow; `patchGeneration` and `setLimits` apply the
+  shared clamp, so a future caller cannot bypass the screens.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`), an Android Hermes export, and `npm test`
-  (8/8) passed for these chat-reliability changes on 2026-11-26. This is build evidence only; the provider rows in
+  (9/9) passed for these chat-reliability and settings-bounds changes on
+  2026-11-26. This is build evidence only; the provider rows in
   [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md)
   still require a real key and a device run.
 

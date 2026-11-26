@@ -54,6 +54,52 @@ function textList(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
+/* ------------------------------- shared bounds ------------------------------ */
+
+/**
+ * The Generation and Usage screens enforce these ranges through steppers. The
+ * stores apply the same bounds, so a rehydrated, imported, or hand-edited value
+ * cannot reach a provider request as e.g. `max_tokens: 10000000` (rejected) or
+ * `max_tokens: 1` (a useless reply), and a corrupt usage limit cannot hide the
+ * real rolling count behind a zero-width bar.
+ */
+export const GENERATION_BOUNDS = {
+  temperature: { min: 0, max: 2 },
+  topP: { min: 0, max: 1 },
+  maxTokens: { min: 128, max: 8192 },
+} as const;
+
+export const USAGE_LIMIT_BOUNDS = {
+  hour: { min: 5, max: 500 },
+  day: { min: 25, max: 5000 },
+} as const;
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Number.isFinite(value) ? clamp(value, min, max) : min;
+}
+
+export function clampGeneration(generation: GenerationSettings): GenerationSettings {
+  return {
+    temperature: clampNumber(
+      generation.temperature,
+      GENERATION_BOUNDS.temperature.min,
+      GENERATION_BOUNDS.temperature.max
+    ),
+    topP: clampNumber(generation.topP, GENERATION_BOUNDS.topP.min, GENERATION_BOUNDS.topP.max),
+    maxTokens: Math.round(
+      clampNumber(generation.maxTokens, GENERATION_BOUNDS.maxTokens.min, GENERATION_BOUNDS.maxTokens.max)
+    ),
+    systemPrompt: generation.systemPrompt,
+  };
+}
+
+export function clampUsageLimits(limits: { hour: number; day: number }): { hour: number; day: number } {
+  return {
+    hour: Math.round(clampNumber(limits.hour, USAGE_LIMIT_BOUNDS.hour.min, USAGE_LIMIT_BOUNDS.hour.max)),
+    day: Math.round(clampNumber(limits.day, USAGE_LIMIT_BOUNDS.day.min, USAGE_LIMIT_BOUNDS.day.max)),
+  };
+}
+
 /* --------------------------------- settings -------------------------------- */
 
 export function sanitizeActiveModel(value: unknown): ActiveModel {
@@ -104,12 +150,12 @@ function sanitizeModelCache(
 
 function sanitizeGeneration(value: unknown, base: GenerationSettings): GenerationSettings {
   if (!isRecord(value)) return base;
-  return {
-    temperature: clamp(count(value.temperature, base.temperature), 0, 2),
-    topP: clamp(count(value.topP, base.topP), 0, 1),
-    maxTokens: Math.max(1, Math.round(count(value.maxTokens, base.maxTokens))),
+  return clampGeneration({
+    temperature: count(value.temperature, base.temperature),
+    topP: count(value.topP, base.topP),
+    maxTokens: count(value.maxTokens, base.maxTokens),
     systemPrompt: text(value.systemPrompt, base.systemPrompt),
-  };
+  });
 }
 
 function sanitizeAgentScope(value: unknown, base: AgentScope): AgentScope {
@@ -372,10 +418,10 @@ export function mergeUsageState(persisted: unknown, current: UsageState): UsageS
     : current.totals;
 
   const limits = isRecord(persisted.limits)
-    ? {
-        hour: Math.max(1, count(persisted.limits.hour, current.limits.hour)),
-        day: Math.max(1, count(persisted.limits.day, current.limits.day)),
-      }
+    ? clampUsageLimits({
+        hour: count(persisted.limits.hour, current.limits.hour),
+        day: count(persisted.limits.day, current.limits.day),
+      })
     : current.limits;
 
   return { ...current, events, totals, limits };

@@ -459,3 +459,33 @@ clicked through in a running app and the provider checklist rows remain
 unexecuted.
 
 Nothing was merged, tagged, released, or opened as a pull request.
+
+## Continuation — 2026-11-26 (generation and usage bounds)
+
+Continued the broader-app audit on the settings/data-safety item. No
+Terminal/runtime or Phase 0 work was touched.
+
+Changes:
+
+- `src/store/persisted.ts` — new exported `GENERATION_BOUNDS`,
+  `USAGE_LIMIT_BOUNDS`, `clampGeneration` and `clampUsageLimits`. Rehydration
+  now sends `maxTokens` through the same 128–8192 range its stepper allows;
+  before this only `Math.max(1, …)` applied, so a restored or hand-edited
+  settings slice could forward `max_tokens: 10000000` (rejected by providers)
+  or `1` (a useless reply). Usage limits clamp to the hourly 5–500 and daily
+  25–5000 ranges the Usage screen offers.
+- `src/store/settings.ts`, `src/store/usage.ts` — `patchGeneration` and
+  `setLimits` apply the shared clamps, so a non-UI caller cannot store an
+  out-of-range value that later reaches a provider request.
+- `tests/persisted.test.ts` — the existing usage-limit assertion now reflects
+  the screen minimum (`hour: 5`), plus a bounds test covering huge/tiny
+  generation values and out-of-range limits.
+
+Checks run locally: `npx tsc --noEmit` (pass), `npm test` (9/9 pass),
+`npx expo export --platform web` (pass), and `npx expo export --platform android`
+(pass, 5.4 MB Hermes bundle). No real API key, physical device, or GitHub CI
+observation was available here. The Generation/Usage screens were not clicked
+through in a running app; this increment is store-level bounds plus build
+checks.
+
+Nothing was merged, tagged, released, or opened as a pull request.
