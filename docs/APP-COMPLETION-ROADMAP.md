@@ -88,6 +88,11 @@
 - [x] The agent's workspace `touch` command now preserves an existing file
   instead of truncating it. It creates only a missing file and rejects a
   directory operand; controlled shell behavior and web export passed.
+- [x] GitHub CI completed successfully for the endpoint validation and five
+  provider/chat reliability commits: `c3e3383` (run `45759143860`), `75436da`
+  (`45759282945`), `6c86c5f` (`45759405007`), `2549319` (`45759483024`),
+  `c2d37c9` (`45759604547`), and `4276e63` (`45759701463`). This supplements,
+  but does not replace, required real-provider and physical-device evidence.
 
 ## Near-term active work
 

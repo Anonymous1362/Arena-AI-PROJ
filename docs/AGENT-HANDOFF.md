@@ -297,6 +297,15 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   preserves file contents, creates only a missing zero-byte file, and rejects a
   directory target. A controlled compiled-module shell harness and web export
   passed.
+- CI evidence was inspected after the provider/chat reliability follow-ups:
+  [endpoint validation `c3e3383` run `45759143860`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759143860),
+  [`75436da` `45759282945`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759282945),
+  [`6c86c5f` `45759405007`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759405007),
+  [`2549319` `45759483024`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759483024),
+  [`c2d37c9` `45759604547`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759604547),
+  and [`4276e63` `45759701463`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45759701463)
+  all concluded **success**. This is CI evidence only; real-provider/UI and
+  physical-device acceptance remain outstanding.
 
 ## Required next actions
 
