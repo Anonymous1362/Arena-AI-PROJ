@@ -19,7 +19,8 @@ export interface ComposerProps {
   streaming: boolean;
   disabled?: boolean;
   sendOnEnter?: boolean;
-  onSend: (text: string, attachments: MessageAttachment[]) => void;
+  /** Returns false when the send was rejected (no model, invalid endpoint). */
+  onSend: (text: string, attachments: MessageAttachment[]) => void | boolean | Promise<void | boolean>;
   onStop: () => void;
   /** Opens the image picker; resolves with picked attachments. */
   onPickImage: () => Promise<MessageAttachment[] | null>;
@@ -88,10 +89,19 @@ export function Composer({
     const t = text.trim();
     if ((!t && attachments.length === 0) || disabled) return;
     haptics.light();
-    onSend(t, attachments);
-    setText('');
-    setAttachments([]);
-    setHeight(0);
+    const accepted = onSend(t, attachments);
+    // Keep the draft if the send is refused before a request starts (missing
+    // model, invalid base URL), so the typed message is not silently lost.
+    Promise.resolve(accepted)
+      .then((ok) => {
+        if (ok === false) return;
+        setText('');
+        setAttachments([]);
+        setHeight(0);
+      })
+      .catch(() => {
+        /* the parent surfaces its own error */
+      });
   }, [attachments, disabled, onSend, onStop, streaming, text]);
 
   const pick = useCallback(async () => {

@@ -91,7 +91,16 @@ function Editor({
       baseUrl: normalizedBaseUrl,
       apiKey: apiKey.trim(),
     });
-    setTestResult(res.ok ? { ok: true, msg: `Connected — ${res.models?.length ?? 0} models available.` } : { ok: false, msg: res.error ?? 'Connection failed.' });
+    setTestResult(
+      res.ok
+        ? {
+            ok: true,
+            msg: res.models?.length
+              ? `Connected — ${res.models.length} models available.`
+              : 'Connected, but this endpoint listed no models. Save it, then enter a model ID in the model sheet.',
+          }
+        : { ok: false, msg: res.error ?? 'Connection failed.' }
+    );
     if (res.ok) haptics.success(); else haptics.error();
     setTesting(false);
   };

@@ -164,10 +164,28 @@ export default function ChatScreen() {
     wasStreamingRef.current = false;
   }, [streaming, autoRead, lastMessage]);
 
+  // Resolves true as soon as the turn starts (not when it finishes), so the
+  // composer can clear the draft immediately and keep it when a send is
+  // refused before any request starts.
   const send = useCallback(
-    (text: string, attachments: MessageAttachment[] = []) => {
+    (text: string, attachments: MessageAttachment[] = []): Promise<boolean> => {
       setBanner(null);
-      sendMessage(id!, { text, attachments }).catch((e: Error) => setBanner(e.message));
+      return new Promise<boolean>((resolve) => {
+        sendMessage(id!, {
+          text,
+          attachments,
+          onAccepted: () => resolve(true),
+        })
+          .then((accepted) => {
+            if (!accepted) resolve(false);
+          })
+          .catch((e: Error) => {
+            // Invalid endpoint/key configuration: report it and let the
+            // composer keep the draft.
+            setBanner(e.message);
+            resolve(false);
+          });
+      });
     },
     [id]
   );

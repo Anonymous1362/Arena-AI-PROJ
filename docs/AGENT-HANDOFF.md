@@ -350,3 +350,31 @@ For broader architecture and later delivery requirements, see
 [`COPPER-RUNTIME.md`](COPPER-RUNTIME.md) and
 [`BUILD-AND-INSTALL.md`](BUILD-AND-INSTALL.md). The roadmap is the current
 physical-device gate; this handoff is the operational record.
+
+## Continuation — 2026-11-26 (broader-app audit, terminal still deferred)
+
+Continued the general app audit from `b3e3a2e`. No Terminal/runtime or Phase 0
+work was touched.
+
+Changes:
+
+- `src/components/ModelSheet.tsx` — `/models` discovery failures are now shown
+  per provider with the provider's error text and a Retry control. Discovery
+  reruns when the endpoint URL changes, and an empty list is reported as
+  "did not list any models" instead of being indistinguishable from success.
+- `src/ai/remote.ts` — `testRemoteProfile` treats a reachable endpoint that
+  lists no models as connected (HTTP 200 without a model list), so a compatible
+  server without `/models` can still be saved and used with a manual model ID.
+- `src/ai/session.ts`, `app/chat/[id].tsx`, `src/components/Composer.tsx` — a
+  send refused before any request starts (missing model/provider, invalid base
+  URL) preserves the composer draft. `sendMessage` returns an acceptance flag
+  and the composer clears only after it is true.
+- `src/components/EmptyState.tsx` — removed stale pre-API "on-device model"
+  copy.
+- `docs/PROVIDER-FIRST-MESSAGE-CHECKLIST.md` — the first near-term checklist,
+  with code-covered versus real-key/device rows separated.
+
+Checks run locally: `npx tsc --noEmit` (pass) and
+`npx expo export --platform web` (pass). No real API key, no physical device,
+and no GitHub CI observation were available here; the unchecked provider rows
+remain real-run evidence work.

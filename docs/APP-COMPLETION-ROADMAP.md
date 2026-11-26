@@ -93,12 +93,31 @@
   (`45759282945`), `6c86c5f` (`45759405007`), `2549319` (`45759483024`),
   `c2d37c9` (`45759604547`), and `4276e63` (`45759701463`). This supplements,
   but does not replace, required real-provider and physical-device evidence.
+- [x] Model discovery no longer fails silently: `/models` errors (rejected key,
+  unreachable host, missing endpoint) are shown per provider in the model sheet
+  with a Retry control, and the list is re-fetched when that provider's base URL
+  changes. An empty list is reported as "did not list any models" instead of a
+  connection failure, so a compatible endpoint without `/models` can still be
+  saved and used with a manually entered model ID.
+- [x] A first send rejected before any request starts (no model, removed
+  provider, invalid base URL) keeps the typed draft in the composer. `sendMessage`
+  now returns whether the turn was accepted, and the composer clears only after
+  acceptance; configuration errors still surface in the chat banner.
+- [x] Removed the stale "choose an on-device model" empty-state copy left from
+  the pre-API engine. Provider setup is the only path.
+- [x] TypeScript (`npx tsc --noEmit`) and a production web export
+  (`npx expo export --platform web`) passed for those four changes on
+  2026-11-26. This is build evidence only; the provider rows in
+  [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md)
+  still require a real key and a device run.
 
 ## Near-term active work
 
-- [ ] Produce and verify a concrete provider/first-message flow checklist,
-  including invalid credentials, endpoints, model discovery, cancellation, and
-  recovery after changing providers.
+- [x] Produced the concrete provider/first-message flow checklist in
+  [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md),
+  covering invalid credentials, endpoints, model discovery, cancellation, and
+  recovery after changing providers. Executing the real-key/device rows is still
+  required; the checklist marks which are code-covered and which need a live run.
 - [ ] Exercise chat JSON export/import and erase/reset controls through the
   actual mobile and web UI, including an imported chat with an unavailable
   provider.

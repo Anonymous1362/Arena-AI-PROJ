@@ -23,7 +23,7 @@ export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => 
       <Text style={[styles.sub, { color: colors.textSub }]}>
         {engineReady
           ? 'Pick a suggestion or just start typing.'
-          : 'Choose an on-device model or connect an API to begin.'}
+          : 'Connect an API provider to begin.'}
       </Text>
       <View style={{ alignSelf: 'stretch', gap: spacing(2), marginTop: spacing(6) }}>
         {SUGGESTIONS.map((s) => (

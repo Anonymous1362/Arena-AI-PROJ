@@ -63,29 +63,35 @@ export interface SendOptions {
   text?: string;
   /** Image attachments for vision models (API engines). */
   attachments?: MessageAttachment[];
+  /**
+   * Fired once the turn has started. The returned promise settles only when
+   * the whole turn ends, so callers that need to clear a draft at send time
+   * use this instead of awaiting the promise.
+   */
+  onAccepted?: () => void;
 }
 
-export async function sendMessage(convId: string, opts: SendOptions): Promise<void> {
+export async function sendMessage(convId: string, opts: SendOptions): Promise<boolean> {
   const chats = useChatsStore.getState();
   const settings = useSettingsStore.getState();
 
-  if (isConversationStreaming(convId)) return;
-  if (!opts.regenerate && !opts.text?.trim() && !opts.editMessageId) return;
+  if (isConversationStreaming(convId)) return false;
+  if (!opts.regenerate && !opts.text?.trim() && !opts.editMessageId) return false;
 
   const conv = chats.conversations.find((c) => c.id === convId);
-  if (!conv) return;
+  if (!conv) return false;
 
   const model = conv.model ?? settings.activeModel;
   if (!model) {
     throwNoModel(conv);
-    return;
+    return false;
   }
   // A conversation can outlive a provider (or arrive from another device in a
   // backup). Route that state to the model picker before we add a user message
   // and a failed empty assistant bubble.
   if (!settings.profiles.some((profile) => profile.id === model.profileId)) {
     throwNoModel(conv);
-    return;
+    return false;
   }
   // Validate the selected provider before mutating persisted chat history.
   // Configuration errors should be recoverable without creating a phantom turn.
@@ -119,6 +125,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   useStreamingStore.getState().start(convId);
   const abort = new AbortController();
   active.set(convId, { abort, profileId: model.profileId });
+  opts.onAccepted?.();
 
   // 2) build the request
   const fresh = useChatsStore.getState().conversations.find((c) => c.id === convId);
@@ -182,7 +189,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
         });
         active.delete(convId);
         useStreamingStore.getState().end(convId);
-        return;
+        return true;
       }
     }
   }
@@ -318,6 +325,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
     useChatsStore.getState().touchConversation(convId);
     if (shouldAutoTitle) void maybeAutoTitle(convId, model);
   }
+  return true;
 }
 
 function throwNoModel(conv: Conversation): void {

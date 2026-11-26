@@ -461,7 +461,9 @@ export async function testRemoteProfile(
   profile: RemoteProfile
 ): Promise<{ ok: boolean; models?: string[]; error?: string }> {
   const res = await listRemoteModels(profile);
-  if (res.models.length > 0) return { ok: true, models: res.models };
+  // Reachable is not the same as listing models: some compatible endpoints
+  // answer 200 with an empty/missing list but still serve chat completions.
+  // Report the connection as working and let the user enter a model ID.
   if (res.error) return { ok: false, error: res.error };
-  return { ok: false, error: 'Endpoint returned no models.' };
+  return { ok: true, models: res.models };
 }

@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { Sheet } from '@/src/components/Sheet';
 import { PressableScale } from '@/src/components/PressableScale';
-import { useSettingsStore, selectActiveProfile, type ActiveModel } from '@/src/store/settings';
+import { useSettingsStore, selectActiveProfile, type ActiveModel, type RemoteProfile } from '@/src/store/settings';
 import { listRemoteModels, PROVIDER_PRESETS } from '@/src/ai/remote';
 import { haptics } from '@/src/utils/haptics';
 import { Platform } from 'react-native';
@@ -42,7 +42,38 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
   const updateProfile = useSettingsStore((s) => s.updateProfile);
 
   const [loadingProfile, setLoadingProfile] = useState<string | null>(null);
+  const [modelErrors, setModelErrors] = useState<Record<string, string>>({});
   const [customModels, setCustomModels] = useState<Record<string, string>>({});
+
+  // Re-discover when the endpoint itself changes, not only when a provider is
+  // added — editing a key or URL invalidates that provider's cached list.
+  const profileKey = profiles.map((p) => `${p.id}:${p.baseUrl}`).join('|');
+
+  const discoverModels = useCallback(
+    async (profile: RemoteProfile) => {
+      if (!profile.baseUrl) return;
+      setLoadingProfile(profile.id);
+      setModelErrors((current) => {
+        const next = { ...current };
+        delete next[profile.id];
+        return next;
+      });
+      const res = await listRemoteModels(profile);
+      setLoadingProfile((current) => (current === profile.id ? null : current));
+      if (res.models.length) {
+        cacheModels(profile.id, res.models);
+        return;
+      }
+      // A rejected key, an unreachable host or an endpoint without /models must
+      // be visible here. An empty list makes a broken provider look healthy and
+      // leaves the user with no way to tell discovery apart from zero models.
+      setModelErrors((current) => ({
+        ...current,
+        [profile.id]: res.error ?? 'This endpoint did not list any models.',
+      }));
+    },
+    [cacheModels]
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -52,18 +83,15 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
         if (cancelled) return;
         if (modelCache[p.id]?.models?.length) continue;
         if (!p.baseUrl) continue;
-        setLoadingProfile(p.id);
-        const res = await listRemoteModels(p);
+        await discoverModels(p);
         if (cancelled) return;
-        if (res.models.length) cacheModels(p.id, res.models);
-        setLoadingProfile(null);
       }
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, profiles.length]);
+  }, [visible, profileKey]);
 
   const pick = useCallback(
     (m: ActiveModel) => {
@@ -194,6 +222,25 @@ export function ModelSheet({ visible, onClose, onPicked, current }: ModelSheetPr
                   ))}
                 {loadingProfile === p.id ? (
                   <Text style={{ color: colors.textFaint, fontSize: 12, padding: spacing(2) }}>Fetching models…</Text>
+                ) : null}
+                {modelErrors[p.id] ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                      marginTop: spacing(1),
+                      paddingHorizontal: spacing(1),
+                    }}
+                  >
+                    <Ionicons name="warning-outline" size={14} color={colors.danger} style={{ marginTop: 1 }} />
+                    <Text style={{ flex: 1, color: colors.danger, fontSize: 12, lineHeight: 16 }}>
+                      {modelErrors[p.id]}
+                    </Text>
+                    <PressableScale haptic="light" scale={0.94} onPress={() => discoverModels(p)}>
+                      <Text style={{ color: colors.accent, fontSize: 12, fontWeight: '700' }}>Retry</Text>
+                    </PressableScale>
+                  </View>
                 ) : null}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(2), paddingHorizontal: spacing(1) }}>
                   <TextInput
