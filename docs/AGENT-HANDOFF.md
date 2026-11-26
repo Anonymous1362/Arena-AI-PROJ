@@ -252,6 +252,14 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   cache. TypeScript, controlled URL/cache behavior checks, and an Expo web
   export passed for this increment; actual credential/network/mobile flows
   remain required evidence.
+- Provider validation follow-up: saving, testing, `/models` discovery, and
+  first-message target resolution share strict HTTP(S) base-URL validation.
+  Invalid URLs, URL-embedded credentials, queries, and fragments are rejected
+  before network access; stale persisted profiles get the same actionable
+  message. The Ollama/LM Studio presets now require a real LAN endpoint rather
+  than seeding a misleading phone-loopback/default private address. A controlled
+  validator/engine test and TypeScript check passed; mobile network evidence is
+  still required.
 
 ## Required next actions
 

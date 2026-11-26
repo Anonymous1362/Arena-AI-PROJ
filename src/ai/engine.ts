@@ -1,7 +1,7 @@
 import type { ActiveModel } from '@/src/store/settings';
 import { useSettingsStore, type SettingsState } from '@/src/store/settings';
 import type { EngineRequest, EngineResult, RemoteTarget, WireMessage } from '@/src/ai/types';
-import { streamRemoteChat } from '@/src/ai/remote';
+import { streamRemoteChat, validateRemoteBaseUrl } from '@/src/ai/remote';
 import { estimateTokens } from '@/src/utils/format';
 
 export class NoEngineError extends Error {
@@ -26,10 +26,11 @@ export function resolveRemoteTarget(state: SettingsState, model: ActiveModel): R
       `The provider for “${modelName}” is no longer configured. Pick a model or add its provider in Settings → Providers.`
     );
   }
-  if (!profile.baseUrl?.trim()) {
-    throw new Error(`“${profile.name}” has no base URL — edit it in Settings → Providers.`);
+  const endpoint = validateRemoteBaseUrl(profile.baseUrl ?? '');
+  if (!endpoint.ok) {
+    throw new Error(`“${profile.name}” has an invalid base URL — ${endpoint.error} Edit it in Settings → Providers.`);
   }
-  return { baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: modelName, headers: profile.headers };
+  return { baseUrl: endpoint.baseUrl, apiKey: profile.apiKey, model: modelName, headers: profile.headers };
 }
 
 /**

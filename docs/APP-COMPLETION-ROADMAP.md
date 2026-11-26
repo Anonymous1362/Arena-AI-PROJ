@@ -60,6 +60,11 @@
   user save/select a model ID when a compatible endpoint does not list models.
   Editing an endpoint, key, or headers clears only that provider's stale model
   cache.
+- [x] Provider save, model discovery, and first-message target resolution now
+  share HTTP(S) endpoint validation, so malformed or credential-in-URL entries
+  are explained before a fetch. LAN presets require a real LAN address rather
+  than pre-filling a phone-local loopback address, and editing a field clears
+  stale connection feedback.
 
 ## Near-term active work
 

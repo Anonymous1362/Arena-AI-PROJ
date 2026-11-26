@@ -130,7 +130,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     pricingNote: 'Free — runs on your own computer.',
     id: 'ollama',
     name: 'Ollama (your computer)',
-    baseUrl: 'http://localhost:11434/v1',
+    baseUrl: '',
     noKey: true,
     localNetwork: true,
     note: 'Models running on your own computer. Enable OLLAMA_HOST=0.0.0.0 and use your PC’s LAN IP on mobile.',
@@ -142,7 +142,7 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
     pricingNote: 'Free — runs on your own computer.',
     id: 'lmstudio',
     name: 'LM Studio (your computer)',
-    baseUrl: 'http://192.168.1.10:1234/v1',
+    baseUrl: '',
     noKey: true,
     localNetwork: true,
     note: 'Start the local server in LM Studio, then point this at your PC’s LAN IP.',
@@ -159,6 +159,39 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
 ];
 
 /* -------------------------------- url plumbing ------------------------------- */
+
+export type BaseUrlValidation =
+  | { ok: true; baseUrl: string; isLoopback: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Accept only the HTTP(S) API roots the remote engine can actually call. This
+ * runs before saving/testing a profile and again when resolving old persisted
+ * profiles, so a malformed URL cannot become an opaque fetch failure later.
+ */
+export function validateRemoteBaseUrl(value: string): BaseUrlValidation {
+  const baseUrl = value.trim().replace(/\/+$/, '');
+  if (!baseUrl) return { ok: false, error: 'Enter a base URL.' };
+
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return { ok: false, error: 'Base URL must start with http:// or https://.' };
+    }
+    if (!parsed.hostname) return { ok: false, error: 'Base URL needs a host name.' };
+    if (parsed.username || parsed.password) {
+      return { ok: false, error: 'Put credentials in the API key field, not in the URL.' };
+    }
+    if (parsed.search || parsed.hash) {
+      return { ok: false, error: 'Base URL cannot include a query string or fragment.' };
+    }
+    const host = parsed.hostname.toLowerCase();
+    const isLoopback = host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
+    return { ok: true, baseUrl, isLoopback };
+  } catch {
+    return { ok: false, error: 'Enter a complete URL such as https://api.example.com/v1.' };
+  }
+}
 
 export function chatCompletionsUrl(baseUrl: string): string {
   const b = baseUrl.trim().replace(/\/+$/, '');
@@ -403,9 +436,10 @@ export interface ListModelsResult {
 }
 
 export async function listRemoteModels(profile: RemoteProfile): Promise<ListModelsResult> {
-  if (!profile.baseUrl?.trim()) return { models: [], error: 'No base URL configured.' };
+  const endpoint = validateRemoteBaseUrl(profile.baseUrl ?? '');
+  if (!endpoint.ok) return { models: [], error: endpoint.error };
   try {
-    const res = await streamFetch(modelsUrl(profile.baseUrl), {
+    const res = await streamFetch(modelsUrl(endpoint.baseUrl), {
       method: 'GET',
       headers: buildHeaders(profile),
     });

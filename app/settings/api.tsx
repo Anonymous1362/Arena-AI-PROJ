@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useSettingsStore, type RemoteProfile } from '@/src/store/settings';
-import { PROVIDER_PRESETS, testRemoteProfile } from '@/src/ai/remote';
+import { PROVIDER_PRESETS, testRemoteProfile, validateRemoteBaseUrl } from '@/src/ai/remote';
 import { AppHeader } from '@/src/components/AppHeader';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Sheet } from '@/src/components/Sheet';
@@ -34,35 +34,57 @@ function Editor({
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const removeProfile = useSettingsStore((s) => s.removeProfile);
   const setActiveProfile = useSettingsStore((s) => s.setActiveProfile);
-  const setActiveModel = useSettingsStore((s) => s.setActiveModel);
+
+  const validatedBaseUrl = (): string | null => {
+    if (!name.trim()) {
+      setTestResult({ ok: false, msg: 'Give this provider a display name.' });
+      return null;
+    }
+    const endpoint = validateRemoteBaseUrl(baseUrl);
+    if (!endpoint.ok) {
+      setTestResult({ ok: false, msg: endpoint.error });
+      return null;
+    }
+    if (preset?.localNetwork && Platform.OS !== 'web' && endpoint.isLoopback) {
+      setTestResult({ ok: false, msg: 'On a phone, localhost is the phone itself. Enter your computer’s LAN IP instead.' });
+      return null;
+    }
+    return endpoint.baseUrl;
+  };
 
   const save = () => {
-    if (!name.trim() || !baseUrl.trim()) {
-      setTestResult({ ok: false, msg: 'Name and base URL are required.' });
+    const normalizedBaseUrl = validatedBaseUrl();
+    if (!normalizedBaseUrl) {
+      haptics.error();
       return;
     }
     if (existing) {
-      updateProfile(existing.id, { name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() });
-      haptics.success();
+      updateProfile(existing.id, { name: name.trim(), baseUrl: normalizedBaseUrl, apiKey: apiKey.trim() });
     } else {
       const id = addProfile({
         name: name.trim(),
-        baseUrl: baseUrl.trim(),
+        baseUrl: normalizedBaseUrl,
         apiKey: apiKey.trim(),
         suggestedModels: preset?.suggestedModels,
       });
       setActiveProfile(id);
     }
+    haptics.success();
     onDone();
   };
 
   const test = async () => {
+    const normalizedBaseUrl = validatedBaseUrl();
+    if (!normalizedBaseUrl) {
+      haptics.error();
+      return;
+    }
     setTesting(true);
     setTestResult(null);
     const res = await testRemoteProfile({
       id: existing?.id ?? 'draft',
-      name,
-      baseUrl: baseUrl.trim(),
+      name: name.trim(),
+      baseUrl: normalizedBaseUrl,
       apiKey: apiKey.trim(),
     });
     setTestResult(res.ok ? { ok: true, msg: `Connected — ${res.models?.length ?? 0} models available.` } : { ok: false, msg: res.error ?? 'Connection failed.' });
@@ -77,22 +99,36 @@ function Editor({
       ) : null}
       {preset?.note ? <Banner kind="info" text={preset.note} /> : null}
 
-      <TextField label="Display name" placeholder="e.g. My OpenAI" value={name} onChangeText={setName} />
+      <TextField
+        label="Display name"
+        placeholder="e.g. My OpenAI"
+        value={name}
+        onChangeText={(value) => {
+          setName(value);
+          setTestResult(null);
+        }}
+      />
       <TextField
         label="Base URL"
-        placeholder="https://api.example.com/v1"
+        placeholder={preset?.localNetwork ? 'http://192.168.x.x:11434/v1' : 'https://api.example.com/v1'}
         value={baseUrl}
-        onChangeText={setBaseUrl}
+        onChangeText={(value) => {
+          setBaseUrl(value);
+          setTestResult(null);
+        }}
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
-        hint="/v1 is appended automatically if missing."
+        hint={preset?.localNetwork ? 'Use your computer’s LAN IP — not localhost — when Copper runs on your phone.' : '/v1 is appended automatically if missing.'}
       />
       <TextField
         label={preset?.noKey ? 'API key (optional)' : 'API key'}
         placeholder={preset?.noKey ? 'Not required for local servers' : 'sk-…'}
         value={apiKey}
-        onChangeText={setApiKey}
+        onChangeText={(value) => {
+          setApiKey(value);
+          setTestResult(null);
+        }}
         secure
         autoCapitalize="none"
         autoCorrect={false}
@@ -163,8 +199,6 @@ export default function ApiSettingsScreen() {
   );
   const [creatingPreset, setCreatingPreset] = useState<string | null>(params.preset ?? null);
   const [presetSheet, setPresetSheet] = useState(false);
-
-  const activePreset = PROVIDER_PRESETS.find((p) => p.id === (creatingPreset ?? ''));
 
   if (editing || creatingPreset) {
     return (
