@@ -65,6 +65,9 @@
   are explained before a fetch. LAN presets require a real LAN address rather
   than pre-filling a phone-local loopback address, and editing a field clears
   stale connection feedback.
+- [x] Automatic chat titling now makes its second provider request only after a
+  successful turn; failed, aborted, or stopped first messages retain their
+  visible error without silently retrying the broken provider for a title.
 
 ## Near-term active work
 

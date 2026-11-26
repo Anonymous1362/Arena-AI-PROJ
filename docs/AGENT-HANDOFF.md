@@ -260,6 +260,11 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   than seeding a misleading phone-loopback/default private address. A controlled
   validator/engine test and TypeScript check passed; mobile network evidence is
   still required.
+- Chat reliability follow-up: auto-title is now gated on a completed successful
+  turn. It no longer makes a hidden second provider call after an auth/network
+  failure or an explicit stop, avoiding duplicate failure/usage while preserving
+  normal title generation after a real answer. A controlled session behavior
+  test, TypeScript check, and Expo web export passed.
 
 ## Required next actions
 

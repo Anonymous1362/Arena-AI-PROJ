@@ -201,6 +201,10 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   };
 
   const agentMode = settings.agentScope.enabled && model.kind === 'remote';
+  // Title generation is a second provider request. Only make it after this
+  // turn completed successfully; an auth/network failure or user stop must not
+  // trigger another hidden request against the same broken endpoint.
+  let shouldAutoTitle = false;
 
   try {
     if (agentMode) {
@@ -218,7 +222,8 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
           onText: paintContent,
           onPlan: upsertPlan,
           onToolEvent: upsertToolEvent,
-          onDone: ({ text, ms, transcriptTail, toolCallCount, tokensIn, tokensOut }) => {
+          onDone: ({ text, ms, transcriptTail, toolCallCount, tokensIn, tokensOut, stopReason }) => {
+            shouldAutoTitle = stopReason !== 'aborted';
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               content: text,
               done: true,
@@ -252,6 +257,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
           onContent: paintContent,
         },
       });
+      shouldAutoTitle = true;
       useChatsStore.getState().updateMessage(convId, assistant.id, {
         content: result.content,
         reasoning: result.reasoning,
@@ -298,7 +304,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
     active.delete(convId);
     useStreamingStore.getState().end(convId);
     useChatsStore.getState().touchConversation(convId);
-    maybeAutoTitle(convId, model);
+    if (shouldAutoTitle) void maybeAutoTitle(convId, model);
   }
 }
 
