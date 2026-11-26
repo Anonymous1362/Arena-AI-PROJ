@@ -89,6 +89,30 @@ function uid(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function abortError(): Error {
+  const error = new Error('Generation stopped.');
+  error.name = 'AbortError';
+  return error;
+}
+
+/** Back off transient provider failures without making Stop wait for the timer. */
+function waitForRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      signal?.removeEventListener('abort', stopped);
+      resolve();
+    }
+    function stopped() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', stopped);
+      reject(abortError());
+    }
+    signal?.addEventListener('abort', stopped, { once: true });
+  });
+}
+
 export async function runAgentTurn(opts: LoopOptions): Promise<void> {
   const {
     target,
@@ -179,7 +203,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
             e instanceof ApiError && (e.status === 429 || e.status === 502 || e.status === 503);
           const nothingYet = fullText === turnTextBefore;
           if (attempt === 0 && transient && nothingYet) {
-            await new Promise<void>((r) => setTimeout(r, (e as ApiError).status === 429 ? 4000 : 2500));
+            await waitForRetry((e as ApiError).status === 429 ? 4000 : 2500, signal);
             continue;
           }
           throw e;

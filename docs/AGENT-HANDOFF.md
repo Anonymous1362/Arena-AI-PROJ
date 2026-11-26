@@ -271,6 +271,10 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   A controlled two-turn `finish_reason=length` test proved the UI/final result
   retain both segments; TypeScript passed. Real provider/agent interaction
   evidence remains required.
+- Agent Stop follow-up: transient 429/5xx retry backoff is now abort-aware.
+  Tapping Stop rejects the pending delay immediately and completes the turn as
+  aborted instead of waiting 2.5–4 seconds before another attempt. A controlled
+  429-plus-abort test and TypeScript check passed.
 
 ## Required next actions
 

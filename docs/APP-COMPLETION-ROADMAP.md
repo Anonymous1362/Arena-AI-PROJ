@@ -71,6 +71,8 @@
 - [x] Agent auto-continuation and multi-step tool turns now preserve already
   streamed assistant text when a later provider request starts, rather than
   replacing the visible answer with only the final continuation segment.
+- [x] Stopping an agent now interrupts its transient 429/5xx retry backoff
+  immediately instead of leaving the chat in a several-second pending state.
 
 ## Near-term active work
 
