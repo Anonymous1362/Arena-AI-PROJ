@@ -215,6 +215,16 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     lastPaint = now;
     useChatsStore.getState().updateMessage(convId, assistant.id, { content });
   };
+  // Agent Mode streams provider reasoning too; without painting it the thinking
+  // block stayed empty until the turn settled, and it was never stored at all.
+  let lastReasoningPaint = 0;
+  const paintReasoning = (reasoning: string) => {
+    if (!reasoning) return;
+    const now = Date.now();
+    if (now - lastReasoningPaint < 60) return;
+    lastReasoningPaint = now;
+    useChatsStore.getState().updateMessage(convId, assistant.id, { reasoning });
+  };
   const upsertToolEvent = (ev: unknown) => {
     const cur = useChatsStore
       .getState()
@@ -252,12 +262,14 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
         signal: abort.signal,
         callbacks: {
           onText: paintContent,
+          onReasoning: paintReasoning,
           onPlan: upsertPlan,
           onToolEvent: upsertToolEvent,
-          onDone: ({ text, ms, transcriptTail, toolCallCount, tokensIn, tokensOut, stopReason }) => {
+          onDone: ({ text, reasoning, ms, transcriptTail, toolCallCount, tokensIn, tokensOut, stopReason }) => {
             shouldAutoTitle = stopReason !== 'aborted';
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               content: text,
+              reasoning: reasoning || undefined,
               done: true,
               error: undefined,
               transcriptTail: transcriptTail.slice(-24),

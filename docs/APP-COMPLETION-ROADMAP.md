@@ -150,10 +150,18 @@
   Retry. `settleInterruptedMessage` in `src/store/persisted.ts` now sets
   `done: true` on rehydration and on backup import, keeping partial text and
   reasoning, and giving an empty assistant reply the ordinary retryable error.
+- [x] Agent Mode now streams and stores model reasoning. The Providers screen
+  advertises that reasoning models stream their thinking, but the agent loop
+  never forwarded `onReasoning` and its `onDone` result carried no reasoning,
+  so an Agent Mode reply showed no thinking block while running and kept none
+  after it settled (normal chat did both). Reasoning is now accumulated across
+  tool/continuation turns, painted live, kept on abort like partial text, and
+  saved with the reply; a transient retry discards the failed attempt's trace
+  instead of repeating it.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`), an Android Hermes export, and `npm test`
-  (10/10) passed for these chat-reliability, settings-bounds and
-  interrupted-message changes on
+  (10/10) passed for these chat-reliability, settings-bounds,
+  interrupted-message and agent-reasoning changes on
   2026-11-26. This is build evidence only; the provider rows in
   [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md)
   still require a real key and a device run.

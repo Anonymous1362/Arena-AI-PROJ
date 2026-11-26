@@ -30,6 +30,8 @@ export interface LoopCallbacks {
   /** Fires with the final text + events when the whole turn settles. */
   onDone: (result: {
     text: string;
+    /** Model reasoning/thinking collected across the turn, if any. */
+    reasoning: string;
     toolEvents: ToolEvent[];
     steps: PlanStep[];
     ms: number;
@@ -131,6 +133,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
   let tokensInTotal = 0;
   let tokensOutTotal = 0;
   let fullText = '';
+  let fullReasoning = '';
   let steps: PlanStep[] = [];
   let toolCallCount = 0;
   let stopReason: 'complete' | 'max_turns' | 'aborted' = 'complete';
@@ -163,6 +166,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
   try {
     for (let turn = 0; turn < maxTurns; turn++) {
       const turnTextBefore = fullText;
+      const turnReasoningBefore = fullReasoning;
 
       // One automatic retry for transient provider errors (429/5xx) when
       // nothing has streamed yet — keeps long agent runs alive.
@@ -194,7 +198,13 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
                 fullText = appendTurnText(turnTextBefore, content);
                 callbacks.onText(fullText);
               },
-              onReasoning: (r) => callbacks.onReasoning?.(r),
+              onReasoning: (r) => {
+                // Each request streams its own reasoning from the start, so
+                // keep earlier tool/continuation turns instead of replacing
+                // the visible thinking trace with the newest request's.
+                fullReasoning = appendTurnReasoning(turnReasoningBefore, r);
+                callbacks.onReasoning?.(fullReasoning);
+              },
             },
           });
           break;
@@ -203,6 +213,9 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
             e instanceof ApiError && (e.status === 429 || e.status === 502 || e.status === 503);
           const nothingYet = fullText === turnTextBefore;
           if (attempt === 0 && transient && nothingYet) {
+            // Discard thinking that belonged to the failed attempt so the
+            // retry does not repeat it twice in the visible trace.
+            fullReasoning = turnReasoningBefore;
             await waitForRetry((e as ApiError).status === 429 ? 4000 : 2500, signal);
             continue;
           }
@@ -215,6 +228,10 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
       tokensOutTotal += result.tokensOut ?? 0;
       fullText = appendTurnText(turnTextBefore, result.content);
       callbacks.onText(fullText);
+      if (result.reasoning?.trim()) {
+        fullReasoning = appendTurnReasoning(turnReasoningBefore, result.reasoning);
+        callbacks.onReasoning?.(fullReasoning);
+      }
 
       // No tool calls requested this turn → turn chain ends here.
       const toolCalls: any[] = (result as any).toolCalls ?? [];
@@ -330,6 +347,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
 
     callbacks.onDone({
       text: fullText,
+      reasoning: fullReasoning,
       toolEvents,
       steps: finalSteps,
       ms: Date.now() - started,
@@ -344,6 +362,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     if (err?.name === 'AbortError' || (signal?.aborted ?? false)) {
       callbacks.onDone({
         text: fullText,
+        reasoning: fullReasoning,
         toolEvents,
         steps,
         ms: Date.now() - started,
@@ -357,6 +376,19 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     }
     callbacks.onError(err instanceof Error ? err : new Error(String(e)));
   }
+}
+
+/**
+ * Each provider request streams its reasoning from scratch. Join the traces of
+ * multi-turn agent runs (and auto-continuations) the same way the answer text
+ * is joined, so Agent Mode keeps the thinking it streamed instead of dropping
+ * it when the request that produced it ends.
+ */
+function appendTurnReasoning(previous: string, next: string): string {
+  const cleanNext = next.trim();
+  if (!previous.trim()) return cleanNext;
+  if (!cleanNext) return previous;
+  return `${previous.trimEnd()}\n\n${cleanNext}`;
 }
 
 /**

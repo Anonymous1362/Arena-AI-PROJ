@@ -520,3 +520,23 @@ settles after a relaunch.
   android` (ANDROID_EXIT=0, 5.4 MB Hermes bundle). Build evidence only; the
   provider rows in `docs/PROVIDER-FIRST-MESSAGE-CHECKLIST.md` still need a real
   key and a device run.
+
+## Continuation — 2026-11-26 (Agent Mode keeps its reasoning)
+
+- Agent Mode dropped model reasoning on both ends: `runAgentTurn` never passed
+  `callbacks.onReasoning`, and its `onDone` result had no reasoning field, so
+  `session.ts` could not paint or persist it. Normal chat already stored
+  `result.reasoning`, and the Providers screen advertises that reasoning models
+  stream their thinking, so Agent Mode was the inconsistent path.
+- `src/agent/loop.ts` now accumulates reasoning per provider request across
+  tool/continuation turns (`appendTurnReasoning`), emits it live through
+  `onReasoning`, includes it in both `onDone` results (complete and aborted),
+  and resets the failed attempt's trace before an automatic 429/5xx retry.
+- `src/ai/session.ts` paints reasoning throttled like content and stores it on
+  the assistant message when the turn settles. The existing abort path already
+  preserved `current.reasoning`, so a stopped agent turn keeps its partial
+  thinking alongside its partial answer.
+- Verified on the committed tree: `npx tsc --noEmit` (0), `npm test` (10/10),
+  `npx expo export --platform web` (0), `npx expo export --platform android`
+  (0). Build evidence only; reasoning display still needs a live reasoning-model
+  key and a device run.
