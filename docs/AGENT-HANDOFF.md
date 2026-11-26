@@ -47,7 +47,9 @@ Runtime, Terminal, CI, storage boundaries, or runtime delivery.
 
 ## Active execution order after owner scope change
 
-1. Audit and complete the broader app feature, quality, and test backlog now.
+1. Audit and complete the broader app feature, quality, and test backlog now;
+   use [`APP-COMPLETION-ROADMAP.md`](APP-COMPLETION-ROADMAP.md) as the active
+   simple tracker.
 2. Do not spend implementation cycles on the Terminal/runtime topic unless the
    owner re-prioritizes it or broader-app work directly depends on it.
 3. The personal artifact from run `45476235786` is still a non-release

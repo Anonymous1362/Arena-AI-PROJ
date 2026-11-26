@@ -8,9 +8,10 @@
 > releasable until the deferred physical-phone checklist below passes without
 > bootstrap, session-lifecycle, keyboard, or panel-dismissal failures.
 
-This is the durable product/status tracker for work on
+This is the durable runtime/device tracker for work on
 `arena/01a06159-arena-ai-proj`. Read `docs/AGENT-HANDOFF.md` before changing
-runtime code, native terminal code, CI, or this checklist.
+runtime code, native terminal code, CI, or this checklist. Broader active app
+work is tracked in [`docs/APP-COMPLETION-ROADMAP.md`](docs/APP-COMPLETION-ROADMAP.md).
 
 ## Status vocabulary
 
