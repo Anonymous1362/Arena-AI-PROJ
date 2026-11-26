@@ -393,6 +393,17 @@ async function maybeAutoTitle(convId: string, model: Conversation['model']): Pro
       params: { temperature: 0.3, topP: 0.9, maxTokens: 24, systemPrompt: '' },
       handlers: {},
     });
+    // The Usage screen counts every provider request, including auto-titles.
+    // Without this the rolling window and per-provider totals silently missed
+    // one request for each successfully titled conversation.
+    if (model) {
+      useUsageStore.getState().record({
+        profileId: model.profileId,
+        model: model.model,
+        tokensIn: result.tokensIn,
+        tokensOut: result.tokensOut,
+      });
+    }
     const title = result.content.trim().replace(/^["'“”]+|["'“”.]+$/g, '');
     if (title) useChatsStore.getState().renameConversation(convId, truncate(title, 48));
   } catch {

@@ -190,12 +190,17 @@ export default function ChatScreen() {
     [id]
   );
 
-  const retry = useCallback(() => {
-    if (!conv) return;
-    // sendMessage removes the trailing assistant reply only after the send has
-    // passed validation, so a missing provider cannot erase a saved answer.
-    sendMessage(id!, { regenerate: true }).catch((e: Error) => setBanner(e.message));
-  }, [conv, id]);
+  const retry = useCallback(
+    (message: ChatMessage) => {
+      // Retry the exact reply that failed rather than whatever happens to be
+      // last, and let sendMessage validate first: a missing provider must not
+      // erase saved answers.
+      sendMessage(id!, { regenerate: true, regenerateFromId: message.id }).catch((e: Error) =>
+        setBanner(e.message)
+      );
+    },
+    [id]
+  );
 
   const onEditSave = useCallback(() => {
     if (!editingMsg) return;
@@ -374,12 +379,13 @@ export default function ChatScreen() {
           paddingBottom: keyboardVisible ? spacing(2) : Math.max(spacing(3), insets.bottom + 8),
           paddingTop: spacing(2),
         }}>
-          <ComposerWithPromptLib
+          <Composer
             streaming={streaming}
             sendOnEnter={sendOnEnter}
             onSend={send}
             onStop={() => stopGeneration(id!)}
-            prefillRef={composerPrefillRef}
+            onPickImage={pickImageAttachment}
+            insertRef={composerPrefillRef}
             onOpenPromptLib={() => {
               setPromptLibTarget('composer');
               setPromptLibSheet(true);
@@ -577,47 +583,7 @@ export default function ChatScreen() {
   );
 }
 
-/* ──────────────────────────── Composer wrapper ─────────────────────────────
- * Thin wrapper that keeps a "prefill callback" ref so the parent can push
- * a prompt-library selection into the text input without re-mounting it.
- */
-interface ComposerWithPromptLibProps {
-  streaming: boolean;
-  sendOnEnter?: boolean;
-  onSend: (text: string, attachments: MessageAttachment[]) => void;
-  onStop: () => void;
-  prefillRef: React.MutableRefObject<((text: string) => void) | null>;
-  onOpenPromptLib: () => void;
-  initialText?: string;
-}
-
-function ComposerWithPromptLib({
-  streaming,
-  sendOnEnter,
-  onSend,
-  onStop,
-  prefillRef,
-  onOpenPromptLib,
-  initialText,
-}: ComposerWithPromptLibProps) {
-  const [prefill, setPrefill] = useState(initialText ?? '');
-
-  // expose the setter so the parent can inject prompt-library text
-  prefillRef.current = (text: string) => setPrefill(text);
-
-  return (
-    <Composer
-      streaming={streaming}
-      sendOnEnter={sendOnEnter}
-      onSend={onSend}
-      onStop={onStop}
-      onPickImage={pickImageAttachment}
-      initialText={prefill}
-      onOpenPromptLib={onOpenPromptLib}
-    />
-  );
-}
-
+/* ──────────────────────────────── helpers ────────────────────────────────── */
 const styles = StyleSheet.create({
   header: {
     borderBottomWidth: StyleSheet.hairlineWidth,

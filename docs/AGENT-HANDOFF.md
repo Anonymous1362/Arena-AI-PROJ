@@ -425,3 +425,37 @@ and erase/reset interaction run through the real UI is still outstanding, and
 the provider checklist rows that need a live key remain unexecuted.
 
 Nothing was merged, tagged, released, or opened as a pull request.
+
+## Continuation — 2026-11-26 (chat retry, prompt insertion, usage accounting)
+
+Continued the broader-app audit along the roadmap chat-reliability item. No
+Terminal/runtime or Phase 0 work was touched.
+
+Changes:
+
+- `app/chat/[id].tsx` — the per-message Retry control now regenerates the reply
+  that actually failed. It previously sent `regenerate: true`, which only
+  removed the last assistant message, so retrying an older errored answer left
+  the failure in place and appended an unrelated reply at the end. It now sends
+  `regenerateFromId` for the tapped message (still validated before the
+  transcript is truncated).
+- `src/components/Composer.tsx`, `app/chat/[id].tsx` — prompt-library insertion
+  now uses an imperative `insertRef` callback instead of routing the body
+  through `initialText`. The old wrapper compared strings in state, so selecting
+  the same prompt a second time (after editing or clearing the composer)
+  produced no update and nothing was inserted. The now-redundant
+  `ComposerWithPromptLib` wrapper was removed.
+- `src/ai/session.ts` — `maybeAutoTitle` records its provider request in the
+  usage store. The Usage screen already states that it counts every request
+  including auto-titles, but the title request bypassed accounting, so the
+  rolling window, per-provider totals and soft limits missed one request per
+  titled conversation.
+
+Checks run locally: `npx tsc --noEmit` (pass), `npm test` (8/8 pass),
+`npx expo export --platform web` (pass), and `npx expo export --platform android`
+(pass, Hermes bundle). No real API key, physical device, or GitHub CI
+observation was available here, so the retry/insertion interactions were not
+clicked through in a running app and the provider checklist rows remain
+unexecuted.
+
+Nothing was merged, tagged, released, or opened as a pull request.

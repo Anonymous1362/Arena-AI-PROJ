@@ -122,9 +122,22 @@
   and reports non-JSON files as such, instead of attempting an unbounded
   parse that can crash a phone. The reset-settings dialog no longer mentions
   a nonexistent "downloads list" and now states what is actually kept.
+- [x] Retrying a failed reply now regenerates that exact turn. The message
+  Retry control previously called `regenerate: true`, which only replaced the
+  last assistant message, so retrying an older errored answer appended a new
+  reply at the end and left the failure in place. It now passes that message's
+  id through `regenerateFromId`.
+- [x] Prompt-library insertion into the chat composer works repeatedly. The
+  selection was applied through an `initialText` state change, so choosing the
+  same prompt again after editing or clearing the field produced no update; the
+  composer now exposes an imperative insert callback.
+- [x] Auto-title requests are counted in Usage. The Usage screen states that it
+  counts every request including auto-titles, but the title request bypassed the
+  usage store, so the rolling window, per-provider totals and limits undercounted
+  one request per titled conversation.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
-  (`npx expo export --platform web`) passed for those four changes on
-  2026-11-26. This is build evidence only; the provider rows in
+  (`npx expo export --platform web`), an Android Hermes export, and `npm test`
+  (8/8) passed for these chat-reliability changes on 2026-11-26. This is build evidence only; the provider rows in
   [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md)
   still require a real key and a device run.
 

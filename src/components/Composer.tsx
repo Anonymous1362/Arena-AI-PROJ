@@ -26,6 +26,12 @@ export interface ComposerProps {
   onPickImage: () => Promise<MessageAttachment[] | null>;
   /** Initial text to prefill (e.g. from empty-state suggestions). */
   initialText?: string;
+  /**
+   * Imperative insertion for callers that push text in later (prompt library).
+   * A plain `initialText` change cannot express "insert the same text again"
+   * after the input has been edited or cleared.
+   */
+  insertRef?: React.MutableRefObject<((text: string) => void) | null>;
   placeholder?: string;
   /** Opens the prompt-library sheet so a saved prompt can be inserted. */
   onOpenPromptLib?: () => void;
@@ -53,6 +59,7 @@ export function Composer({
   onStop,
   onPickImage,
   initialText,
+  insertRef,
   placeholder = 'Message Copper…',
   onOpenPromptLib,
 }: ComposerProps) {
@@ -71,6 +78,17 @@ export function Composer({
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [initialText]);
+
+  React.useEffect(() => {
+    if (!insertRef) return;
+    insertRef.current = (inserted: string) => {
+      setText(inserted);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    return () => {
+      insertRef.current = null;
+    };
+  }, [insertRef]);
 
   React.useEffect(() => {
     return () => {
