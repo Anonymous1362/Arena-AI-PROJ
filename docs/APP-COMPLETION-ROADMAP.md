@@ -78,6 +78,9 @@
   conversation or provider configuration has been removed. Editing or removing
   a provider likewise cancels only that provider's active conversations before
   replacing its in-memory endpoint/key.
+- [x] Prompt-library row management controls are now separate from selecting a
+  prompt, so Edit/Delete no longer risk selecting and closing the sheet at the
+  same time on touch devices.
 
 ## Near-term active work
 

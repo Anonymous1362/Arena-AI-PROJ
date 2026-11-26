@@ -31,37 +31,41 @@ function PromptRow({
 }) {
   const { colors } = useTheme();
   return (
-    <PressableScale haptic="selection" scale={0.985} onPress={onSelect}>
-      <View
-        style={[
-          styles.row,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <View style={styles.rowBody}>
-          <Text
-            numberOfLines={1}
-            style={{ color: colors.text, fontSize: 14.5, fontWeight: '700' }}
-          >
-            {prompt.title}
-          </Text>
-          <Text
-            numberOfLines={2}
-            style={{ color: colors.textSub, fontSize: 12.5, marginTop: 3, lineHeight: 18 }}
-          >
-            {prompt.body}
-          </Text>
-        </View>
-        <View style={styles.rowActions}>
-          <PressableScale haptic="light" scale={0.9} onPress={onEdit}>
-            <Ionicons name="pencil-outline" size={17} color={colors.textFaint} />
-          </PressableScale>
-          <PressableScale haptic="warning" scale={0.9} onPress={onDelete}>
-            <Ionicons name="trash-outline" size={17} color={colors.danger} />
-          </PressableScale>
-        </View>
+    <View
+      style={[
+        styles.row,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
+      {/* Keep management controls outside the selection pressable. Nested
+          pressables can otherwise select/close the sheet while editing. */}
+      <View style={styles.rowBody}>
+        <PressableScale haptic="selection" scale={0.985} onPress={onSelect}>
+          <View>
+            <Text
+              numberOfLines={1}
+              style={{ color: colors.text, fontSize: 14.5, fontWeight: '700' }}
+            >
+              {prompt.title}
+            </Text>
+            <Text
+              numberOfLines={2}
+              style={{ color: colors.textSub, fontSize: 12.5, marginTop: 3, lineHeight: 18 }}
+            >
+              {prompt.body}
+            </Text>
+          </View>
+        </PressableScale>
       </View>
-    </PressableScale>
+      <View style={styles.rowActions}>
+        <PressableScale haptic="light" scale={0.9} onPress={onEdit}>
+          <Ionicons name="pencil-outline" size={17} color={colors.textFaint} />
+        </PressableScale>
+        <PressableScale haptic="warning" scale={0.9} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={17} color={colors.danger} />
+        </PressableScale>
+      </View>
+    </View>
   );
 }
 

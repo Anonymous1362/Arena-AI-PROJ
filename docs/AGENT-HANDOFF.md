@@ -284,6 +284,10 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   profile before the endpoint/key is replaced or erased. The session tracks an
   in-flight request's profile id so unrelated providers continue normally. A
   controlled two-profile cancellation test and TypeScript check passed.
+- Prompt-library follow-up: row selection is now isolated from Edit/Delete
+  pressables, preventing nested touch handling from both choosing a prompt and
+  closing the sheet while trying to manage it. TypeScript and an Expo web export
+  passed; touch-device interaction remains part of final UI evidence.
 
 ## Required next actions
 
