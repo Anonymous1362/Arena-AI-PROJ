@@ -417,8 +417,9 @@ Changes:
 - `tests/persisted.test.ts`, `npm test` (`node --test tests/*.test.ts`), and
   `tests` excluded in `tsconfig.json` to match the sibling hardening lineage.
 
-Checks run locally: `npx tsc --noEmit` (pass), `npm test` (8/8 pass), and
-`npx expo export --platform web` (pass, 3.5 MB entry bundle). No real API key,
+Checks run locally: `npx tsc --noEmit` (pass), `npm test` (8/8 pass),
+`npx expo export --platform web` (pass, 3.5 MB entry bundle), and
+`npx expo export --platform android` (pass, 5.4 MB Hermes bundle). No real API key,
 physical device, or GitHub CI observation was available here. The export/import
 and erase/reset interaction run through the real UI is still outstanding, and
 the provider checklist rows that need a live key remain unexecuted.
