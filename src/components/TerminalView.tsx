@@ -52,9 +52,21 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const [lines, setLines] = useState<TermLine[]>([
+  const [lines, setLines] = useState<TermLine[]>(() => [
     { id: uid('t'), kind: 'sys', text: BANNER, ts: Date.now() },
     { id: uid('t'), kind: 'sys', text: `root: ${currentRoot().tier === 'granted' ? 'user-granted folder' : 'app sandbox'} · executor: ${executorStatus()}`, ts: Date.now() },
+    ...(executorStatus() === 'native'
+      ? []
+      : [
+          {
+            id: uid('t'),
+            kind: 'sys' as const,
+            // Say plainly what this shell is, rather than letting the user
+            // wonder why `apt` or `python` is missing.
+            text: 'native shell not compiled into this build — using the built-in JS shell (ls, cat, grep, find, pipes, cd, mv, rm…).',
+            ts: Date.now(),
+          },
+        ]),
   ]);
   const [input, setInput] = useState('');
   const [cwd, setCwd] = useState(shellCwd());
@@ -132,12 +144,15 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
       }
 
       setBusy(true);
+      const startedAt = Date.now();
       try {
         const res = await runShellCommand(command, 30_000, cwd, true);
         // `cd` mutates shared shell state — mirror it locally.
         setCwd(shellCwd());
         if (res.output) push(res.ok ? 'out' : 'err', res.output);
         if (!res.ok && !res.output) push('err', `exit ${res.exit}`);
+        // Every command reports its real exit code and wall time.
+        push('sys', `exit ${res.exit ?? (res.ok ? 0 : 1)} · ${Date.now() - startedAt} ms`);
       } catch (e) {
         push('err', (e as Error).message);
       } finally {
@@ -298,7 +313,17 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
 
       {/* input row */}
       <Animated.View style={[{ backgroundColor: colors.bg }, inputLift]}>
-        <View style={[styles.inputBar, { borderTopColor: colors.border, paddingBottom: tabBarClearance(insets.bottom) }]}>
+        <View
+          style={[
+            styles.inputBar,
+            {
+              borderTopColor: colors.border,
+              // While the keyboard is up there is no tab bar to clear — reserving
+              // its height left a dead gap above the keys on Android.
+              paddingBottom: kb.visible ? spacing(2) : tabBarClearance(insets.bottom),
+            },
+          ]}
+        >
           <PressableScale haptic="tap" scale={0.86} onPress={() => stepHistory(1)}>
             <View style={[styles.histBtn, { backgroundColor: colors.surface2 }]}>
               <Ionicons name="chevron-up" size={16} color={colors.textSub} />
@@ -337,7 +362,14 @@ export function TerminalView({ onAskAgent }: { onAskAgent?: (transcript: string)
             </View>
           </PressableScale>
 
-          <PressableScale haptic="send" scale={0.86} onPress={() => run(input)} disabled={busy || !input.trim()}>
+          <PressableScale
+            haptic="send"
+            scale={0.86}
+            onPress={() => run(input)}
+            disabled={busy || !input.trim()}
+            accessibilityRole="button"
+            accessibilityLabel="Run command"
+          >
             <View
               style={[
                 styles.runBtn,

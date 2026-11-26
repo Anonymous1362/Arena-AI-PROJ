@@ -14,7 +14,8 @@ export default function AboutScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const version = Constants.expoConfig?.version ?? '1.0.0';
+  const version = Constants.expoConfig?.version ?? '1.1.0';
+  const repo = 'https://github.com/Anonymous1362/Arena-AI-PROJ';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -63,15 +64,34 @@ export default function AboutScreen() {
             Georgi Gerganov & contributors), and the open-weight model community. Local model licenses are
             listed on each model card.
           </Text>
-          <PressableScale
-            haptic="light"
-            onPress={() => Linking.openURL('https://github.com/Anonymous1362/Arena-AI-PROJ')}
-          >
+          <PressableScale haptic="light" onPress={() => Linking.openURL(repo)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(3) }}>
               <Ionicons name="logo-github" size={17} color={colors.text} />
               <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>Project repository</Text>
             </View>
           </PressableScale>
+        </Card>
+
+        <Card style={{ marginTop: spacing(4) }}>
+          <Text style={{ color: colors.text, fontSize: 14.5, fontWeight: '700', marginBottom: spacing(1) }}>
+            Privacy &amp; security
+          </Text>
+          <Text style={{ color: colors.textSub, fontSize: 13, lineHeight: 19, marginBottom: spacing(2) }}>
+            No accounts, no analytics, no Copper servers. API keys live in the device keychain.
+          </Text>
+          {[
+            ['shield-checkmark-outline', 'Privacy policy', `${repo}/blob/main/docs/PRIVACY.md`],
+            ['lock-closed-outline', 'Security policy', `${repo}/blob/main/docs/SECURITY.md`],
+            ['document-text-outline', 'MIT license', `${repo}/blob/main/LICENSE`],
+          ].map(([icon, label, url]) => (
+            <PressableScale key={label} haptic="light" onPress={() => Linking.openURL(url)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: spacing(2) }}>
+                <Ionicons name={icon as never} size={15} color={colors.accent} />
+                <Text style={{ color: colors.textSub, fontSize: 13.5, flex: 1 }}>{label}</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+              </View>
+            </PressableScale>
+          ))}
         </Card>
 
         <Text style={{ color: colors.textFaint, fontSize: 11.5, textAlign: 'center', marginTop: spacing(5), lineHeight: 17 }}>

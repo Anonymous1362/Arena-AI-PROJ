@@ -84,10 +84,15 @@ export function buildSystemPrompt(opts: {
     );
   }
   const user = opts.userSystemPrompt?.trim();
-  if (user && user !== DEFAULT_SYSTEM_PROMPT_SENTINEL) {
+  if (user && !LEGACY_SYSTEM_PROMPT_SENTINELS.has(user)) {
     parts.push(`## User instructions (highest priority)\n${user}`);
   }
   return parts.join('\n\n');
 }
 
-export const DEFAULT_SYSTEM_PROMPT_SENTINEL = '__aurora_default__';
+export const DEFAULT_SYSTEM_PROMPT_SENTINEL = '__copper_default__';
+/** Values written by pre-1.1 builds; treated as "no prompt". */
+export const LEGACY_SYSTEM_PROMPT_SENTINELS = new Set([
+  DEFAULT_SYSTEM_PROMPT_SENTINEL,
+  '__aurora_default__',
+]);

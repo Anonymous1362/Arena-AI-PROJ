@@ -37,17 +37,22 @@ import { haptics } from '@/src/utils/haptics';
 import { shareJson } from '@/src/utils/share';
 import { exportConversationMarkdown } from '@/src/utils/exportMarkdown';
 import { dismissKeyboardIfEnabled, useKeyboardInset } from '@/src/utils/keyboard';
+import { persistImageAsset } from '@/src/utils/attachments';
 
+/** Pick up to four images and copy them out of the evictable cache directory. */
 async function pickImageAttachment(): Promise<MessageAttachment[] | null> {
   const DocumentPicker = await import('expo-document-picker');
   const res = await DocumentPicker.getDocumentAsync({
     type: ['image/jpeg', 'image/png', 'image/webp'],
-    multiple: false,
+    multiple: true,
     copyToCacheDirectory: true,
   });
-  if (res.canceled || !res.assets?.[0]) return null;
-  const a = res.assets[0];
-  return [{ kind: 'image', uri: a.uri, mime: a.mimeType ?? 'image/jpeg', name: a.name }];
+  if (res.canceled || !res.assets?.length) return null;
+  return Promise.all(
+    res.assets.slice(0, 4).map((a) =>
+      persistImageAsset({ uri: a.uri, mimeType: a.mimeType, name: a.name })
+    )
+  );
 }
 
 function SheetAction({
@@ -124,6 +129,7 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
 
   const conv = useChatsStore((s) => s.conversations.find((c) => c.id === conversationId));
   const deleteMessage = useChatsStore((s) => s.deleteMessage);
+  const dropMessagesAfter = useChatsStore((s) => s.dropMessagesAfter);
   const renameConversation = useChatsStore((s) => s.renameConversation);
   const togglePin = useChatsStore((s) => s.togglePin);
   const setConversationModel = useChatsStore((s) => s.setConversationModel);
@@ -224,6 +230,32 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
     if (last?.role === 'assistant') deleteMessage(conv.id, last.id);
     sendMessage(conversationId, { regenerate: true }).catch((e: Error) => setBanner(e.message));
   }, [conv, deleteMessage, conversationId]);
+
+  /** Regenerate from any reply: everything after it is superseded. */
+  const regenerateFrom = useCallback(
+    (msg: ChatMessage) => {
+      if (!conv || streaming) return;
+      dropMessagesAfter(conv.id, msg.id);
+      deleteMessage(conv.id, msg.id);
+      haptics.light();
+      sendMessage(conversationId, { regenerate: true }).catch((e: Error) => setBanner(e.message));
+    },
+    [conv, conversationId, deleteMessage, dropMessagesAfter, streaming]
+  );
+
+  // Web keyboard shortcuts: Esc stops a running answer (⌘/Ctrl+Enter is handled
+  // inside the composer, where the draft text lives).
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && streaming) {
+        e.preventDefault();
+        stopGeneration(conversationId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [conversationId, streaming]);
 
   const onEditSave = useCallback(() => {
     if (!editingMsg) return;
@@ -467,7 +499,6 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
               if (atBottom || streaming) listRef.current?.scrollToEnd({ animated: streaming });
             }}
             showsVerticalScrollIndicator={false}
-            removeClippedSubviews={Platform.OS === 'android'}
             onScrollBeginDrag={() => setAtBottom(false)}
             onMomentumScrollEnd={(e) => {
               const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
@@ -504,6 +535,7 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
                       streaming={streaming && m === lastMessage && m.role === 'assistant'}
                       onLongPress={setActionsMsg}
                       onRetry={retry}
+                      onRegenerate={regenerateFrom}
                     />
                     {m.role === 'assistant' ? (
                       <ArtifactChips artifacts={artifactsOfMessage(m)} onOpen={setFilePath} />
@@ -541,6 +573,7 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
           <ComposerWithPromptLib
             streaming={streaming}
             sendOnEnter={sendOnEnter}
+            draftKey={conversationId}
             onSend={send}
             onStop={() => stopGeneration(conversationId)}
             prefillRef={composerPrefillRef}
@@ -705,6 +738,28 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
 
       <Sheet visible={!!actionsMsg} onClose={() => setActionsMsg(null)} title="Message">
         <View style={{ paddingHorizontal: spacing(4) }}>
+          {actionsMsg ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: spacing(2),
+                marginBottom: spacing(1),
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <Text style={{ color: colors.textFaint, fontSize: 11.5, fontWeight: '600' }}>
+                {actionsMsg.role === 'user' ? 'You' : 'Copper'} · {new Date(actionsMsg.createdAt).toLocaleString()}
+              </Text>
+              {actionsMsg.stats?.tokensOut ? (
+                <Text style={{ color: colors.textFaint, fontSize: 11.5, fontVariant: ['tabular-nums'] }}>
+                  {Math.round(actionsMsg.stats.tokensOut).toLocaleString()} tok
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           <SheetAction icon="volume-high-outline" label="Read aloud" tint={colors.chart[1]} onPress={() => { if (actionsMsg) speakAloud(actionsMsg.content, actionsMsg.id); setActionsMsg(null); }} />
           <SheetAction icon="stop-outline" label="Stop reading" onPress={() => { stopSpeaking(); setActionsMsg(null); }} />
           <SheetAction
@@ -733,12 +788,12 @@ export function ChatSurface({ conversationId, embedded, onBack, onOpenLibrary, o
           {actionsMsg?.role === 'assistant' ? (
             <SheetAction
               icon="refresh"
-              label="Regenerate"
+              label="Regenerate from here"
               tint={colors.chart[4]}
               onPress={() => {
+                const target = actionsMsg;
                 setActionsMsg(null);
-                deleteMessage(conversationId, actionsMsg.id);
-                sendMessage(conversationId, { regenerate: true }).catch((e: Error) => setBanner(e.message));
+                if (target) regenerateFrom(target);
               }}
             />
           ) : null}
@@ -800,6 +855,7 @@ function StreamingBar({ color, active }: { color: string; active: boolean }) {
 interface ComposerWithPromptLibProps {
   streaming: boolean;
   sendOnEnter?: boolean;
+  draftKey?: string;
   onSend: (text: string, attachments: MessageAttachment[]) => void;
   onStop: () => void;
   prefillRef: React.MutableRefObject<((text: string) => void) | null>;
@@ -810,6 +866,7 @@ interface ComposerWithPromptLibProps {
 function ComposerWithPromptLib({
   streaming,
   sendOnEnter,
+  draftKey,
   onSend,
   onStop,
   prefillRef,
@@ -822,6 +879,7 @@ function ComposerWithPromptLib({
     <Composer
       streaming={streaming}
       sendOnEnter={sendOnEnter}
+      draftKey={draftKey}
       onSend={onSend}
       onStop={onStop}
       onPickImage={pickImageAttachment}

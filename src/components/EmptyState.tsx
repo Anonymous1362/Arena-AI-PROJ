@@ -27,7 +27,15 @@ export function EmptyState({ onPick, engineReady }: { onPick: (text: string) => 
       </Text>
       <View style={{ alignSelf: 'stretch', gap: spacing(2), marginTop: spacing(6) }}>
         {SUGGESTIONS.map((s) => (
-          <PressableScale key={s.text} haptic="light" scale={0.98} onPress={() => onPick(s.text)}>
+          <PressableScale
+            key={s.text}
+            haptic="light"
+            scale={0.98}
+            // With no model connected these would fail on send — dim them and
+            // make the state obvious instead of silent.
+            style={{ opacity: engineReady ? 1 : 0.5 }}
+            onPress={() => onPick(s.text)}
+          >
             <View
               style={[
                 styles.chip,

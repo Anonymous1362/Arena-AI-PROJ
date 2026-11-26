@@ -1,4 +1,11 @@
 import { streamFetch } from '@/src/ai/net/fetch';
+import {
+  CHAT_TIMEOUT_MS,
+  MODEL_TIMEOUT_MS,
+  RequestTimeoutError,
+  streamFetchWithTimeout,
+} from '@/src/ai/net/withTimeout';
+import { redactSecrets } from '@/src/utils/redact';
 import type { RemoteTarget, EngineRequest, EngineResult, AccumulatedToolCall } from '@/src/ai/types';
 import { StreamAssembler } from '@/src/ai/assembler';
 import type { RemoteProfile } from '@/src/store/settings';
@@ -67,6 +74,8 @@ async function errorFromResponse(res: Response, url: string, model?: string): Pr
     /* keep default */
   }
   if (typeof detail !== 'string') detail = JSON.stringify(detail);
+  // Providers sometimes echo the request (headers, ?key=) back in the error.
+  detail = redactSecrets(detail);
 
   if (res.status === 401 || res.status === 403) {
     detail = `Auth failed (${res.status}). Check the API key — ${detail}`;
@@ -127,12 +136,16 @@ interface PostOptions {
 }
 
 async function postChat({ target, body, signal }: PostOptions): Promise<Response> {
-  return streamFetch(chatCompletionsUrl(target.baseUrl), {
-    method: 'POST',
-    headers: buildHeaders(target),
-    body: JSON.stringify(body),
-    signal,
-  });
+  return streamFetchWithTimeout(
+    chatCompletionsUrl(target.baseUrl),
+    {
+      method: 'POST',
+      headers: buildHeaders(target),
+      body: JSON.stringify(body),
+      signal,
+    },
+    CHAT_TIMEOUT_MS
+  );
 }
 
 /**
@@ -254,9 +267,27 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
   };
 
   try {
+    // A stream that opens and then goes silent is as broken as one that never
+    // answers: cancel the reader if no chunk arrives for a minute.
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let stalled = false;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        stalled = true;
+        try {
+          void reader.cancel();
+        } catch {
+          /* already closed */
+        }
+      }, 60_000);
+    };
+    armIdle();
+
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      armIdle();
       buf += decoder.decode(value, { stream: true });
       let nl: number;
       while ((nl = buf.indexOf('\n')) !== -1) {
@@ -264,6 +295,10 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
         buf = buf.slice(nl + 1);
         handleLine(line);
       }
+    }
+    if (idleTimer) clearTimeout(idleTimer);
+    if (stalled && !sawDone) {
+      throw new RequestTimeoutError('The stream stopped responding. Try again, or pick a faster model.');
     }
     if (buf.trim()) handleLine(buf);
   } finally {
@@ -350,7 +385,11 @@ export async function listRemoteModels(profile: RemoteProfile): Promise<ListMode
   let lastError = '';
   for (const url of urls) {
     try {
-      const res = await streamFetch(url, { method: 'GET', headers: buildHeaders({ ...profile, baseUrl: base }) });
+      const res = await streamFetchWithTimeout(
+        url,
+        { method: 'GET', headers: buildHeaders({ ...profile, baseUrl: base }) },
+        MODEL_TIMEOUT_MS
+      );
       if (!res.ok) {
         const e = await errorFromResponse(res, url);
         lastError = e.message;

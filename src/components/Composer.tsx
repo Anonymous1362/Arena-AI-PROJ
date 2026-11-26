@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Image, Platform, StyleSheet, TextInput, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useAnimatedStyle,
@@ -25,6 +26,8 @@ export interface ComposerProps {
   onPickImage: () => Promise<MessageAttachment[] | null>;
   /** Initial text to prefill (e.g. from empty-state suggestions). */
   initialText?: string;
+  /** Conversation id — unsent text is kept per chat. */
+  draftKey?: string;
   placeholder?: string;
   /** Opens the prompt-library sheet so a saved prompt can be inserted. */
   onOpenPromptLib?: () => void;
@@ -52,11 +55,14 @@ export function Composer({
   onStop,
   onPickImage,
   initialText,
+  draftKey,
   placeholder = 'Message Copper…',
   onOpenPromptLib,
 }: ComposerProps) {
   const { colors } = useTheme();
   const [text, setText] = useState(initialText ?? '');
+  const [focused, setFocused] = useState(false);
+  const draftStorageKey = draftKey ? `copper/draft/${draftKey}` : null;
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [height, setHeight] = useState(0);
   const [listening, setListening] = useState(false);
@@ -77,6 +83,30 @@ export function Composer({
     };
   }, []);
 
+  // Restore an unsent draft when the chat reopens.
+  React.useEffect(() => {
+    if (!draftStorageKey) return;
+    let live = true;
+    AsyncStorage.getItem(draftStorageKey)
+      .then((saved) => {
+        if (live && saved) setText((current) => current || saved);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [draftStorageKey]);
+
+  // Keep the draft in step with typing (debounced so we do not write per key).
+  React.useEffect(() => {
+    if (!draftStorageKey) return;
+    const timer = setTimeout(() => {
+      if (text.trim()) void AsyncStorage.setItem(draftStorageKey, text).catch(() => undefined);
+      else void AsyncStorage.removeItem(draftStorageKey).catch(() => undefined);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draftStorageKey, text]);
+
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled && !streaming;
 
   const submit = useCallback(() => {
@@ -92,7 +122,8 @@ export function Composer({
     setText('');
     setAttachments([]);
     setHeight(0);
-  }, [attachments, disabled, onSend, onStop, streaming, text]);
+    if (draftStorageKey) void AsyncStorage.removeItem(draftStorageKey).catch(() => undefined);
+  }, [attachments, disabled, draftStorageKey, onSend, onStop, streaming, text]);
 
   const pick = useCallback(async () => {
     haptics.light();
@@ -125,7 +156,15 @@ export function Composer({
   }, [listening]);
 
   return (
-    <View style={[styles.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          backgroundColor: colors.surface,
+          borderColor: focused ? colors.borderStrong : colors.border,
+        },
+      ]}
+    >
       {attachments.length ? (
         <View style={styles.attachTray}>
           {attachments.map((a, i) => (
@@ -142,14 +181,28 @@ export function Composer({
       ) : null}
 
       <View style={styles.inputRow}>
-        <PressableScale haptic="light" onPress={pick} scale={0.88} disabled={streaming}>
+        <PressableScale
+          haptic="light"
+          onPress={pick}
+          scale={0.88}
+          disabled={streaming}
+          accessibilityRole="button"
+          accessibilityLabel="Attach images"
+        >
           <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
             <Paperclip size={19} color={streaming ? colors.textFaint : colors.accent} />
           </View>
         </PressableScale>
 
         {onOpenPromptLib ? (
-          <PressableScale haptic="light" onPress={onOpenPromptLib} scale={0.88} disabled={streaming}>
+          <PressableScale
+            haptic="light"
+            onPress={onOpenPromptLib}
+            scale={0.88}
+            disabled={streaming}
+            accessibilityRole="button"
+            accessibilityLabel="Prompt library"
+          >
             <View style={[styles.plusBtn, { backgroundColor: colors.surface2 }]}>
               <Ionicons name="library-outline" size={18} color={streaming ? colors.textFaint : colors.textSub} />
             </View>
@@ -169,20 +222,54 @@ export function Composer({
           onSubmitEditing={() => {
             if (Platform.OS === 'web' && sendOnEnter) submit();
           }}
+          onKeyPress={(e) => {
+            if (Platform.OS !== 'web') return;
+            const ne = e.nativeEvent as unknown as {
+              key?: string;
+              shiftKey?: boolean;
+              metaKey?: boolean;
+              ctrlKey?: boolean;
+            };
+            if (ne.key !== 'Enter') return;
+            // ⌘/Ctrl+Enter always sends; plain Enter sends only when the user
+            // enabled it; Shift+Enter is always a newline.
+            if (ne.metaKey || ne.ctrlKey) {
+              (e as unknown as { preventDefault?: () => void }).preventDefault?.();
+              submit();
+            } else if (sendOnEnter && !ne.shiftKey) {
+              (e as unknown as { preventDefault?: () => void }).preventDefault?.();
+              submit();
+            }
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           blurOnSubmit={false}
           editable={!disabled}
+          accessibilityLabel="Message Copper"
           style={[styles.input, { color: colors.text, height: 22 + height }]}
           selectionColor={colors.accent}
         />
 
         {streaming ? (
-          <PressableScale haptic="none" scale={0.88} onPress={submit}>
+          <PressableScale
+            haptic="none"
+            scale={0.88}
+            onPress={submit}
+            accessibilityRole="button"
+            accessibilityLabel="Stop generating"
+          >
             <View style={[styles.sendBtn, { backgroundColor: colors.surface3, borderRadius: 12 }]}>
               <Stop size={16} color={colors.danger} />
             </View>
           </PressableScale>
         ) : canSend ? (
-          <PressableScale haptic="none" scale={0.88} onPress={submit}>
+          <PressableScale
+            haptic="none"
+            scale={0.88}
+            onPress={submit}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
             <View
               style={[
                 styles.sendBtn,

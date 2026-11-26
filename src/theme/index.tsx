@@ -170,7 +170,9 @@ const NEUTRALS: Record<Scheme, Omit<ThemeColors, 'accent' | 'accentSoft' | 'acce
     borderStrong: 'rgba(240,238,230,0.16)',
     text: '#F2F0E9',
     textSub: '#ABA79C',
-    textFaint: '#77746B',
+    // Raised from #77746B: secondary labels sat right at the 4.0:1 edge on the
+    // dark background and failed for small text.
+    textFaint: '#8A857A',
     danger: '#E5664F',
     dangerSoft: 'rgba(229,102,79,0.12)',
     success: '#5BA367',

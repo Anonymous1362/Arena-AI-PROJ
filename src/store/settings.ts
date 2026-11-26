@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secretBackedStorage } from '@/src/utils/persistStorage';
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -251,6 +251,57 @@ const defaultTerminal: TerminalSettings = {
 
 /* ---------------------------------- store ---------------------------------- */
 
+const SETTINGS_STORAGE_KEY = 'copper/settings/v2';
+/** Pre-1.1 name. Read once, then migrated. */
+const SETTINGS_LEGACY_KEY = 'aurora/settings/v2';
+const SETTINGS_SECRETS_KEY = 'copper.secrets.settings.v2';
+
+interface SettingsSecrets {
+  profiles: Record<string, string>;
+  githubToken: string;
+}
+
+/**
+ * Credentials never touch the plain JSON blob: they are split into secure
+ * storage (Keychain / Keystore) and restored on hydration.
+ */
+const settingsSecrets = {
+  secretsKey: SETTINGS_SECRETS_KEY,
+  extract: (state: any) => {
+    const profiles: RemoteProfile[] = Array.isArray(state?.profiles) ? state.profiles : [];
+    const map: Record<string, string> = {};
+    for (const p of profiles) if (p?.id && p?.apiKey) map[p.id] = p.apiKey;
+    const bundle: SettingsSecrets = { profiles: map, githubToken: state?.github?.token ?? '' };
+    return {
+      scrubbed: {
+        ...state,
+        profiles: profiles.map((p) => (p?.apiKey ? { ...p, apiKey: '' } : p)),
+        github: state?.github ? { ...state.github, token: '' } : state?.github,
+      },
+      bundle: bundle as unknown as Record<string, unknown>,
+    };
+  },
+  inject: (state: any, bundle: Record<string, unknown> | null) => {
+    const secrets = (bundle ?? {}) as Partial<SettingsSecrets>;
+    const map = secrets.profiles ?? {};
+    const githubToken = typeof secrets.githubToken === 'string' ? secrets.githubToken : '';
+    return {
+      ...state,
+      profiles: Array.isArray(state?.profiles)
+        ? state.profiles.map((p: RemoteProfile) =>
+            p && !p.apiKey && map[p.id] ? { ...p, apiKey: map[p.id] } : p
+          )
+        : state?.profiles,
+      github: state?.github
+        ? { ...state.github, token: state.github.token || githubToken }
+        : state?.github,
+    };
+  },
+  hasPlaintextSecrets: (state: any) =>
+    (Array.isArray(state?.profiles) && state.profiles.some((p: RemoteProfile) => !!p?.apiKey)) ||
+    !!state?.github?.token,
+};
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -330,8 +381,14 @@ export const useSettingsStore = create<SettingsState>()(
         }),
     }),
     {
-      name: 'aurora/settings/v2',
-      storage: createJSONStorage(() => AsyncStorage),
+      name: SETTINGS_STORAGE_KEY,
+      storage: createJSONStorage(() =>
+        secretBackedStorage({
+          name: SETTINGS_STORAGE_KEY,
+          legacyName: SETTINGS_LEGACY_KEY,
+          codec: settingsSecrets,
+        })
+      ),
       version: 3,
       /**
        * v1 → v2: drop local-model records, add agentScope defaults.

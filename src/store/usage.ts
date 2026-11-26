@@ -102,7 +102,6 @@ export function summarizeUsage(events: UsageEvent[], now = Date.now()): UsageSum
 
   const startOfToday = new Date(now);
   startOfToday.setHours(0, 0, 0, 0);
-  let todayTokens = 0;
   const days7 = new Array(7).fill(0);
   for (let i = 0; i < 7; i++) {
     const dayStart = new Date(now - i * DAY);
@@ -112,7 +111,7 @@ export function summarizeUsage(events: UsageEvent[], now = Date.now()): UsageSum
       .filter((e) => e.t >= dayStart.getTime() && e.t < dayEnd)
       .reduce((n, e) => n + e.tin + e.tout, 0);
   }
-  todayTokens = events
+  const todayTokens = events
     .filter((e) => e.t >= startOfToday.getTime())
     .reduce((n, e) => n + e.tin + e.tout, 0);
 

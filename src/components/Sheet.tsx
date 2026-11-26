@@ -11,7 +11,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/src/theme';
-import { Spring } from '@/src/theme/motion';
+import { Spring, isReducedMotion } from '@/src/theme/motion';
 import { radius } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,10 +44,20 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   const drag = useSharedValue(0);
 
   useEffect(() => {
+    // Reduced motion: snap instead of sliding.
+    const reduced = isReducedMotion();
     if (visible) {
       drag.set(0);
-      y.set(withSpring(0, Spring.snappy));
-      backdrop.set(withTiming(1, { duration: 200 }));
+      if (reduced) {
+        y.set(0);
+        backdrop.set(1);
+      } else {
+        y.set(withSpring(0, Spring.snappy));
+        backdrop.set(withTiming(1, { duration: 200 }));
+      }
+    } else if (reduced) {
+      y.set(COLLAPSED);
+      backdrop.set(0);
     } else {
       y.set(withTiming(COLLAPSED, { duration: 200 }));
       backdrop.set(withTiming(0, { duration: 180 }));
@@ -99,11 +109,15 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
           backdropStyle,
         ]}
       >
+        {/* `flat` keeps the Pressable itself as the filling element: the
+            scaling wrapper has no size of its own, so an absolutely-positioned
+            child inside it collapses to zero and taps fell through. */}
         <PressableScale
           haptic="none"
+          flat
           scale={1}
           opacityOnPress={1}
-          onPress={onClose}
+          onPress={close}
           style={StyleSheet.absoluteFill}
         >
           <View style={StyleSheet.absoluteFill} />
@@ -139,7 +153,13 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
                     >
                       {title}
                     </Animated.Text>
-                    <PressableScale haptic="light" onPress={onClose} style={styles.closeBtn}>
+                    <PressableScale
+                      haptic="light"
+                      onPress={onClose}
+                      style={styles.closeBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close"
+                    >
                       <Ionicons name="close" size={20} color={colors.textSub} />
                     </PressableScale>
                   </View>

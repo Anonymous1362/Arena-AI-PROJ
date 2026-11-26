@@ -83,8 +83,20 @@ export default function ShellSettingsScreen() {
 
   /* ------------------------------ root choosing ----------------------------- */
 
+  /**
+   * Android's MANAGE_EXTERNAL_STORAGE permission is no longer declared in the
+   * manifest: Google Play only approves it for file managers and similar core
+   * use cases. The SAF folder picker below reaches the same external folders,
+   * so the raw-path tier stays compiled but is not offered.
+   */
+  const ALL_FILES_TIER_ENABLED = false;
+
   const mode: 'sandbox' | 'saf' | 'managed' =
-    root.tier === 'managed' ? 'managed' : root.tier === 'granted' ? 'saf' : 'sandbox';
+    ALL_FILES_TIER_ENABLED && root.tier === 'managed'
+      ? 'managed'
+      : root.tier === 'granted'
+        ? 'saf'
+        : 'sandbox';
   const modeLabel =
     mode === 'managed' ? `all files · ${root.uri.replace('file://', '')}` : mode === 'saf' ? 'granted folder' : 'app sandbox';
 
@@ -196,13 +208,23 @@ export default function ShellSettingsScreen() {
           sub={agentScope.safRootLabel ? `Granted: ${agentScope.safRootLabel}` : 'Android folder picker — one folder tree, e.g. your SD-card projects folder.'}
           onPress={() => choose('saf')}
         />
-        <RootOption
-          active={mode === 'managed'}
-          icon="key-outline"
-          title="All files access (a path)"
-          sub="Needs Android's “All files access”. Reaches internal storage and removable SD cards by real path."
-          onPress={() => choose('managed')}
-        />
+        {ALL_FILES_TIER_ENABLED ? (
+          <RootOption
+            active={mode === 'managed'}
+            icon="key-outline"
+            title="All files access (a path)"
+            sub="Needs Android's “All files access”. Reaches internal storage and removable SD cards by real path."
+            onPress={() => choose('managed')}
+          />
+        ) : (
+          <View style={[styles.note, { backgroundColor: colors.surface2, marginTop: spacing(2) }]}>
+            <Ionicons name="lock-closed-outline" size={14} color={colors.textSub} />
+            <Text style={{ color: colors.textSub, fontSize: 11.5, flex: 1, lineHeight: 17 }}>
+              “All files access” is not requested by this build (Play Store policy for general apps). Use the folder
+              picker above to grant any external folder instead.
+            </Text>
+          </View>
+        )}
 
         {note ? (
           <View style={[styles.note, { backgroundColor: colors.accentSoft }]}>
@@ -221,7 +243,7 @@ export default function ShellSettingsScreen() {
           </View>
         ) : null}
 
-        {mode === 'managed' ? (
+        {ALL_FILES_TIER_ENABLED && mode === 'managed' ? (
           <View style={{ gap: spacing(3), marginTop: spacing(3) }}>
             <TextField
               label="Root path (the jail)"

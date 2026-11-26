@@ -65,8 +65,8 @@ export default function DataSettingsScreen() {
             </View>
             <Text style={{ color: colors.text, fontSize: 14.5, lineHeight: 20, flex: 1 }}>
               <Text style={{ fontWeight: '800' }}>Private by design.{'\n'}</Text>
-              Chats and keys live only on this device. Copper has no backend, no analytics,
-              and no accounts.
+              Chats live only on this device. Copper has no backend, no analytics, and no
+              accounts. API keys are kept in the device keychain, not in the settings file.
             </Text>
           </View>
         </Card>
@@ -76,6 +76,9 @@ export default function DataSettingsScreen() {
         <Card style={{ marginTop: spacing(4) }}>
           <View style={{ gap: spacing(2) }}>
             <Button label={`Export all chats (${conversations.length} chats · ${msgCount} msgs)`} variant="secondary" icon="share-outline" onPress={exportAll} />
+            <Text style={{ color: colors.textFaint, fontSize: 12, lineHeight: 17 }}>
+              Exports are scrubbed of anything that looks like an API key or token before they leave the app.
+            </Text>
             <Button label="Import backup (.json)" variant="secondary" icon="download-outline" onPress={importBackup} />
           </View>
         </Card>

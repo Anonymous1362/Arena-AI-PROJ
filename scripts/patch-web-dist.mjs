@@ -20,7 +20,7 @@ const tags = [
   '<link rel="apple-touch-icon" href="icons/icon-512.png" />',
   '<meta name="mobile-web-app-capable" content="yes" />',
   '<meta name="apple-mobile-web-app-capable" content="yes" />',
-  '<meta name="apple-mobile-web-app-title" content="Aurora" />',
+  '<meta name="apple-mobile-web-app-title" content="Copper" />',
   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />',
 ].join('\n    ');
 

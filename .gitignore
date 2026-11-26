@@ -1,6 +1,9 @@
 # dependencies
 node_modules/
 
+# local git worktrees used for parallel work
+.worktrees/
+
 # Expo
 .expo/
 dist/

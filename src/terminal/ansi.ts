@@ -1,3 +1,4 @@
+/* eslint-disable no-control-regex -- matching ANSI escapes requires raw ESC/BEL bytes */
 /**
  * ANSI / VT-100 escape-sequence renderer for the in-app terminal.
  *

@@ -1,5 +1,6 @@
-import React, { memo, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useAnimatedStyle,
@@ -69,6 +70,51 @@ function ReasoningBlock({ text, live, spentMs }: { text: string; live: boolean; 
   );
 }
 
+function MessageActions({
+  content,
+  onMore,
+  onRegenerate,
+}: {
+  content: string;
+  onMore: () => void;
+  onRegenerate?: () => void;
+}) {
+  const { colors } = useTheme();
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    await Clipboard.setStringAsync(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1400);
+  }, [content]);
+
+  return (
+    <View style={styles.actionRow}>
+      <PressableScale haptic="none" scale={0.9} onPress={copy} accessibilityRole="button" accessibilityLabel="Copy reply">
+        <View style={styles.actionBtn}>
+          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={13} color={copied ? colors.success : colors.textFaint} />
+          <Text style={[styles.actionText, { color: copied ? colors.success : colors.textFaint }]}>
+            {copied ? 'Copied' : 'Copy'}
+          </Text>
+        </View>
+      </PressableScale>
+      {onRegenerate ? (
+        <PressableScale haptic="none" scale={0.9} onPress={onRegenerate} accessibilityRole="button" accessibilityLabel="Regenerate reply">
+          <View style={styles.actionBtn}>
+            <Ionicons name="refresh" size={13} color={colors.textFaint} />
+            <Text style={[styles.actionText, { color: colors.textFaint }]}>Retry</Text>
+          </View>
+        </PressableScale>
+      ) : null}
+      <PressableScale haptic="none" scale={0.9} onPress={onMore} accessibilityRole="button" accessibilityLabel="More message actions">
+        <View style={styles.actionBtn}>
+          <Ionicons name="ellipsis-horizontal" size={14} color={colors.textFaint} />
+        </View>
+      </PressableScale>
+    </View>
+  );
+}
+
 export interface MessageBubbleProps {
   message: ChatMessage;
   /** true while this message is being generated */
@@ -77,6 +123,8 @@ export interface MessageBubbleProps {
   pendingLabel?: string;
   onLongPress?: (message: ChatMessage) => void;
   onRetry?: (message: ChatMessage) => void;
+  /** Regenerate starting from this reply (works for any reply, not just the last). */
+  onRegenerate?: (message: ChatMessage) => void;
   /** base font size from theme */
   fontSize: number;
 }
@@ -87,6 +135,7 @@ export const MessageBubble = memo(function MessageBubble({
   pendingLabel,
   onLongPress,
   onRetry,
+  onRegenerate,
   fontSize,
 }: MessageBubbleProps) {
   const { colors } = useTheme();
@@ -95,7 +144,8 @@ export const MessageBubble = memo(function MessageBubble({
 
   const bubbleStyle = useMemo(
     () => ({
-      maxWidth: '88%' as const,
+      // Replies read as document text (no card); only your own messages keep a bubble.
+      maxWidth: (isUser ? '88%' : '100%') as '88%' | '100%',
       alignSelf: isUser ? ('flex-end' as const) : ('flex-start' as const),
     }),
     [isUser]
@@ -140,11 +190,13 @@ export const MessageBubble = memo(function MessageBubble({
         <View
           style={[
             styles.assistantBubble,
-            {
-              backgroundColor: colors.surface,
-              borderColor: message.error ? colors.dangerSoft : colors.border,
-              borderBottomLeftRadius: streaming ? radius.lg : 6,
-            },
+            message.error
+              ? {
+                  backgroundColor: colors.dangerSoft,
+                  borderRadius: radius.md,
+                  paddingHorizontal: spacing(3),
+                }
+              : null,
           ]}
         >
           {message.reasoning ? (
@@ -240,6 +292,14 @@ export const MessageBubble = memo(function MessageBubble({
         </View>
       </PressableScale>
 
+      {!streaming && !message.error && message.content ? (
+        <MessageActions
+          content={message.content}
+          onMore={() => onLongPress?.(message)}
+          onRegenerate={onRegenerate ? () => onRegenerate(message) : undefined}
+        />
+      ) : null}
+
       <StepSheet
         visible={openStep != null}
         onClose={() => setOpenStep(null)}
@@ -259,13 +319,12 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   assistantBubble: {
-    borderRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing(3.6),
-    paddingVertical: spacing(2.8),
+    paddingVertical: spacing(1.2),
     maxWidth: '100%',
   },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(4), marginTop: spacing(0.5) },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2 },
+  actionText: { fontSize: 11.5, fontWeight: '600' },
   caret: { fontSize: 15, fontWeight: '400', marginTop: 2 },
   stats: { fontSize: 11.5, fontVariant: ['tabular-nums'] as never },
   statsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing(1.5) },

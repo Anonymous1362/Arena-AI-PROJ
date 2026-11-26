@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import MarkdownDisplay from '@ronradtke/react-native-markdown-display';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -75,6 +75,22 @@ export function Markdown({ children: text }: { children: string }) {
     () => ({
       fence: (node: any) => (
         <CodeBlock key={node.key} code={String(node.content ?? '')} lang={node.sourceInfo} />
+      ),
+      // On the web build an untargeted link would navigate the PWA shell away
+      // and lose the conversation. Always hand URLs to the platform opener.
+      link: (node: any, children: React.ReactNode, _parent: unknown, styles: any) => (
+        <Text
+          key={node.key}
+          style={styles.link}
+          accessibilityRole="link"
+          suppressHighlighting
+          onPress={() => {
+            const href = String(node.attributes?.href ?? '');
+            if (/^https?:\/\//i.test(href)) void Linking.openURL(href);
+          }}
+        >
+          {children}
+        </Text>
       ),
     }),
     []

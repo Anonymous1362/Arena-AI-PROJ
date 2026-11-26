@@ -163,7 +163,7 @@ export function outline(lang: Lang, text: string): SymbolHit[] {
     for (const re of rules) {
       const m = re.exec(line);
       if (!m) continue;
-      let label = '';
+      let label: string;
       if (lang === 'md') {
         const depth = (m[1] as string).length;
         label = `${'#'.repeat(depth)} ${m[2]}`;

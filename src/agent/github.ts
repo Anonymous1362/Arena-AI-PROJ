@@ -141,7 +141,7 @@ export async function gh(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text().catch(() => '');
-  let json: any = null;
+  let json: any;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {

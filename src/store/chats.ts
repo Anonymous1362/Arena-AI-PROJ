@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { quotaSafeStorage } from '@/src/utils/persistStorage';
 import { uid } from '@/src/utils/id';
 import type { ActiveModel } from '@/src/store/settings';
 import type { PlanStep, ToolEvent, WireMessage } from '@/src/ai/types';
@@ -108,6 +108,30 @@ export interface ChatsState {
 }
 
 /* ---------------------------------- store ---------------------------------- */
+
+const CHATS_STORAGE_KEY = 'copper/chats/v1';
+/** Pre-1.1 name. Read once, then migrated. */
+const CHATS_LEGACY_KEY = 'aurora/chats/v1';
+
+/**
+ * AsyncStorage tops out around 6 MB on Android. If a write fails because the
+ * store is full, keep the pinned chats plus the 15 most recent, and cap each
+ * conversation's replayed history. Losing old scrollback beats losing every
+ * new message to a silent quota error.
+ */
+function shrinkChats(parsed: any): any | null {
+  const state = parsed?.state;
+  if (!state || !Array.isArray(state.conversations)) return null;
+  const ranked = [...state.conversations].sort(
+    (a: Conversation, b: Conversation) =>
+      Number(!!b.pinned) - Number(!!a.pinned) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0)
+  );
+  const conversations = ranked.slice(0, 15).map((c: Conversation) => ({
+    ...c,
+    messages: (c.messages ?? []).slice(-150),
+  }));
+  return { ...parsed, state: { ...state, conversations } };
+}
 
 export const useChatsStore = create<ChatsState>()(
   persist(
@@ -259,8 +283,14 @@ export const useChatsStore = create<ChatsState>()(
         }),
     }),
     {
-      name: 'aurora/chats/v1',
-      storage: createJSONStorage(() => AsyncStorage),
+      name: CHATS_STORAGE_KEY,
+      storage: createJSONStorage(() =>
+        quotaSafeStorage({
+          name: CHATS_STORAGE_KEY,
+          legacyName: CHATS_LEGACY_KEY,
+          shrink: shrinkChats,
+        })
+      ),
       version: 1,
     }
   )

@@ -1,13 +1,16 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { redactDeep } from '@/src/utils/redact';
 
 /**
  * Export helper: writes JSON and hands it to the platform share sheet
  * (native) or triggers a browser download (web/PWA).
  */
 export async function shareJson(filename: string, data: unknown): Promise<void> {
-  const json = JSON.stringify(data, null, 2);
+  // Anything the user pasted (including a key) is scrubbed before it is written
+  // to a file someone else may open.
+  const json = JSON.stringify(redactDeep(data), null, 2);
 
   if (Platform.OS === 'web') {
     const blob = new Blob([json], { type: 'application/json' });

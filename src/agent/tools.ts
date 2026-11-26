@@ -170,7 +170,7 @@ export async function dispatchTool(
   argsJson: string,
   ctx: ToolContext = {}
 ): Promise<ToolResult> {
-  let args: Record<string, unknown> = {};
+  let args: Record<string, unknown>;
   try {
     args = argsJson ? JSON.parse(argsJson) : {};
   } catch {

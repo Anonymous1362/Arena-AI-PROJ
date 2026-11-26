@@ -16,6 +16,8 @@ import { imageDataUrlForApi } from '@/src/utils/image';
 import { haptics } from '@/src/utils/haptics';
 import { useUsageStore } from '@/src/store/usage';
 import { truncate } from '@/src/utils/format';
+import { redactSecrets } from '@/src/utils/redact';
+import { hostOf, isInsecureRemote } from '@/src/utils/net';
 
 /* ------------------------- ephemeral streaming state ------------------------- */
 
@@ -46,6 +48,17 @@ const active = new Map<string, { abort: AbortController }>();
 export function stopGeneration(convId: string): void {
   active.get(convId)?.abort.abort();
 }
+
+// Deleting a conversation mid-answer must stop the request (and stop billing
+// for tokens nobody will read). Watch for removals instead of threading an
+// abort call through every delete button.
+useChatsStore.subscribe((state, prev) => {
+  if (state.conversations === prev.conversations) return;
+  const streaming = useStreamingStore.getState().ids;
+  for (const id of Object.keys(streaming)) {
+    if (!state.conversations.some((c) => c.id === id)) active.get(id)?.abort.abort();
+  }
+});
 
 /* -------------------------------- the session -------------------------------- */
 
@@ -207,6 +220,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   try {
     const target = resolveRemoteTarget(settings, model);
 
+    // A key sent over plain HTTP to a public host is readable by anyone on the
+    // path. Loopback/LAN is fine (Ollama et al.); everything else is not.
+    if (isInsecureRemote(target.baseUrl)) {
+      toast(`Plain HTTP to ${hostOf(target.baseUrl)} — your API key is not encrypted.`, 'warn');
+    }
+
     if (agentMode) {
       await runAgentTurn({
         target,
@@ -336,7 +355,8 @@ export function consumeNoModel(convId: string): boolean {
 /* --------------------------------- helpers ---------------------------------- */
 
 function friendlyError(err: Error): string {
-  const raw = err?.message ?? 'Something went wrong.';
+  // Never let a provider error carry a credential into the transcript.
+  const raw = redactSecrets(err?.message ?? 'Something went wrong.');
   const m = raw.toLowerCase();
   if (m.includes('401') || m.includes('unauthorized')) return 'API key rejected (401). Check the key in Settings → Providers.';
   if (m.includes('402') || m.includes('insufficient') || m.includes('credit')) return 'This endpoint says you’re out of credits (402). Top up or switch provider.';
@@ -344,7 +364,7 @@ function friendlyError(err: Error): string {
   if (m.includes('404') || m.includes('not found')) return 'Not found (404). Check the base URL and the model name.';
   if (m.includes('429') || m.includes('rate limit') || m.includes('quota')) return 'Rate limited or quota exceeded (429). Wait a moment or check your plan.';
   if (m.includes('502') || m.includes('503') || m.includes('bad gateway') || m.includes('server error')) return 'The provider had a server error. Try again shortly.';
-  if (m.includes('timed out') || m.includes('timeout')) return 'The server took too long to respond. Try again, or pick a faster model.';
+  if (m.includes('timed out') || m.includes('timeout') || m.includes('stopped responding')) return 'The server took too long to respond. Try again, or pick a faster model.';
   if (m.includes('network') || m.includes('connect') || m.includes('dns') || m.includes('resolve')) return 'Network error. Check internet/DNS — for LAN servers (Ollama, LM Studio), verify the IP, port and same Wi-Fi.';
   return raw;
 }

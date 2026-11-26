@@ -9,6 +9,7 @@ import { Durations } from '@/src/theme/motion';
 import { SplashGate, holdNativeSplash } from '@/src/components/Splash';
 import { KeyboardGuard } from '@/src/components/KeyboardGuard';
 import { Toast } from '@/src/components/Toast';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { setGrantedTree, setManagedBase, verifyManagedAccess } from '@/src/agent/fs';
 import { useSettingsStore } from '@/src/store/settings';
 
@@ -69,10 +70,12 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.fill}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <SplashGate>
-            <ServiceWorkerRegistrar />
-            <Routes />
-          </SplashGate>
+          <ErrorBoundary>
+            <SplashGate>
+              <ServiceWorkerRegistrar />
+              <Routes />
+            </SplashGate>
+          </ErrorBoundary>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

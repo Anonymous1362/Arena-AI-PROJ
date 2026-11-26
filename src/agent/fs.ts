@@ -154,7 +154,9 @@ export async function requestStorageAccess(): Promise<FsPermissionInfo> {
     // user dismissed the picker — fall back to sandbox
   }
   const dir = `${FileSystem.documentDirectory ?? ''}files/`;
-  (await FileSystem.getInfoAsync(dir)).exists || (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
+  if (!(await FileSystem.getInfoAsync(dir)).exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
   grantedTreeUri = null;
   return { tier: 'sandbox', rootLabel: 'App sandbox', treeUri: undefined };
 }
@@ -266,8 +268,9 @@ export async function writeAgentFile(rel: string, content: string, maxSize = 102
   }
   const uri = `${root.uri}${path}`;
   const dir = uri.slice(0, uri.lastIndexOf('/'));
-  (await FileSystem.getInfoAsync(dir)).exists ||
-    (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
+  if (!(await FileSystem.getInfoAsync(dir)).exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
   await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
   return `Wrote ${formatKB(content.length)} to ${path}`;
 }
@@ -444,7 +447,9 @@ export async function writeAgentFileBytes(rel: string, bytes: Uint8Array, maxSiz
   }
   const uri = `${root.uri}${path}`;
   const dir = uri.slice(0, uri.lastIndexOf('/'));
-  (await FileSystem.getInfoAsync(dir)).exists || (await FileSystem.makeDirectoryAsync(dir, { intermediates: true }));
+  if (!(await FileSystem.getInfoAsync(dir)).exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
   await FileSystem.writeAsStringAsync(uri, b64, { encoding: FileSystem.EncodingType.Base64 });
   return `Wrote ${formatKB(bytes.length)} to ${path}`;
 }
