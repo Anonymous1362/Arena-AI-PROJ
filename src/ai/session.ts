@@ -59,6 +59,12 @@ export function stopGenerationsForProfile(profileId: string): void {
 
 export interface SendOptions {
   regenerate?: boolean;
+  /**
+   * Regenerate a specific assistant reply. That reply and every turn after it
+   * are removed only once the send has passed validation, so a missing model
+   * or provider cannot destroy saved answers.
+   */
+  regenerateFromId?: string;
   editMessageId?: string;
   text?: string;
   /** Image attachments for vision models (API engines). */
@@ -93,6 +99,9 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     throwNoModel(conv);
     return false;
   }
+  if (opts.regenerateFromId && !conv.messages.some((m) => m.id === opts.regenerateFromId)) {
+    return false;
+  }
   // Validate the selected provider before mutating persisted chat history.
   // Configuration errors should be recoverable without creating a phantom turn.
   const target = resolveRemoteTarget(settings, model);
@@ -103,6 +112,10 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     if (opts.text?.trim()) {
       chats.updateMessage(convId, opts.editMessageId, { content: opts.text.trim(), error: undefined });
     }
+  } else if (opts.regenerateFromId) {
+    // Truncate from the chosen reply so regenerating an older answer cannot
+    // leave its following turns stranded in the transcript.
+    chats.truncateFrom(convId, opts.regenerateFromId);
   } else if (opts.regenerate) {
     const last = conv.messages[conv.messages.length - 1];
     if (last?.role === 'assistant') chats.deleteMessage(convId, last.id);

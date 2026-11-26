@@ -105,6 +105,23 @@
   acceptance; configuration errors still surface in the chat banner.
 - [x] Removed the stale "choose an on-device model" empty-state copy left from
   the pre-API engine. Provider setup is the only path.
+- [x] Persisted state is now rehydrated through per-store validation
+  (`src/store/persisted.ts`): settings, chats, prompts and usage keep every
+  valid record and fall back to defaults for a missing or wrong-typed field.
+  Before this, a partial or corrupt AsyncStorage slice was spread over live
+  state, and the theme provider reads `appearance.theme` before any screen
+  can render an error, so the app could fail to boot with no recovery UI.
+  Stored agent tool transcripts are preserved rather than stripped.
+- [x] Regenerating a reply no longer destroys saved text before the send is
+  validated: retry and the per-message Regenerate action route through
+  `sendMessage`, which validates the model/provider first, and regenerating
+  an older reply truncates that turn and everything after it instead of
+  leaving stranded later messages. An imported chat whose provider is missing
+  now shows the model picker with the original answer intact.
+- [x] Backup import refuses files over 25 MB before reading them into memory
+  and reports non-JSON files as such, instead of attempting an unbounded
+  parse that can crash a phone. The reset-settings dialog no longer mentions
+  a nonexistent "downloads list" and now states what is actually kept.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`) passed for those four changes on
   2026-11-26. This is build evidence only; the provider rows in
@@ -120,7 +137,11 @@
   required; the checklist marks which are code-covered and which need a live run.
 - [ ] Exercise chat JSON export/import and erase/reset controls through the
   actual mobile and web UI, including an imported chat with an unavailable
-  provider.
+  provider. Code paths and guards are now in place; the interaction run still
+  needs a device or browser session.
+- [x] Added `npm test` (`node --test tests/*.test.ts`) with focused persisted
+  guard coverage; `tests` is excluded from `tsc` the same way as the sibling
+  production-hardening lineage.
 - [ ] Continue the broader-app audit as cohesive, tested fixes; record each
   result here and in `docs/AGENT-HANDOFF.md`.
 

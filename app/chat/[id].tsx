@@ -192,10 +192,10 @@ export default function ChatScreen() {
 
   const retry = useCallback(() => {
     if (!conv) return;
-    const last = conv.messages[conv.messages.length - 1];
-    if (last?.role === 'assistant') deleteMessage(conv.id, last.id);
+    // sendMessage removes the trailing assistant reply only after the send has
+    // passed validation, so a missing provider cannot erase a saved answer.
     sendMessage(id!, { regenerate: true }).catch((e: Error) => setBanner(e.message));
-  }, [conv, deleteMessage, id]);
+  }, [conv, id]);
 
   const onEditSave = useCallback(() => {
     if (!editingMsg) return;
@@ -539,9 +539,14 @@ export default function ChatScreen() {
               icon="refresh"
               label="Regenerate"
               onPress={() => {
+                const target = actionsMsg;
                 setActionsMsg(null);
-                deleteMessage(id!, actionsMsg.id);
-                sendMessage(id!, { regenerate: true }).catch((e: Error) => setBanner(e.message));
+                if (!target) return;
+                // Validation runs before the transcript is truncated, so this
+                // is a no-op when no model/provider is available.
+                sendMessage(id!, { regenerate: true, regenerateFromId: target.id }).catch(
+                  (e: Error) => setBanner(e.message)
+                );
               }}
             />
           ) : null}

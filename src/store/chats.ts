@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uid } from '@/src/utils/id';
 import type { ActiveModel } from '@/src/store/settings';
 import type { PlanStep, ToolEvent, WireMessage } from '@/src/ai/types';
+import { mergeChatsState } from '@/src/store/persisted';
 
 /* ---------------------------------- types ---------------------------------- */
 
@@ -76,6 +77,8 @@ export interface ChatsState {
   deleteMessage: (convId: string, msgId: string) => void;
   /** Remove every message strictly after `msgId` (for edit / regenerate flows). */
   dropMessagesAfter: (convId: string, msgId: string) => void;
+  /** Remove `msgId` and everything after it (regenerating an older reply). */
+  truncateFrom: (convId: string, msgId: string) => void;
 
   clearAllChats: () => void;
   /** Adds only conversations whose ids are not already stored; returns added count. */
@@ -175,6 +178,15 @@ export const useChatsStore = create<ChatsState>()(
           }),
         })),
 
+      truncateFrom: (convId, msgId) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) => {
+            if (c.id !== convId) return c;
+            const idx = c.messages.findIndex((m) => m.id === msgId);
+            return idx === -1 ? c : { ...c, messages: c.messages.slice(0, idx) };
+          }),
+        })),
+
       clearAllChats: () => set({ conversations: [] }),
 
       importConversations: (convs) => {
@@ -197,6 +209,9 @@ export const useChatsStore = create<ChatsState>()(
       name: 'aurora/chats/v1',
       storage: createJSONStorage(() => AsyncStorage),
       version: 1,
+      // Validate the stored shape field by field so one malformed record is
+      // dropped instead of rendering broken or crashing the chat list.
+      merge: mergeChatsState,
     }
   )
 );

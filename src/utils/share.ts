@@ -22,6 +22,26 @@ export async function shareExportedFile(
 }
 
 /**
+ * Backups are read fully into memory before parsing. Refuse anything larger
+ * than this instead of risking an out-of-memory crash on a phone.
+ */
+const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+
+function parseBackup(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('That file is not valid JSON. Choose a Copper backup or chat export.');
+  }
+}
+
+function backupTooLarge(): Error {
+  return new Error(
+    'That backup is larger than 25 MB. Export fewer chats at a time and import them separately.'
+  );
+}
+
+/**
  * Export helper: writes JSON and hands it to the platform share sheet
  * (native) or triggers a browser download (web/PWA).
  */
@@ -61,9 +81,9 @@ export async function readPickedJson(): Promise<unknown> {
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return reject(new Error('No file selected.'));
+        if (file.size > MAX_IMPORT_BYTES) return reject(backupTooLarge());
         try {
-          const text = await file.text();
-          resolve(JSON.parse(text));
+          resolve(parseBackup(await file.text()));
         } catch (e) {
           reject(e);
         }
@@ -81,7 +101,9 @@ export async function readPickedJson(): Promise<unknown> {
   });
   if (res.canceled || !res.assets?.[0]) throw new Error('No file selected.');
   const asset = res.assets[0];
-  return JSON.parse(
-    await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 })
-  );
+  if (typeof asset.size === 'number' && asset.size > MAX_IMPORT_BYTES) throw backupTooLarge();
+  const text = await FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+  return parseBackup(text);
 }

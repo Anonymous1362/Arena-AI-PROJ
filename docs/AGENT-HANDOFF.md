@@ -384,3 +384,43 @@ Remote state: this continuation is pushed. `arena/01a06159-arena-ai-proj`
 advanced `b3e3a2e..e289be3` as a fast-forward, so a fresh session can start from
 the remote tip. Nothing was merged, tagged, released, or opened as a pull
 request.
+
+## Continuation — 2026-11-26 (data safety: rehydration guards, regenerate, import limits)
+
+Continued the broader-app audit along the roadmap execution order (chat
+reliability + data safety). No Terminal/runtime or Phase 0 work was touched.
+
+Changes:
+
+- `src/store/persisted.ts` (new) and a `merge` for the settings, chats, prompts
+  and usage stores. Persisted AsyncStorage slices are validated field by field
+  before they reach render code; invalid entries are dropped and every valid
+  record is kept. This matters most for settings: `ThemeProvider` reads
+  `appearance.theme` on the very first render, so a partial or corrupt record
+  previously spread over the defaults and could leave the app unable to boot
+  to any recovery screen. Stored agent transcripts keep their raw provider
+  tool-call payloads, so agent continuation is unchanged.
+- `src/store/chats.ts` — new `truncateFrom(convId, msgId)` removes a reply and
+  every later message, so regenerating an older answer cannot strand its
+  following turns.
+- `src/ai/session.ts` — `SendOptions.regenerateFromId` truncates only after the
+  model/provider/URL validation has passed. A refused send therefore leaves the
+  transcript untouched.
+- `app/chat/[id].tsx` — retry and the per-message Regenerate action no longer
+  delete the assistant answer before `sendMessage` validates. This was a real
+  data-loss path for an imported or restored chat whose provider is missing.
+- `src/utils/share.ts` — backup import refuses files over 25 MB before reading
+  them into memory, and a non-JSON file reports "not valid JSON" instead of a
+  raw parser error.
+- `app/settings/data.tsx` — reset copy no longer mentions a nonexistent
+  "downloads list"; it states what returns to defaults and what is kept.
+- `tests/persisted.test.ts`, `npm test` (`node --test tests/*.test.ts`), and
+  `tests` excluded in `tsconfig.json` to match the sibling hardening lineage.
+
+Checks run locally: `npx tsc --noEmit` (pass), `npm test` (8/8 pass), and
+`npx expo export --platform web` (pass, 3.5 MB entry bundle). No real API key,
+physical device, or GitHub CI observation was available here. The export/import
+and erase/reset interaction run through the real UI is still outstanding, and
+the provider checklist rows that need a live key remain unexecuted.
+
+Nothing was merged, tagged, released, or opened as a pull request.

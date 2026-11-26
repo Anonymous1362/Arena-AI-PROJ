@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mergeSettingsState } from '@/src/store/persisted';
 
 /* ---------------------------------- types --------------------------------- */
 
@@ -195,6 +196,9 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'aurora/settings/v2',
       storage: createJSONStorage(() => AsyncStorage),
       version: 5,
+      // A partial or hand-edited record must not reach render code: the theme
+      // provider reads appearance.theme before any screen can show an error.
+      merge: mergeSettingsState,
       // v1 → v5: drop legacy records and enforce the selected SAF workspace
       // boundary even for a profile that previously stored it as disabled.
       migrate: (persisted: any) => {

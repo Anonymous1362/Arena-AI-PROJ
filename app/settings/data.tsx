@@ -113,7 +113,7 @@ export default function DataSettingsScreen() {
               variant="ghost"
               icon="refresh-outline"
               onPress={() =>
-                Alert.alert('Reset settings?', 'Providers, API keys, downloads list and preferences are reset. Chats are kept.', [
+                Alert.alert('Reset settings?', 'Providers, API keys, model lists and app preferences return to defaults. Chats, prompts and usage history are kept.', [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Reset', style: 'destructive', onPress: () => { stopAllGenerations(); haptics.warning(); resetAll(); } },
                 ])

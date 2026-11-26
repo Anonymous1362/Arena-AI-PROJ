@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { mergeUsageState } from '@/src/store/persisted';
 
 /**
  * Live usage tracking: rolling windows (1h / 24h), token accounting and
@@ -23,7 +24,7 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 const MAX_EVENTS = 500;
 
-interface UsageState {
+export interface UsageState {
   events: UsageEvent[];
   totals: { requests: number; tokensIn: number; tokensOut: number };
   limits: { hour: number; day: number };
@@ -71,6 +72,7 @@ export const useUsageStore = create<UsageState>()(
       name: 'copper/usage/v1',
       storage: createJSONStorage(() => AsyncStorage),
       version: 1,
+      merge: mergeUsageState,
     }
   )
 );
