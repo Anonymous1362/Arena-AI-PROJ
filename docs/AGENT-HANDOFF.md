@@ -265,6 +265,12 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   failure or an explicit stop, avoiding duplicate failure/usage while preserving
   normal title generation after a real answer. A controlled session behavior
   test, TypeScript check, and Expo web export passed.
+- Agent continuation follow-up: every provider response has its own streaming
+  accumulator. The agent loop now appends each auto-continuation or tool-loop
+  response to prior displayed text, instead of overwriting it on the next turn.
+  A controlled two-turn `finish_reason=length` test proved the UI/final result
+  retain both segments; TypeScript passed. Real provider/agent interaction
+  evidence remains required.
 
 ## Required next actions
 

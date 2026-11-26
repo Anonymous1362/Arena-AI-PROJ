@@ -68,6 +68,9 @@
 - [x] Automatic chat titling now makes its second provider request only after a
   successful turn; failed, aborted, or stopped first messages retain their
   visible error without silently retrying the broken provider for a title.
+- [x] Agent auto-continuation and multi-step tool turns now preserve already
+  streamed assistant text when a later provider request starts, rather than
+  replacing the visible answer with only the final continuation segment.
 
 ## Near-term active work
 

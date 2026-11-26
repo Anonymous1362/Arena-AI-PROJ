@@ -157,7 +157,6 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
             signal,
             handlers: {
               onContent: (content) => {
-                fullText = content;
                 const parsed = extractPlan(content);
                 if (parsed.plan.length && JSON.stringify(parsed.plan) !== JSON.stringify(steps)) {
                   // preserve done states when re-emitting a revised plan
@@ -168,7 +167,8 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
                   callbacks.onPlan([...steps]);
                 }
                 markPlanProgress(content);
-                callbacks.onText(stripPlan(content));
+                fullText = appendTurnText(turnTextBefore, content);
+                callbacks.onText(fullText);
               },
               onReasoning: (r) => callbacks.onReasoning?.(r),
             },
@@ -189,7 +189,7 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
 
       tokensInTotal += result.tokensIn ?? 0;
       tokensOutTotal += result.tokensOut ?? 0;
-      fullText = stripPlan(result.content);
+      fullText = appendTurnText(turnTextBefore, result.content);
       callbacks.onText(fullText);
 
       // No tool calls requested this turn → turn chain ends here.
@@ -333,6 +333,18 @@ export async function runAgentTurn(opts: LoopOptions): Promise<void> {
     }
     callbacks.onError(err instanceof Error ? err : new Error(String(e)));
   }
+}
+
+/**
+ * Each agent/provider turn streams its own accumulated response. Preserve
+ * earlier tool/continuation turns instead of replacing the visible answer when
+ * the next request begins.
+ */
+function appendTurnText(previous: string, next: string): string {
+  const cleanNext = stripPlan(next);
+  if (!previous.trim()) return cleanNext;
+  if (!cleanNext.trim()) return previous;
+  return `${previous.trimEnd()}\n\n${cleanNext.trimStart()}`;
 }
 
 /** Remove [PLAN] blocks from display text (they render as the plan panel). */
