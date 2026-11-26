@@ -75,7 +75,9 @@
   immediately instead of leaving the chat in a several-second pending state.
 - [x] Clearing, deleting, or resetting chat data now aborts affected in-flight
   provider requests first, avoiding hidden continued work/usage after the
-  conversation or provider configuration has been removed.
+  conversation or provider configuration has been removed. Editing or removing
+  a provider likewise cancels only that provider's active conversations before
+  replacing its in-memory endpoint/key.
 
 ## Near-term active work
 

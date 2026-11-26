@@ -10,6 +10,7 @@ import { AppHeader } from '@/src/components/AppHeader';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Sheet } from '@/src/components/Sheet';
 import { Banner, Button, Card, Chip, TextField } from '@/src/components/ui';
+import { stopGenerationsForProfile } from '@/src/ai/session';
 import { haptics } from '@/src/utils/haptics';
 
 function Editor({
@@ -59,6 +60,9 @@ function Editor({
       return;
     }
     if (existing) {
+      // The request target carries the old endpoint/key in memory. Cancel it
+      // before replacing credentials so it cannot continue invisibly.
+      stopGenerationsForProfile(existing.id);
       updateProfile(existing.id, { name: name.trim(), baseUrl: normalizedBaseUrl, apiKey: apiKey.trim() });
     } else {
       const id = addProfile({
@@ -170,6 +174,7 @@ function Editor({
                 text: 'Delete',
                 style: 'destructive',
                 onPress: () => {
+                  stopGenerationsForProfile(existing.id);
                   haptics.warning();
                   removeProfile(existing.id);
                   onDone();

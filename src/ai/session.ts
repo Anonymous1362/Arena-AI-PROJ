@@ -37,7 +37,7 @@ export function isConversationStreaming(convId: string): boolean {
 
 /* ------------------------------ abort plumbing ------------------------------ */
 
-const active = new Map<string, { abort: AbortController }>();
+const active = new Map<string, { abort: AbortController; profileId: string }>();
 
 export function stopGeneration(convId: string): void {
   active.get(convId)?.abort.abort();
@@ -46,6 +46,13 @@ export function stopGeneration(convId: string): void {
 /** Cancel every in-flight provider request before destructive data changes. */
 export function stopAllGenerations(): void {
   for (const convId of active.keys()) stopGeneration(convId);
+}
+
+/** Stop in-flight work before changing or removing its provider credentials. */
+export function stopGenerationsForProfile(profileId: string): void {
+  for (const [convId, activeGeneration] of active) {
+    if (activeGeneration.profileId === profileId) stopGeneration(convId);
+  }
 }
 
 /* -------------------------------- the session -------------------------------- */
@@ -111,7 +118,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<vo
   const started = Date.now();
   useStreamingStore.getState().start(convId);
   const abort = new AbortController();
-  active.set(convId, { abort });
+  active.set(convId, { abort, profileId: model.profileId });
 
   // 2) build the request
   const fresh = useChatsStore.getState().conversations.find((c) => c.id === convId);

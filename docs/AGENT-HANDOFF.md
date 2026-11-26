@@ -280,6 +280,10 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
   prevents a hidden generation from continuing after its UI/configuration is
   gone. A controlled two-conversation cancellation test and TypeScript check
   passed.
+- Provider edits/removal now also cancel active conversations tied to that
+  profile before the endpoint/key is replaced or erased. The session tracks an
+  in-flight request's profile id so unrelated providers continue normally. A
+  controlled two-profile cancellation test and TypeScript check passed.
 
 ## Required next actions
 
