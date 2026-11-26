@@ -248,6 +248,27 @@ function sanitizeTranscriptTail(value: unknown): WireMessage[] | undefined {
   return tail.length ? (tail as WireMessage[]) : undefined;
 }
 
+/** Shown when a stored reply was cut off before any text arrived. */
+export const INTERRUPTED_REPLY_ERROR = 'Reply interrupted — tap Retry to ask again.';
+
+/**
+ * A message can be stored while it is still streaming: the app was killed
+ * mid-reply, or a backup was exported during a turn. The stream that was going
+ * to finish it is gone, so a persisted `done: false` would never settle — the
+ * partial reply stayed out of every later request's history because history is
+ * built from completed messages, and an empty bubble showed "…" with no Retry.
+ * Settle it the way Stop would have: keep any partial text, and give an empty
+ * assistant bubble an error so the ordinary Retry action is offered.
+ */
+export function settleInterruptedMessage(message: ChatMessage): ChatMessage {
+  if (message.done) return message;
+  if (message.content.trim() || message.reasoning?.trim() || message.error) {
+    return { ...message, done: true };
+  }
+  if (message.role !== 'assistant') return { ...message, done: true };
+  return { ...message, done: true, error: INTERRUPTED_REPLY_ERROR };
+}
+
 function sanitizeStoredMessage(value: unknown, fallbackTime: number): ChatMessage | null {
   if (!isRecord(value)) return null;
   const id = optionalText(value.id);
@@ -309,7 +330,9 @@ function sanitizeStoredMessage(value: unknown, fallbackTime: number): ChatMessag
   }
   const transcriptTail = sanitizeTranscriptTail(value.transcriptTail);
   if (transcriptTail) message.transcriptTail = transcriptTail;
-  return message;
+  // Nothing is streaming after a relaunch, so a stored half-finished reply is
+  // settled here rather than kept permanently in flight.
+  return settleInterruptedMessage(message);
 }
 
 function sanitizeStoredConversation(value: unknown, seen: Set<string>): Conversation | null {

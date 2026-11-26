@@ -489,3 +489,34 @@ through in a running app; this increment is store-level bounds plus build
 checks.
 
 Nothing was merged, tagged, released, or opened as a pull request.
+
+## Continuation — 2026-11-26 (interrupted replies settle on rehydration and import)
+
+Audited the remaining chat/session/store surfaces and picked one defect that can
+strand saved data: a message persisted while it was still streaming never
+settles after a relaunch.
+
+- `sanitizeStoredMessage` kept `done: false` verbatim. That state is only
+  meaningful for a live turn; the stream that would have completed it is gone.
+  Because request history is built from `done && !error && content` messages,
+  the stored reply then never participated in a later request, and an empty
+  assistant bubble rendered “…” forever with no error and therefore no Retry.
+  The same could happen through Data → Import, since a backup can be exported
+  mid-reply on the other device.
+- Added `INTERRUPTED_REPLY_ERROR` and `settleInterruptedMessage` to
+  `src/store/persisted.ts`. It marks the message `done: true`, keeps partial
+  text/reasoning as a settled answer (exactly what Stop does) and gives an empty
+  assistant reply the ordinary retryable error so the existing Retry action
+  applies. It is applied in `sanitizeStoredMessage` and in
+  `src/store/chatImport.ts` before imported conversations reach the store.
+- Deliberately not changed: the remaining `ModelSheet` discovery-effect deps,
+  provider name fallbacks for deleted profiles, and `stream_options` usage
+  inclusion — the first two are harmless and the last depends on provider
+  compatibility, so it needs a live-key run before changing request bodies.
+- Verification on the committed tree: `npx tsc --noEmit` (TSC_EXIT=0),
+  `npm test` 10/10 (TEST_EXIT=0, new test
+  “a reply stored mid-stream is settled instead of staying in flight”),
+  `npx expo export --platform web` (WEB_EXIT=0), `npx expo export --platform
+  android` (ANDROID_EXIT=0, 5.4 MB Hermes bundle). Build evidence only; the
+  provider rows in `docs/PROVIDER-FIRST-MESSAGE-CHECKLIST.md` still need a real
+  key and a device run.

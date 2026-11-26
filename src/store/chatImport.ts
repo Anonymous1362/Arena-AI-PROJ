@@ -1,3 +1,4 @@
+import { settleInterruptedMessage } from '@/src/store/persisted';
 import type { ActiveModel } from '@/src/store/settings';
 import type { PlanStep, ToolEvent, WireMessage } from '@/src/ai/types';
 import type { ChatMessage, Conversation, GenStats, MessageAttachment, Role } from '@/src/store/chats';
@@ -139,7 +140,10 @@ function sanitizeMessage(value: unknown, fallbackTime: number): ChatMessage | nu
   if (planSteps) message.planSteps = planSteps;
   if (toolEvents) message.toolEvents = toolEvents;
   if (transcriptTail) message.transcriptTail = transcriptTail;
-  return message;
+  // A backup can be exported while a reply is generating. Nothing will ever
+  // finish that stream after the import, so it is settled instead of arriving
+  // as a permanently in-flight message that no later request can use.
+  return settleInterruptedMessage(message);
 }
 
 function sanitizeConversation(value: unknown, fallbackTime: number): { conversation: Conversation; skippedMessages: number } | null {

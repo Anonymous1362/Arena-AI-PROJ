@@ -215,3 +215,37 @@ test('generation and usage bounds match the screens that enforce them', () => {
   );
   assert.deepEqual(limits.limits, { hour: 500, day: 25 });
 });
+
+test('a reply stored mid-stream is settled instead of staying in flight', () => {
+  const merged = mergeChatsState(
+    {
+      conversations: [
+        {
+          id: 'c1',
+          messages: [
+            { id: 'm1', role: 'user', content: 'hello', createdAt: 1, done: true },
+            { id: 'm2', role: 'assistant', content: '', createdAt: 2, done: false },
+            { id: 'm3', role: 'assistant', content: 'half an answer', createdAt: 3, done: false },
+            { id: 'm4', role: 'assistant', content: '', reasoning: 'thinking', createdAt: 4, done: false },
+            { id: 'm5', role: 'assistant', content: 'finished', createdAt: 5, done: true },
+          ],
+        },
+      ],
+    },
+    { conversations: [] }
+  );
+
+  const messages = merged.conversations[0].messages;
+  // An empty reply that never finished becomes a retryable error, not a
+  // permanently in-flight bubble that no later request includes.
+  assert.equal(messages[1].done, true);
+  assert.match(messages[1].error, /interrupted/i);
+  // Partial text and reasoning-only replies are kept as settled answers.
+  assert.equal(messages[2].done, true);
+  assert.equal(messages[2].content, 'half an answer');
+  assert.equal(messages[2].error, undefined);
+  assert.equal(messages[3].done, true);
+  assert.equal(messages[3].error, undefined);
+  assert.equal(messages[4].done, true);
+  assert.equal(messages[4].error, undefined);
+});

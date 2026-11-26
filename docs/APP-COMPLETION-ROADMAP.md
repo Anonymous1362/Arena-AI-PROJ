@@ -142,9 +142,18 @@
   unusable reply. Temperature, top-P and the hourly/daily soft limits use the
   same ranges their steppers allow; `patchGeneration` and `setLimits` apply the
   shared clamp, so a future caller cannot bypass the screens.
+- [x] A reply stored mid-stream is settled instead of staying in flight
+  forever. Killing the app during a turn (or exporting a backup mid-reply)
+  persisted a `done: false` assistant message; nothing could ever finish it, so
+  it stayed out of every later request's history — history is built from
+  completed messages — and an empty bubble rendered a permanent “…” with no
+  Retry. `settleInterruptedMessage` in `src/store/persisted.ts` now sets
+  `done: true` on rehydration and on backup import, keeping partial text and
+  reasoning, and giving an empty assistant reply the ordinary retryable error.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`), an Android Hermes export, and `npm test`
-  (9/9) passed for these chat-reliability and settings-bounds changes on
+  (10/10) passed for these chat-reliability, settings-bounds and
+  interrupted-message changes on
   2026-11-26. This is build evidence only; the provider rows in
   [`PROVIDER-FIRST-MESSAGE-CHECKLIST.md`](PROVIDER-FIRST-MESSAGE-CHECKLIST.md)
   still require a real key and a device run.
