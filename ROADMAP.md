@@ -1,10 +1,12 @@
 # Copper Runtime — Device Readiness Roadmap
 
-> **Current gate: Phase 0, real arm64 phone stabilization.** Copper has a
+> **Current active work: broader Copper app completion.** The owner explicitly
+> deferred the physical Terminal/runtime Phase 0 topic until final project
+> hardening so the rest of the app can be completed first. Copper still has a
 > Copper-branded arm64 runtime built from pinned Termux-derived sources, an
-> atomic installer, and a persistent native PTY. It is **not** device-ready or
-> releasable until the physical-phone checklist below passes without bootstrap,
-> session-lifecycle, keyboard, or panel-dismissal failures.
+> atomic installer, and a persistent native PTY; it is **not** device-ready or
+> releasable until the deferred physical-phone checklist below passes without
+> bootstrap, session-lifecycle, keyboard, or panel-dismissal failures.
 
 This is the durable product/status tracker for work on
 `arena/01a06159-arena-ai-proj`. Read `docs/AGENT-HANDOFF.md` before changing
@@ -19,6 +21,20 @@ runtime code, native terminal code, CI, or this checklist.
 - **Candidate** means a personal, non-release APK artifact. It never means a
   public runtime distribution, package update channel, or replacement for a
   release/source-delivery process.
+
+## Owner-directed execution order
+
+1. Complete the broader application experience and its ordinary feature/test
+   backlog now. This scope change explicitly permits work outside the prior
+   runtime-only limitation.
+2. Defer all further Terminal/runtime physical-device work. Do not mark any
+   unchecked Phase 0 item complete, call the current candidate release-ready,
+   or hide an existing runtime failure.
+3. At final project hardening, create a **fresh** same-commit candidate (the
+   current personal artifact will expire), then resume every unchecked Phase 0
+   physical-phone row before any release decision.
+4. The later Phase 1–3 runtime delivery/release work remains blocked by that
+   final Phase 0 physical evidence.
 
 ## Non-negotiable runtime contract
 
@@ -59,7 +75,7 @@ first-launch failure, so it must not be re-promoted as ready.
 
 ---
 
-## Phase 0 — Real arm64 phone stabilization **← CURRENT**
+## Phase 0 — Real arm64 phone stabilization **← DEFERRED TO FINAL HARDENING**
 
 ### Real-phone result that blocks completion
 
@@ -218,7 +234,11 @@ but not substitutes for that confirmation.
 
 ---
 
-## Next phases (blocked until Phase 0 passes)
+## Later runtime phases (release-blocked until deferred Phase 0 passes)
+
+The owner may now complete broader app work before returning to the terminal.
+These runtime delivery/release phases still cannot be marked complete or
+released until the deferred Phase 0 physical-phone gate passes.
 
 ### Phase 1 — Managed package operations and terminal resilience
 
@@ -242,8 +262,9 @@ but not substitutes for that confirmation.
   bytes.
 - [ ] Explicitly authorize a release only after the above and Phase 0 are done.
 
-No web-workflow work belongs in this roadmap unless the user explicitly changes
-scope.
+The owner has explicitly changed scope: broader Copper app work is now
+permitted before returning to the deferred terminal/device gate. Keep runtime
+release claims and Phase 1–3 delivery work blocked as described above.
 
 ---
 

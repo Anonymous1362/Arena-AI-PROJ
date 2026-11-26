@@ -40,8 +40,21 @@ Runtime, Terminal, CI, storage boundaries, or runtime delivery.
 5. Copper has a 2 GiB **managed** private runtime budget. Bootstrap extraction
    is capped; package-operation preflight/monitoring remains later work.
 6. Do not silently fall back to `/system/bin/sh` and call it Copper Bash.
-7. Work only on arm64 runtime/Phase 0 unless the user explicitly changes scope;
-   do not divert to web workflows.
+7. The owner explicitly changed scope: complete the broader Copper app before
+   returning to Terminal/runtime physical-device work. Preserve all Phase 0
+   facts and unchecked rows; runtime/device release work remains blocked until
+   the deferred final-hardening phone checklist passes.
+
+## Active execution order after owner scope change
+
+1. Audit and complete the broader app feature, quality, and test backlog now.
+2. Do not spend implementation cycles on the Terminal/runtime topic unless the
+   owner re-prioritizes it or broader-app work directly depends on it.
+3. The personal artifact from run `45476235786` is still a non-release
+   candidate and will expire. At final hardening, issue a fresh same-commit
+   candidate and perform every unchecked Phase 0 phone test before release.
+4. Never call Phase 0, the runtime, or a product release complete merely
+   because the terminal work was intentionally deferred.
 
 ## Prior CI evidence — accurate but insufficient for Phase 0
 
@@ -216,22 +229,20 @@ mandatory. Do not call Phase 0 complete just because CI/emulator checks pass.
 
 ## Required next actions
 
-1. Download `Copper-runtime-device-candidate` (artifact `14970840364`) from
-   [run `45476235786`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45476235786) before `2026-12-08T22:10:17Z`. Its outer GitHub artifact-envelope
-   digest is `sha256:0c6dd8b69244806f6ca941a79121dd3587e1d5397de769f25dd79ae2045fe0c8`.
-   Install only its contained `Copper-runtime-device-candidate.apk`; the
-   accompanying manifest/receipt identify the exact source-built runtime. Do
-   not redistribute it or call it a release.
-2. For a clean bootstrap result, use a fresh Copper app-data state after backing
-   up any wanted projects. Record the physical-phone Phase 0 checklist from
-   `ROADMAP.md`: clean fallback bootstrap, normal Send/input/output, Ctrl-C,
-   stale-session feedback, Terminal keyboard attachment, Chat overflow keyboard
-   dismissal, and outside-tap/sheet animation/haptics.
-3. If the new physical candidate fails, obtain the exact visible error,
-   screenshots, and reproduction steps; diagnose that verified failure before a
-   further candidate commit. Do not suppress a bootstrap/postinst error.
-4. Update this handoff and `ROADMAP.md` with the real-device result. Phase 0
-   remains blocked until every device row passes.
+1. Start with a broader-app audit: inspect the current product surface,
+   existing TODOs, untested flows, configuration, and CI evidence; then propose
+   and execute cohesive feature/quality increments. This work is explicitly
+   authorized outside the prior runtime-only scope.
+2. Defer Terminal/runtime physical-device execution. Preserve the successful
+   candidate evidence but expect artifact `14970840364` to expire; at final
+   hardening create a fresh candidate rather than reusing an expired artifact.
+3. When the owner returns to Terminal/runtime hardening, request and record the
+   complete Phase 0 physical checklist from `ROADMAP.md`. If it fails, obtain
+   the exact visible error, screenshots, and reproduction steps before a new
+   repair/candidate cycle.
+4. Update this handoff and `ROADMAP.md` with broader-app progress and eventual
+   real-device results. The runtime/release gate remains blocked until every
+   physical-device row passes.
 
 ## Do not repeat these dead ends
 
