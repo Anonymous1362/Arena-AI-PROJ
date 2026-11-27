@@ -617,3 +617,11 @@ passed. Fresh Expo web and Android Hermes exports passed after this work (the
 Android bundle was 5.4 MB). These are bundle/build checks, not physical-device
 acceptance: IME, real Gemini, sheet, haptic, voice, and animation feel must be
 rerun from the final committed SHA before device acceptance is claimed.
+
+Native APK note: an exact-source Android prebuild was attempted for
+`e7e73b2f91955a53df06b0a9dc033ddc3c888762`; `npx expo prebuild --platform
+android --clean` passed, but `./gradlew assembleRelease --no-daemon` could not
+start in this Arena sandbox because neither `JAVA_HOME` nor a `java` executable
+is installed. This is an environment prerequisite failure before Gradle could
+compile an APK, not a successful local APK claim. The generated `android/`
+directory is ignored and did not change the repository.
