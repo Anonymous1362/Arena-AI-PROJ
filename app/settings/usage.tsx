@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { Keyboard, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, radius, spacing } from '@/src/theme';
 import { useUsageStore, summarizeUsage } from '@/src/store/usage';
@@ -99,6 +99,12 @@ export default function UsageScreen() {
 
   const summary = useMemo(() => summarizeUsage(events), [events]);
   const messageCount = conversations.reduce((n, c) => n + c.messages.length, 0);
+
+  // A focused chat composer can otherwise keep Android's IME visible beneath
+  // this modal, reducing the usage screen to a thin, unusable panel.
+  useFocusEffect(useCallback(() => {
+    Keyboard.dismiss();
+  }, []));
 
   const providerName = (key: string) => profiles.find((p) => p.id === key)?.name ?? key.slice(0, 12);
 

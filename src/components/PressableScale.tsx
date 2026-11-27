@@ -18,13 +18,13 @@ interface PressableScaleProps extends PressableProps {
 }
 
 /**
- * The app-wide touchable: springy scale + opacity response and a consistent
- * haptic vocabulary. This is what gives the UI its "premium sensi touch feel".
+ * The app-wide touchable: springy scale + opacity response. Haptics are opt-in
+ * for meaningful state changes rather than routine touch feedback.
  */
 export function PressableScale({
   scale = 0.97,
   opacityOnPress = 0.85,
-  haptic = 'light',
+  haptic = 'none',
   style,
   onPress,
   onPressIn,

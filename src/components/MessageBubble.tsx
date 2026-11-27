@@ -113,7 +113,10 @@ export const MessageBubble = memo(function MessageBubble({
               { borderBottomRightRadius: message.done || !streaming ? 6 : radius.lg },
             ]}
           >
-            <Text selectable style={{ color: '#FFFFFF', fontSize, lineHeight: fontSize * 1.45 }}>
+            {/* Custom long-press actions own this bubble. Native selectable
+                text would show Android's second copy/select toolbar at the
+                same time as Copper's message-action sheet. */}
+            <Text style={{ color: '#FFFFFF', fontSize, lineHeight: fontSize * 1.45 }}>
               {message.content}
             </Text>
           </LinearGradient>

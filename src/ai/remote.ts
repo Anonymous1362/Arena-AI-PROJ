@@ -158,6 +158,54 @@ export const PROVIDER_PRESETS: RemotePreset[] = [
   },
 ];
 
+/* ------------------------------- model catalog -------------------------------- */
+
+export type ModelCatalogGroup = 'Fast & efficient' | 'Pro' | 'Reasoning' | 'Other models';
+
+export interface ModelCatalogInfo {
+  group: ModelCatalogGroup;
+  /** Short, honest availability label. Generic /models responses do not carry prices. */
+  availability: string;
+  /** Whether the availability label can be presented as a known free option. */
+  availabilityKind: 'free' | 'paid' | 'varies' | 'local';
+  capability: string;
+}
+
+/**
+ * Derive useful, conservative model-list labels without inventing pricing.
+ * The OpenAI /models shape normally returns only an ID, so exact per-model
+ * prices/tier entitlement must remain "varies" unless the ID/preset proves it.
+ */
+export function describeCatalogModel(profile: Pick<RemoteProfile, 'baseUrl' | 'name'>, model: string): ModelCatalogInfo {
+  const id = model.toLowerCase();
+  const provider = `${profile.name} ${profile.baseUrl}`.toLowerCase();
+  const reasoning = /reason|think|deepseek-r1|(^|[-_/])r1($|[-_/])|o[1-9](?:-|$)/.test(id);
+  const pro = /(?:^|[-_/])pro(?:[-_/]|$)|sonnet|opus|large/.test(id);
+  const fast = /flash|lite|mini|small|instant|nano/.test(id);
+  const group: ModelCatalogGroup = reasoning ? 'Reasoning' : pro ? 'Pro' : fast ? 'Fast & efficient' : 'Other models';
+  const capability = reasoning ? 'Reasoning model' : pro ? 'Higher-capability model' : fast ? 'Fast / lower-latency model' : 'Model details from provider';
+
+  if (provider.includes('ollama') || provider.includes('lm studio') || /localhost|127\.0\.0\.1/.test(provider)) {
+    return { group, availability: 'Runs on your machine', availabilityKind: 'local', capability };
+  }
+  if (provider.includes('openrouter') && /(?:^|[:/])free$|:free\b|\bfree\b/.test(id)) {
+    return { group, availability: 'Free on OpenRouter', availabilityKind: 'free', capability };
+  }
+  if (provider.includes('generativelanguage.googleapis.com') || provider.includes('gemini')) {
+    return {
+      group,
+      availability: 'CHECK GEMINI TIER',
+      availabilityKind: 'varies',
+      capability,
+    };
+  }
+  const preset = PROVIDER_PRESETS.find((item) => item.baseUrl && profile.baseUrl.replace(/\/+$/, '') === item.baseUrl.replace(/\/+$/, ''));
+  if (preset?.pricing === 'free') return { group, availability: 'Provider free tier', availabilityKind: 'free', capability };
+  if (preset?.pricing === 'local') return { group, availability: 'Runs on your machine', availabilityKind: 'local', capability };
+  if (preset?.pricing === 'paid') return { group, availability: 'Pay as you go', availabilityKind: 'paid', capability };
+  return { group, availability: 'Availability varies by provider/account', availabilityKind: 'varies', capability };
+}
+
 /* -------------------------------- url plumbing ------------------------------- */
 
 export type BaseUrlValidation =
@@ -186,6 +234,15 @@ export function validateRemoteBaseUrl(value: string): BaseUrlValidation {
       return { ok: false, error: 'Base URL cannot include a query string or fragment.' };
     }
     const host = parsed.hostname.toLowerCase();
+    // Gemini's OpenAI-compatible service has one precise root. A common typo
+    // is ending it in “opens”, which otherwise becomes an opaque 404 only when
+    // the first chat is sent.
+    if (host === 'generativelanguage.googleapis.com' && !/^\/v1(?:beta)?\/openai$/i.test(parsed.pathname)) {
+      return {
+        ok: false,
+        error: 'Gemini’s OpenAI-compatible URL must end in /v1beta/openai (not /opens).',
+      };
+    }
     const isLoopback = host === 'localhost' || host === '[::1]' || /^127(?:\.\d{1,3}){3}$/.test(host);
     return { ok: true, baseUrl, isLoopback };
   } catch {
@@ -352,8 +409,11 @@ export async function streamRemoteChat(target: RemoteTarget, req: EngineRequest)
     const choice = json?.choices?.[0];
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     const delta = choice?.delta ?? {};
-    if (delta.reasoning_content) assembler.feed(delta.reasoning_content);
-    else if (delta.reasoning) assembler.feed(delta.reasoning);
+    // Compatible APIs use dedicated reasoning fields, or put thought tags in
+    // regular content. Keep dedicated fields out of the answer entirely; the
+    // assembler handles tagged content below.
+    if (delta.reasoning_content) assembler.feedReasoning(delta.reasoning_content);
+    else if (delta.reasoning) assembler.feedReasoning(delta.reasoning);
     if (delta.content) assembler.feed(delta.content);
     if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) {
       mergeToolCallDelta(toolAcc, delta.tool_calls);

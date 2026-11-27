@@ -158,6 +158,26 @@
   tool/continuation turns, painted live, kept on abort like partial text, and
   saved with the reply; a transient retry discards the failed attempt's trace
   instead of repeating it.
+- [x] User-reported chat/provider/mobile-polish repair: standard chat is now
+  direct by default rather than silently receiving the heavy Agent plan/tool
+  prompt; Agent mode is an explicit advanced opt-in. Dedicated reasoning fields
+  and raw or escaped `<think>`/`<thought>` tags route into the collapsed
+  thinking panel instead of leaking into the answer. Stop settles the visible
+  turn immediately and isolates late aborted-provider work, so switching model
+  after Stop cannot overwrite a new turn.
+- [x] The model picker now groups models as Fast & efficient, Pro, Reasoning,
+  and Other, supports search, and labels only availability it can know. Gemini
+  `/models` does not return account-specific price/entitlement data, so it
+  honestly directs the user to their Gemini tier instead of inventing a
+  free/paid label. The common Gemini `/opens` URL typo is rejected before a
+  request; the required OpenAI-compatible root ends in `/v1beta/openai`.
+- [x] Mobile interaction polish: tabs and usage navigation dismiss a retained
+  Android keyboard; a sheet waits for the keyboard window to restore before it
+  opens; edit/prompt forms no longer autofocus behind a sheet; prompt insertion
+  no longer reopens the IME mid-dismissal; long-press message actions no longer
+  trigger Android text selection as well. Streaming scroll no longer launches
+  an animation per update, inactive tab scenes freeze, and routine tap haptics
+  are intentionally silent (success/warning/error only).
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`), an Android Hermes export, and `npm test`
   (10/10) passed for these chat-reliability, settings-bounds,

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
@@ -151,6 +151,7 @@ export default function ChatsScreen() {
             conversation={item}
             streaming={!!streamingIds[item.id]}
             onPress={() => {
+              Keyboard.dismiss();
               haptics.light();
               router.push({ pathname: '/chat/[id]', params: { id: item.id } });
             }}

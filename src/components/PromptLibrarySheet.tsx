@@ -94,7 +94,6 @@ function EditForm({
         value={title}
         onChangeText={setTitle}
         placeholder="e.g. Concise assistant"
-        autoFocus={!initial}
       />
       <TextField
         label="System prompt"

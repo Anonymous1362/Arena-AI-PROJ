@@ -93,7 +93,9 @@ const defaultGeneration: GenerationSettings = {
 };
 
 const defaultAgentScope: AgentScope = {
-  enabled: true,
+  // Normal chats stay direct and concise. Agent mode is an explicit advanced
+  // opt-in because it adds tools, planning, and a much larger system prompt.
+  enabled: false,
   storageEnabled: false,
   workspaceOnly: true,
   confirmDangerous: true,
@@ -196,17 +198,21 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'aurora/settings/v2',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 5,
+      version: 6,
       // A partial or hand-edited record must not reach render code: the theme
       // provider reads appearance.theme before any screen can show an error.
       merge: mergeSettingsState,
-      // v1 → v5: drop legacy records and enforce the selected SAF workspace
+      // v1 → v6: drop legacy records and enforce the selected SAF workspace
       // boundary even for a profile that previously stored it as disabled.
-      migrate: (persisted: any) => {
+      migrate: (persisted: any, version) => {
         const s = { ...persisted };
         delete s.localModels;
         if (!s.agentScope) s.agentScope = defaultAgentScope;
         (s.agentScope as any).workspaceOnly = true;
+        // Earlier builds enabled the heavy tool/planning loop for every chat.
+        // Move existing installs to direct chat once; the user can explicitly
+        // turn Agent mode back on in Settings when they want file tools.
+        if (version < 6) (s.agentScope as any).enabled = false;
         if (s.generation && (s.generation as any).systemPrompt === '__aurora_default__') {
           (s.generation as any).systemPrompt = '__copper_default__';
         }

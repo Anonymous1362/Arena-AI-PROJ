@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Tabs } from 'expo-router';
 import { useTheme } from '@/src/theme';
@@ -19,8 +19,17 @@ export default function TabsLayout() {
   const { colors, scheme } = useTheme();
   return (
     <Tabs
+      // TextInput focus is retained by mounted tab scenes on Android. Always
+      // clear the IME before a tab change so switching tabs/back never opens a
+      // stray keyboard over the destination screen.
+      screenListeners={{ tabPress: () => Keyboard.dismiss() }}
       screenOptions={{
         headerShown: false,
+        // Keep inactive heavy scenes (terminal output, long chat lists) from
+        // doing layout work during a tab transition. The active tab remains
+        // fully interactive, while switching feels immediate on Android.
+        lazy: true,
+        freezeOnBlur: true,
         // The terminal composer owns the bottom edge while typing; an absolute
         // tab bar must not cover it when Android resizes for the keyboard.
         tabBarHideOnKeyboard: true,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -59,7 +59,7 @@ export default function ProvidersScreen() {
           </View>
         </Card>
 
-        <PressableScale haptic="light" scale={0.98} onPress={() => router.push('/settings/usage')}>
+        <PressableScale haptic="light" scale={0.98} onPress={() => { Keyboard.dismiss(); router.push('/settings/usage'); }}>
           <Card style={{ marginTop: spacing(3) }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(3) }}>
               <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>

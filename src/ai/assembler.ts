@@ -1,15 +1,15 @@
 /**
  * Reasoning-aware streaming assembler.
  *
- * ingests raw text deltas (SSE tokens or llama.cpp tokens) and separates
- * <think>…</think> reasoning traces from the visible answer, while batching
- * UI updates to a steady throttle so streaming never janks the UI thread.
+ * It separates provider reasoning from visible answer text while batching UI
+ * updates. OpenAI-compatible gateways unfortunately disagree on how they send
+ * thinking: some use a dedicated field, while others put <think>, <thought>,
+ * or HTML-escaped versions inside normal content. Copper accepts all of those
+ * forms so internal traces never leak into the answer bubble.
  */
 
-const OPEN = '<think>';
-const CLOSE = '</think>';
-/** longest tag we must be able to recognize split across chunks */
-const MAX_TAG_LEN = Math.max(OPEN.length, CLOSE.length);
+const OPEN_TAGS = ['<think>', '<thought>', '&lt;think&gt;', '&lt;thought&gt;'];
+const CLOSE_TAGS = ['</think>', '</thought>', '&lt;/think&gt;', '&lt;/thought&gt;'];
 
 export interface AssemblerOptions {
   throttleMs?: number;
@@ -30,9 +30,17 @@ export class StreamAssembler {
     this.onUpdate = opts.onUpdate;
   }
 
+  /** Feed a normal content delta; inline thinking wrappers are stripped. */
   feed(delta: string): void {
     this.buf += delta;
     this.process();
+    this.schedule();
+  }
+
+  /** Feed a provider's dedicated reasoning delta without exposing it as text. */
+  feedReasoning(delta: string): void {
+    if (!delta) return;
+    this.reasoning += delta;
     this.schedule();
   }
 
@@ -48,28 +56,18 @@ export class StreamAssembler {
     return { content: this.content, reasoning: this.reasoning };
   }
 
-  /** Consume complete tags from the buffer; hold back only a possible partial tag. */
+  /** Consume complete thinking tags; hold a possible partial tag between chunks. */
   private process(final = false): void {
-    let loop = true;
-    while (loop) {
-      loop = false;
-      if (!this.inThinking) {
-        const idx = this.buf.indexOf(OPEN);
-        if (idx !== -1) {
-          this.content += this.buf.slice(0, idx);
-          this.buf = this.buf.slice(idx + OPEN.length);
-          this.inThinking = true;
-          loop = true;
-        }
-      } else {
-        const idx = this.buf.indexOf(CLOSE);
-        if (idx !== -1) {
-          this.reasoning += this.buf.slice(0, idx);
-          this.buf = this.buf.slice(idx + CLOSE.length);
-          this.inThinking = false;
-          loop = true;
-        }
-      }
+    for (;;) {
+      const tags = this.inThinking ? CLOSE_TAGS : OPEN_TAGS;
+      const match = firstTag(this.buf, tags);
+      if (!match) break;
+
+      const before = this.buf.slice(0, match.index);
+      if (this.inThinking) this.reasoning += before;
+      else this.content += before;
+      this.buf = this.buf.slice(match.index + match.tag.length);
+      this.inThinking = !this.inThinking;
     }
 
     if (final) {
@@ -79,8 +77,7 @@ export class StreamAssembler {
       return;
     }
 
-    // Hold back a tail that could be the start of a tag split across chunks.
-    const hold = partialTagLength(this.buf, this.inThinking ? CLOSE : OPEN);
+    const hold = partialTagLength(this.buf, this.inThinking ? CLOSE_TAGS : OPEN_TAGS);
     if (this.buf.length > hold) {
       const emitLen = this.buf.length - hold;
       const part = this.buf.slice(0, emitLen);
@@ -110,10 +107,27 @@ export class StreamAssembler {
   }
 }
 
-function partialTagLength(tail: string, tag: string): number {
-  const max = Math.min(tag.length - 1, tail.length);
-  for (let len = max; len > 0; len--) {
-    if (tail.endsWith(tag.slice(0, len))) return len;
+function firstTag(text: string, tags: string[]): { index: number; tag: string } | null {
+  let result: { index: number; tag: string } | null = null;
+  for (const tag of tags) {
+    const index = text.toLowerCase().indexOf(tag);
+    if (index !== -1 && (!result || index < result.index)) result = { index, tag };
   }
-  return 0;
+  return result;
+}
+
+function partialTagLength(tail: string, tags: string[]): number {
+  const lowerTail = tail.toLowerCase();
+  let longest = 0;
+  for (const tag of tags) {
+    const lowerTag = tag.toLowerCase();
+    const max = Math.min(lowerTag.length - 1, lowerTail.length);
+    for (let len = max; len > longest; len--) {
+      if (lowerTail.endsWith(lowerTag.slice(0, len))) {
+        longest = len;
+        break;
+      }
+    }
+  }
+  return longest;
 }

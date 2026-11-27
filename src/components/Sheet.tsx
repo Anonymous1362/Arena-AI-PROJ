@@ -18,6 +18,7 @@ import { radius } from '@/src/theme';
 import { PressableScale } from '@/src/components/PressableScale';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/src/utils/haptics';
+import { useKeyboardVisible } from '@/src/hooks/useKeyboardVisible';
 
 /**
  * Lightweight bottom sheet built on Reanimated + Gesture Handler.
@@ -44,6 +45,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const keyboardVisible = useKeyboardVisible();
   const collapsed = Math.ceil(windowHeight + insets.bottom + 40);
   const collapsedDistance = useSharedValue(collapsed);
   const translateY = useSharedValue(collapsed);
@@ -51,6 +53,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
   const [mounted, setMounted] = useState(visible);
   const wasVisibleRef = useRef(visible);
   const dismissedBySheetRef = useRef(false);
+  const openedRef = useRef(false);
 
   // Android's resize mode changes windowHeight as the keyboard closes. Keep
   // the off-screen distance current, but do not reset an already-open panel to
@@ -68,14 +71,21 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
       dismissedBySheetRef.current = false;
       setMounted(true);
       dismissing.set(false);
-      translateY.set(collapsedDistance.get());
-      translateY.set(withSpring(0, Spring.snappy));
-      // A non-input panel must never leave the chat keyboard exposed beneath
-      // it. The composer retains focus when no sheet is open.
-      Keyboard.dismiss();
+      // Do not calculate/open a bottom sheet against Android's temporarily
+      // resized keyboard window. That was the source of panels appearing only
+      // as a thin strip behind the IME. Mount the backdrop, dismiss the IME,
+      // then animate on the restored window height.
+      if (!openedRef.current) {
+        translateY.set(collapsedDistance.get());
+        Keyboard.dismiss();
+        if (keyboardVisible) return;
+        openedRef.current = true;
+        translateY.set(withSpring(0, Spring.snappy));
+      }
       return;
     }
 
+    openedRef.current = false;
     if (!wasVisible) return;
     if (dismissedBySheetRef.current) {
       // An outside tap, close button, or swipe already finished its exit
@@ -88,7 +98,7 @@ export function Sheet({ visible, onClose, title, children, maxHeight = '72%', pl
     translateY.set(withTiming(collapsedDistance.get(), { duration: 190 }, (finished) => {
       if (finished) runOnJS(setMounted)(false);
     }));
-  }, [collapsedDistance, dismissing, translateY, visible]);
+  }, [collapsedDistance, dismissing, keyboardVisible, translateY, visible]);
 
   const requestClose = useCallback(() => {
     if (!visible || dismissing.get()) return;

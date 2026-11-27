@@ -82,8 +82,10 @@ export function Composer({
   React.useEffect(() => {
     if (!insertRef) return;
     insertRef.current = (inserted: string) => {
+      // A prompt-library sheet is still animating away when this runs. Do not
+      // steal focus and re-open the keyboard behind that sheet; the inserted
+      // draft is ready for the user to review/tap deliberately.
       setText(inserted);
-      requestAnimationFrame(() => inputRef.current?.focus());
     };
     return () => {
       insertRef.current = null;

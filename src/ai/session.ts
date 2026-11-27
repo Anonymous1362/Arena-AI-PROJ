@@ -37,20 +37,47 @@ export function isConversationStreaming(convId: string): boolean {
 
 /* ------------------------------ abort plumbing ------------------------------ */
 
-const active = new Map<string, { abort: AbortController; profileId: string }>();
+interface ActiveGeneration {
+  abort: AbortController;
+  profileId: string;
+  assistantId: string;
+}
 
+const active = new Map<string, ActiveGeneration>();
+
+/**
+ * End the visible turn immediately. Native HTTP abort can take time to settle
+ * after a provider has already buffered a response; Stop must never look like
+ * it was ignored while that promise unwinds in the background.
+ */
 export function stopGeneration(convId: string): void {
-  active.get(convId)?.abort.abort();
+  const generation = active.get(convId);
+  if (!generation) return;
+  generation.abort.abort();
+  active.delete(convId);
+
+  const message = useChatsStore
+    .getState()
+    .conversations.find((conversation) => conversation.id === convId)
+    ?.messages.find((item) => item.id === generation.assistantId);
+  if (message && !message.done) {
+    useChatsStore.getState().updateMessage(convId, generation.assistantId, {
+      done: true,
+      error: message.content ? undefined : 'Stopped before any output.',
+    });
+  }
+  useStreamingStore.getState().end(convId);
+  useChatsStore.getState().touchConversation(convId);
 }
 
 /** Cancel every in-flight provider request before destructive data changes. */
 export function stopAllGenerations(): void {
-  for (const convId of active.keys()) stopGeneration(convId);
+  for (const convId of [...active.keys()]) stopGeneration(convId);
 }
 
 /** Stop in-flight work before changing or removing its provider credentials. */
 export function stopGenerationsForProfile(profileId: string): void {
-  for (const [convId, activeGeneration] of active) {
+  for (const [convId, activeGeneration] of [...active]) {
     if (activeGeneration.profileId === profileId) stopGeneration(convId);
   }
 }
@@ -137,7 +164,9 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
   const started = Date.now();
   useStreamingStore.getState().start(convId);
   const abort = new AbortController();
-  active.set(convId, { abort, profileId: model.profileId });
+  const generation: ActiveGeneration = { abort, profileId: model.profileId, assistantId: assistant.id };
+  active.set(convId, generation);
+  const isCurrentGeneration = () => active.get(convId) === generation && !abort.signal.aborted;
   opts.onAccepted?.();
 
   // 2) build the request
@@ -150,20 +179,26 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     conv.systemPromptOverride !== undefined
       ? conv.systemPromptOverride
       : settings.generation.systemPrompt;
+  const agentMode = settings.agentScope.enabled && model.kind === 'remote';
 
+  // Standard chat must be standard chat. The long planning/tool system prompt
+  // belongs only to explicitly enabled Agent mode; injecting it into a simple
+  // Gemini conversation caused unnecessary hidden thinking and verbose turns.
   const storageRoot = currentRoot();
-  const system = buildSystemPrompt({
-    userSystemPrompt: effectiveUserSystemPrompt,
-    scopeLabel:
-      storageRoot.tier === 'granted'
-        ? `user-granted storage root “${settings.agentScope.safRootLabel ?? storageRoot.rootLabel}”`
-        : storageRoot.tier === 'unavailable'
-          ? storageRoot.rootLabel
-          : 'app sandbox',
-    // Agent commands are deliberately the selected-workspace file shell;
-    // only the separately permissioned Manual Terminal starts a native PTY.
-    executorReal: false,
-  });
+  const system = agentMode
+    ? buildSystemPrompt({
+        userSystemPrompt: effectiveUserSystemPrompt,
+        scopeLabel:
+          storageRoot.tier === 'granted'
+            ? `user-granted storage root “${settings.agentScope.safRootLabel ?? storageRoot.rootLabel}”`
+            : storageRoot.tier === 'unavailable'
+              ? storageRoot.rootLabel
+              : 'app sandbox',
+        // Agent commands are deliberately the selected-workspace file shell;
+        // only the separately permissioned Manual Terminal starts a native PTY.
+        executorReal: false,
+      })
+    : effectiveUserSystemPrompt?.trim() ?? '';
 
   let wire: WireMessage[] = buildWireMessages(
     history.map((m) => ({ role: m.role, content: m.content })),
@@ -196,12 +231,14 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
         }
         wireUser.content = parts as unknown as string;
       } catch (e) {
-        useChatsStore.getState().updateMessage(convId, assistant.id, {
-          done: true,
-          error: `Attachment failed: ${(e as Error).message}`,
-        });
-        active.delete(convId);
-        useStreamingStore.getState().end(convId);
+        if (isCurrentGeneration()) {
+          useChatsStore.getState().updateMessage(convId, assistant.id, {
+            done: true,
+            error: `Attachment failed: ${(e as Error).message}`,
+          });
+          active.delete(convId);
+          useStreamingStore.getState().end(convId);
+        }
         return true;
       }
     }
@@ -210,6 +247,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
   // 3) paint helpers
   let lastPaint = 0;
   const paintContent = (content: string) => {
+    if (!isCurrentGeneration()) return;
     const now = Date.now();
     if (now - lastPaint < 60) return;
     lastPaint = now;
@@ -219,13 +257,14 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
   // block stayed empty until the turn settled, and it was never stored at all.
   let lastReasoningPaint = 0;
   const paintReasoning = (reasoning: string) => {
-    if (!reasoning) return;
+    if (!isCurrentGeneration() || !reasoning) return;
     const now = Date.now();
     if (now - lastReasoningPaint < 60) return;
     lastReasoningPaint = now;
     useChatsStore.getState().updateMessage(convId, assistant.id, { reasoning });
   };
   const upsertToolEvent = (ev: unknown) => {
+    if (!isCurrentGeneration()) return;
     const cur = useChatsStore
       .getState()
       .conversations.find((c) => c.id === convId)
@@ -237,12 +276,12 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     useChatsStore.getState().updateMessage(convId, assistant.id, { toolEvents: events });
   };
   const upsertPlan = (steps: unknown) => {
+    if (!isCurrentGeneration()) return;
     useChatsStore.getState().updateMessage(convId, assistant.id, {
       planSteps: steps as ChatMessage['planSteps'],
     });
   };
 
-  const agentMode = settings.agentScope.enabled && model.kind === 'remote';
   // Title generation is a second provider request. Only make it after this
   // turn completed successfully; an auth/network failure or user stop must not
   // trigger another hidden request against the same broken endpoint.
@@ -266,6 +305,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
           onPlan: upsertPlan,
           onToolEvent: upsertToolEvent,
           onDone: ({ text, reasoning, ms, transcriptTail, toolCallCount, tokensIn, tokensOut, stopReason }) => {
+            if (!isCurrentGeneration()) return;
             shouldAutoTitle = stopReason !== 'aborted';
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               content: text,
@@ -284,6 +324,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
             haptics.light();
           },
           onError: (err) => {
+            if (!isCurrentGeneration()) return;
             haptics.error();
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               done: true,
@@ -299,8 +340,13 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
         signal: abort.signal,
         handlers: {
           onContent: paintContent,
+          // Reasoning-capable providers may stream this separately from text.
+          // Paint it live so the collapsed thinking panel is real, not a fake
+          // label, and retain it when the reply settles.
+          onReasoning: paintReasoning,
         },
       });
+      if (!isCurrentGeneration()) return true;
       shouldAutoTitle = true;
       useChatsStore.getState().updateMessage(convId, assistant.id, {
         content: result.content,
@@ -323,6 +369,10 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
       haptics.light();
     }
   } catch (e) {
+    // Stop may already have settled the visible turn and allowed the user to
+    // send again. A late native fetch rejection must not overwrite that newer
+    // conversation state.
+    if (!isCurrentGeneration()) return true;
     const err = e as Error;
     const aborted = abort.signal.aborted || err?.name === 'AbortError';
     const current = useChatsStore
@@ -345,10 +395,15 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
       });
     }
   } finally {
-    active.delete(convId);
-    useStreamingStore.getState().end(convId);
-    useChatsStore.getState().touchConversation(convId);
-    if (shouldAutoTitle) void maybeAutoTitle(convId, model);
+    // Do not let an older aborted request clear a newer request for the same
+    // chat. This also makes Stop visually immediate and safe to follow by a
+    // model switch + resend.
+    if (active.get(convId) === generation) {
+      active.delete(convId);
+      useStreamingStore.getState().end(convId);
+      useChatsStore.getState().touchConversation(convId);
+      if (shouldAutoTitle) void maybeAutoTitle(convId, model);
+    }
   }
   return true;
 }

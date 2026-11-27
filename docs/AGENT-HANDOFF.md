@@ -540,3 +540,48 @@ settles after a relaunch.
   `npx expo export --platform web` (0), `npx expo export --platform android`
   (0). Build evidence only; reasoning display still needs a live reasoning-model
   key and a device run.
+
+## Continuation — 2026-09-02 (reported Android interaction/provider repair)
+
+The owner installed an APK and reported retained keyboards across tabs/back,
+usage and prompt/edit sheets obscured by the IME, noisy/stuttered haptics,
+sluggish streamed/chat interaction, a flat undifferentiated Gemini model list,
+raw `<thought>` text leaking into replies, and Stop looking ignored for a long
+provider turn. Terminal/runtime work remains deferred.
+
+Changes:
+
+- `src/ai/session.ts`, `src/store/settings.ts` — standard chat no longer sends
+  the Agent planning/tool system prompt by default. Agent mode is now an
+  explicit advanced opt-in; persisted pre-v6 settings migrate to direct chat
+  once. Stop immediately completes the visible assistant turn, clears streaming
+  UI, and guards all late callbacks so an aborted old request cannot overwrite
+  a resend after a model switch.
+- `src/ai/assembler.ts`, `src/ai/remote.ts` — dedicated reasoning deltas stay
+  separate from answer text, and raw/HTML-escaped `<think>` and `<thought>`
+  wrappers are moved into the existing collapsed thinking panel. Gemini's
+  OpenAI-compatible root is validated as `/v1beta/openai`, catching the common
+  `/opens` typo before a chat request.
+- `src/components/ModelSheet.tsx` — model IDs can be searched and are grouped
+  into Fast & efficient, Pro, Reasoning, and Other. Availability badges are
+  conservative: generic `/models` responses do not include account-specific
+  billing, so Gemini is marked “CHECK GEMINI TIER” rather than falsely claiming
+  a free or paid entitlement.
+- `src/components/Sheet.tsx`, `Composer.tsx`, chat/tab/usage screens — sheets
+  wait for an Android IME dismissal before their opening calculation, routine
+  navigation dismisses a retained keyboard, editing/prompt forms do not steal
+  focus behind a sheet, and prompt insertion does not re-open the IME while the
+  library dismisses. A message long-press no longer also launches Android’s
+  native text-selection toolbar.
+- `src/components/PressableScale.tsx`, `src/utils/haptics.ts`, chat/tabs —
+  ordinary taps now use visual feedback only; vibration is reserved for
+  success/warning/error. Live streaming scrolls without creating an animation
+  per update, and inactive tab scenes freeze to reduce background layout work.
+
+Verification run locally: `npm run typecheck`, `npm test` (10/10), a controlled
+compiled `StreamAssembler` harness (raw/escaped thought tags plus dedicated
+reasoning), a controlled immediate-Stop/late-abort harness, a controlled
+Gemini-URL/model-catalog harness, Expo web export, Android Hermes export, and
+`git diff --check` all passed. This is not physical-device acceptance: the
+reported IME, model-choice, real Gemini reply/Stop, sheet, haptic, voice, and
+animation feel still need the owner’s next APK run.

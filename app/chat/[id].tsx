@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -306,7 +306,7 @@ export default function ChatScreen() {
       {/* header */}
       <View style={[styles.header, { paddingTop: insets.top + 6, backgroundColor: colors.bg, borderBottomColor: colors.border }]}>
         <View style={styles.headerRow}>
-          <PressableScale haptic="light" onPress={() => router.back()} scale={0.9}>
+          <PressableScale haptic="light" onPress={() => { Keyboard.dismiss(); router.back(); }} scale={0.9}>
             <View style={[styles.backBtn, { backgroundColor: colors.surface2 }]}>
               <Ionicons name="chevron-back" size={22} color={colors.text} />
             </View>
@@ -349,7 +349,10 @@ export default function ChatScreen() {
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingHorizontal: spacing(4), paddingTop: spacing(3), paddingBottom: spacing(4), flexGrow: 1, justifyContent: 'flex-end' }}
             keyboardShouldPersistTaps="handled"
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: streaming })}
+            // Repeated animated scrolls on every streamed token compete with
+            // layout/Markdown work and make Android feel heavy. Keep the view
+            // pinned without starting dozens of overlapping animations.
+            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
             showsVerticalScrollIndicator={false}
             removeClippedSubviews={Platform.OS === 'android'}
           >
@@ -400,7 +403,13 @@ export default function ChatScreen() {
         visible={modelSheet}
         onClose={() => setModelSheet(false)}
         current={conv.model}
-        onPicked={(m) => setConversationModel(id!, m)}
+        onPicked={(m) => {
+          // A model selection is an intentional replacement request. Stop any
+          // old provider turn first so it cannot complete into this chat after
+          // the user has moved to a different model.
+          stopGeneration(id!);
+          setConversationModel(id!, m);
+        }}
       />
 
       {/* conversation menu */}
@@ -415,7 +424,6 @@ export default function ChatScreen() {
             value={renameText}
             onChangeText={setRenameText}
             placeholder="Chat name"
-            autoFocus
             onSubmitEditing={() => {
               if (renameText.trim()) renameConversation(id!, renameText.trim());
               setRenameSheet(false);
@@ -575,7 +583,7 @@ export default function ChatScreen() {
       {/* edit user message */}
       <Sheet visible={editSheet} onClose={() => { setEditSheet(false); setEditingMsg(null); }} title="Edit message">
         <View style={{ paddingHorizontal: spacing(4), paddingBottom: spacing(2) }}>
-          <TextField value={editText} onChangeText={setEditText} multiline autoFocus />
+          <TextField value={editText} onChangeText={setEditText} multiline />
           <Button label="Save & resend" icon="arrow-up" onPress={onEditSave} />
         </View>
       </Sheet>
