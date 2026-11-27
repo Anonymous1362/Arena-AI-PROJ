@@ -178,6 +178,19 @@
   trigger Android text selection as well. Streaming scroll no longer launches
   an animation per update, inactive tab scenes freeze, and routine tap haptics
   are intentionally silent (success/warning/error only).
+- [x] A silent remote generation now has a 75-second **inactivity** watchdog.
+  It ends the typing state, aborts the request, and shows an actionable Retry /
+  model-switch message instead of waiting indefinitely. The timer resets when
+  content, reasoning, tool, or plan activity arrives, so a normally streaming
+  response is not cut off just because it is long.
+- [x] Read-aloud now has a device-voice picker under Agent & storage. Copper
+  lists installed native voices, favors English/enhanced entries in the picker,
+  persists the selection safely, and starts the selected voice immediately
+  rather than delaying playback for a voice-discovery call. It deliberately
+  makes no cloud-quality promise: Android’s installed TTS package controls the
+  voice quality. Generic compatible endpoints likewise expose no fake thinking
+  budget/Auto/low/medium/high control; only reasoning data actually received is
+  displayed.
 - [x] TypeScript (`npx tsc --noEmit`) and a production web export
   (`npx expo export --platform web`), an Android Hermes export, and `npm test`
   (10/10) passed for these chat-reliability, settings-bounds,

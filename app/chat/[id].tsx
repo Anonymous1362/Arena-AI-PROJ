@@ -149,6 +149,7 @@ export default function ChatScreen() {
 
   // auto read-aloud when the agent finishes a reply
   const autoRead = useSettingsStore((s) => s.agentScope.autoReadAloud);
+  const speechVoice = useSettingsStore((s) => s.agentScope.speechVoice);
   const lastSpokenRef = useRef<string | null>(null);
   const wasStreamingRef = useRef(false);
   useEffect(() => {
@@ -159,10 +160,10 @@ export default function ChatScreen() {
     }
     if (wasStreamingRef.current && lastMessage?.role === 'assistant' && lastMessage.done && lastMessage.content && lastSpokenRef.current !== lastMessage.id) {
       lastSpokenRef.current = lastMessage.id;
-      speakAloud(lastMessage.content, lastMessage.id);
+      speakAloud(lastMessage.content, lastMessage.id, speechVoice);
     }
     wasStreamingRef.current = false;
-  }, [streaming, autoRead, lastMessage]);
+  }, [streaming, autoRead, lastMessage, speechVoice]);
 
   // Resolves true as soon as the turn starts (not when it finishes), so the
   // composer can clear the draft immediately and keep it when a send is
@@ -514,7 +515,7 @@ export default function ChatScreen() {
             icon="volume-high-outline"
             label="Read aloud"
             onPress={() => {
-              if (actionsMsg) speakAloud(actionsMsg.content, actionsMsg.id);
+              if (actionsMsg) speakAloud(actionsMsg.content, actionsMsg.id, speechVoice);
               haptics.light();
               setActionsMsg(null);
             }}

@@ -1,12 +1,17 @@
 /**
- * Read-aloud (TTS) facade — expo-speech, free & offline on-device voices on
- * iOS/Android; falls back to Web Speech on the PWA. Respects the
- * auto-read-aloud setting; stop() always works.
+ * Read-aloud (TTS) facade — expo-speech on native and Web Speech on PWA.
+ * Voice quality is supplied by the device, so Copper exposes the installed
+ * voices instead of pretending a network/API model can improve them.
  */
 import * as Speech from 'expo-speech';
 import { Platform } from 'react-native';
 
-let lastHash = '';
+export interface ReadAloudVoice {
+  id: string;
+  label: string;
+  language: string;
+  enhanced: boolean;
+}
 
 /** Strip markdown noise so the voice reads clean prose. */
 function speakable(text: string): string {
@@ -21,24 +26,43 @@ function speakable(text: string): string {
     .slice(0, 3500);
 }
 
-export function isSpeaking(): boolean {
-  return Speech.isSpeakingAsync().catch(() => false) as unknown as boolean;
+/** List voices installed on this device, with English voices first for Copper's UI. */
+export async function getReadAloudVoices(): Promise<ReadAloudVoice[]> {
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    return voices
+      .map((voice) => ({
+        id: voice.identifier,
+        label: voice.name || voice.identifier,
+        language: voice.language || 'und',
+        enhanced: voice.quality === Speech.VoiceQuality.Enhanced,
+      }))
+      .sort((a, b) => {
+        const aEnglish = a.language.toLowerCase().startsWith('en') ? 0 : 1;
+        const bEnglish = b.language.toLowerCase().startsWith('en') ? 0 : 1;
+        return aEnglish - bEnglish || Number(b.enhanced) - Number(a.enhanced) || a.label.localeCompare(b.label);
+      });
+  } catch {
+    return [];
+  }
 }
 
-export async function speakAloud(text: string, hash?: string): Promise<void> {
+export async function speakAloud(text: string, _messageId?: string, voice?: string): Promise<void> {
   stopSpeaking();
   const clean = speakable(text);
   if (!clean) return;
-  lastHash = hash ?? '';
   if (Platform.OS === 'web') {
     const synth = (window as any).speechSynthesis;
     if (!synth) return;
-    const u = new SpeechSynthesisUtterance(clean);
-    u.rate = 1.0;
-    synth.speak(u);
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1.04;
+    synth.speak(utterance);
     return;
   }
-  Speech.speak(clean, { rate: 1.0, pitch: 1.0 });
+  // Do not wait to discover voices at playback time: that made the first
+  // read-aloud action feel delayed. A selected installed voice is used
+  // immediately; Android falls back to its system voice if it was removed.
+  Speech.speak(clean, { rate: 1.04, pitch: 1.0, voice: voice || undefined });
 }
 
 export function stopSpeaking(): void {
@@ -47,8 +71,4 @@ export function stopSpeaking(): void {
     return;
   }
   Speech.stop().catch(() => {});
-}
-
-export function shouldAutoRead(text: string, hash: string | undefined, done: boolean): boolean {
-  return done && !!hash && hash !== lastHash;
 }

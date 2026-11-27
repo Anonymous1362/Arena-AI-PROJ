@@ -169,6 +169,8 @@ function sanitizeAgentScope(value: unknown, base: AgentScope): AgentScope {
     ...(optionalText(value.safRootLabel) ? { safRootLabel: optionalText(value.safRootLabel) } : {}),
     confirmDangerous: flag(value.confirmDangerous, base.confirmDangerous),
     autoReadAloud: flag(value.autoReadAloud, base.autoReadAloud),
+    ...(optionalText(value.speechVoice) ? { speechVoice: optionalText(value.speechVoice) } : {}),
+    ...(optionalText(value.speechVoiceName) ? { speechVoiceName: optionalText(value.speechVoiceName) } : {}),
   };
 }
 

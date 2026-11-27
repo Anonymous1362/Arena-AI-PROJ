@@ -142,7 +142,7 @@ export default function ProvidersScreen() {
           {[
             ['hammer', 'Tool calling / agent mode', 'Claude, GPT-5/4.x, Gemini, Grok, DeepSeek, Qwen3 and most ≥7B instruct models.'],
             ['eye', 'Vision (image input)', 'Claude, GPT-4o/5, Gemini, Grok. Attach with the + button in chat.'],
-            ['sparkles', 'Extended thinking', 'Claude & reasoning models stream their reasoning; steps render in the plan panel.'],
+            ['sparkles', 'Reasoning display', 'When a compatible provider sends reasoning, Copper shows it separately. Generic OpenAI-compatible profiles do not receive invented thinking-level controls.'],
           ].map(([icon, title, body]) => (
             <View key={title} style={{ flexDirection: 'row', gap: 12, paddingVertical: spacing(2) }}>
               <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' }}>

@@ -43,6 +43,10 @@ export interface AgentScope {
   confirmDangerous: boolean;
   /** Read assistant replies aloud automatically. */
   autoReadAloud: boolean;
+  /** Native text-to-speech voice selected on this device (undefined = system default). */
+  speechVoice?: string;
+  /** User-facing cached label for the selected native voice. */
+  speechVoiceName?: string;
 }
 
 export interface AppearanceSettings {

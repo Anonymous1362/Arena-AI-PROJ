@@ -585,3 +585,35 @@ Gemini-URL/model-catalog harness, Expo web export, Android Hermes export, and
 `git diff --check` all passed. This is not physical-device acceptance: the
 reported IME, model-choice, real Gemini reply/Stop, sheet, haptic, voice, and
 animation feel still need the owner’s next APK run.
+
+## Continuation — 2026-09-02 (silent-provider recovery and installed TTS voice)
+
+Followed through on two remaining user-facing failure paths. Terminal/runtime
+work remains deferred.
+
+- `src/ai/session.ts` — every accepted remote request starts a 75-second
+  **inactivity** watchdog just before network work. Any visible text/reasoning
+  stream activity or an Agent plan/tool event renews it. If a gateway stays
+  silent, Copper immediately aborts the request, ends the typing state, and
+  gives the assistant message a Retry/model-switch recovery error. It uses the
+  same stale-callback protection as Stop, so a late abort cannot rewrite a new
+  message. An immediate-timer controlled harness verified this without waiting
+  75 seconds.
+- `src/utils/speech.ts`, `app/settings/agent.tsx`, `src/store/settings.ts` —
+  the Read replies aloud section now opens a picker of voice packages installed
+  on the device, marks enhanced voices, stores a safe selection, and starts it
+  directly at playback. Copper keeps the system-default option as a fallback
+  and clearly says quality comes from Android’s installed TTS voice, not an
+  unavailable cloud voice. The settings sanitizer rejects malformed persisted
+  voice values (covered by the test suite).
+- `app/(tabs)/providers.tsx` — removed the unsupported "Extended thinking"
+  marketing claim. Copper displays reasoning only when a compatible provider
+  actually sends it and does not invent generic thinking-level/budget controls
+  for OpenAI-compatible endpoints whose semantics are not validated.
+
+Verification locally: `npm run typecheck`, `npm test` (11/11), `git diff
+--check`, controlled silent-provider watchdog and 401-provider-error harnesses
+passed. Fresh Expo web and Android Hermes exports passed after this work (the
+Android bundle was 5.4 MB). These are bundle/build checks, not physical-device
+acceptance: IME, real Gemini, sheet, haptic, voice, and animation feel must be
+rerun from the final committed SHA before device acceptance is claimed.

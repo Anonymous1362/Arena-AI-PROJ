@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, ScrollView, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,8 @@ import { useTheme, radius, spacing } from '@/src/theme';
 import { useSettingsStore } from '@/src/store/settings';
 import { AppHeader } from '@/src/components/AppHeader';
 import { Banner, Button, Card, SwitchRow } from '@/src/components/ui';
+import { Sheet } from '@/src/components/Sheet';
+import { PressableScale } from '@/src/components/PressableScale';
 import {
   getStorageStatus,
   initExternalStorage,
@@ -18,6 +20,7 @@ import {
 import { TOOL_SPECS } from '@/src/agent/tools';
 import { haptics } from '@/src/utils/haptics';
 import { CopperExec } from '@/modules/copper-exec';
+import { getReadAloudVoices, type ReadAloudVoice } from '@/src/utils/speech';
 
 export default function AgentSettingsScreen() {
   const { colors } = useTheme();
@@ -32,6 +35,16 @@ export default function AgentSettingsScreen() {
   const [note, setNote] = useState<string | null>(null);
   const [storage, setStorage] = useState<FsPermissionInfo>(() => getStorageStatus());
   const [hasAllFiles, setHasAllFiles] = useState(false);
+  const [voiceSheet, setVoiceSheet] = useState(false);
+  const [voices, setVoices] = useState<ReadAloudVoice[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+
+  const openVoicePicker = async () => {
+    setVoiceSheet(true);
+    setLoadingVoices(true);
+    setVoices(await getReadAloudVoices());
+    setLoadingVoices(false);
+  };
 
   // Re-arm persisted SAF access after hydration and gather removable-volume
   // information only to focus the Android folder picker.
@@ -114,8 +127,8 @@ export default function AgentSettingsScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing(4), paddingBottom: insets.bottom + spacing(8) }}>
         <Card>
           <SwitchRow
-            label="Agent mode"
-            hint="Tools, terminal & multi-step task execution in chat."
+            label="Agent mode (advanced)"
+            hint="Enables tools and multi-step plans. Leave off for direct everyday chat."
             value={agentScope.enabled}
             onChange={(v) => patch({ enabled: v })}
           />
@@ -140,10 +153,19 @@ export default function AgentSettingsScreen() {
           />
           <SwitchRow
             label="Read replies aloud"
-            hint="Speak each finished answer (on-device voices)."
+            hint="Speak each finished answer using an on-device voice."
             value={agentScope.autoReadAloud}
             onChange={(v) => patch({ autoReadAloud: v })}
           />
+          <Button
+            label={agentScope.speechVoiceName ? `Voice: ${agentScope.speechVoiceName}` : 'Choose read-aloud voice'}
+            variant="secondary"
+            icon="volume-high-outline"
+            onPress={() => void openVoicePicker()}
+          />
+          <Text style={{ color: colors.textFaint, fontSize: 11.5, lineHeight: 17, marginTop: spacing(2) }}>
+            Copper uses Android’s installed text-to-speech voices. Downloading a higher-quality voice in Android settings makes it available here.
+          </Text>
         </Card>
 
         <Card style={{ marginTop: spacing(4) }}>
@@ -291,6 +313,67 @@ export default function AgentSettingsScreen() {
           Nothing ever leaves the device except the model API you configured.
         </Text>
       </ScrollView>
+
+      <Sheet visible={voiceSheet} onClose={() => setVoiceSheet(false)} title="Read-aloud voice" maxHeight="78%">
+        <ScrollView contentContainerStyle={{ paddingHorizontal: spacing(4), paddingBottom: spacing(4) }} keyboardShouldPersistTaps="handled">
+          <Text style={{ color: colors.textSub, fontSize: 12.5, lineHeight: 18, marginBottom: spacing(2) }}>
+            Choose one of the voices installed on this phone. The system default remains the fastest fallback if a downloaded voice is removed.
+          </Text>
+          <PressableScale
+            haptic="none"
+            onPress={() => {
+              patch({ speechVoice: undefined, speechVoiceName: undefined });
+              setVoiceSheet(false);
+            }}
+          >
+            <View style={[styles.voiceRow, { borderColor: colors.border, backgroundColor: !agentScope.speechVoice ? colors.accentSoft : colors.surface2 }]}>
+              <Ionicons name="phone-portrait-outline" size={17} color={!agentScope.speechVoice ? colors.accent : colors.textFaint} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>System default</Text>
+                <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>Use Android’s current preferred voice</Text>
+              </View>
+              {!agentScope.speechVoice ? <Ionicons name="checkmark-circle" size={18} color={colors.accent} /> : null}
+            </View>
+          </PressableScale>
+          {loadingVoices ? <Text style={{ color: colors.textFaint, fontSize: 13, paddingVertical: spacing(4), textAlign: 'center' }}>Loading installed voices…</Text> : null}
+          {!loadingVoices && voices.length === 0 ? <Text style={{ color: colors.textFaint, fontSize: 13, paddingVertical: spacing(4), textAlign: 'center' }}>No voice list is available in this build. Android’s system default will be used.</Text> : null}
+          {voices.map((voice) => {
+            const selected = agentScope.speechVoice === voice.id;
+            return (
+              <PressableScale
+                key={voice.id}
+                haptic="none"
+                onPress={() => {
+                  patch({ speechVoice: voice.id, speechVoiceName: `${voice.label} · ${voice.language}${voice.enhanced ? ' · enhanced' : ''}` });
+                  setVoiceSheet(false);
+                }}
+              >
+                <View style={[styles.voiceRow, { borderColor: colors.border, backgroundColor: selected ? colors.accentSoft : colors.surface }]}>
+                  <Ionicons name={voice.enhanced ? 'sparkles-outline' : 'volume-medium-outline'} size={17} color={selected ? colors.accent : colors.textFaint} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>{voice.label}</Text>
+                    <Text style={{ color: colors.textFaint, fontSize: 12, marginTop: 1 }}>{voice.language}{voice.enhanced ? ' · enhanced quality' : ''}</Text>
+                  </View>
+                  {selected ? <Ionicons name="checkmark-circle" size={18} color={colors.accent} /> : null}
+                </View>
+              </PressableScale>
+            );
+          })}
+        </ScrollView>
+      </Sheet>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(2.6),
+    marginTop: spacing(2),
+  },
+});

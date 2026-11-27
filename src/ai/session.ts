@@ -41,9 +41,14 @@ interface ActiveGeneration {
   abort: AbortController;
   profileId: string;
   assistantId: string;
+  /** A provider that never begins/continues a response must not spin forever. */
+  idleTimeout?: ReturnType<typeof setTimeout>;
 }
 
 const active = new Map<string, ActiveGeneration>();
+/** Long enough for a cold remote request, short enough to prevent “typing…” for minutes. */
+const GENERATION_IDLE_TIMEOUT_MS = 75_000;
+const GENERATION_TIMEOUT_ERROR = 'No response from this model for 75 seconds. Tap Retry, or choose a different model.';
 
 /**
  * End the visible turn immediately. Native HTTP abort can take time to settle
@@ -53,6 +58,7 @@ const active = new Map<string, ActiveGeneration>();
 export function stopGeneration(convId: string): void {
   const generation = active.get(convId);
   if (!generation) return;
+  if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
   generation.abort.abort();
   active.delete(convId);
 
@@ -167,6 +173,25 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
   const generation: ActiveGeneration = { abort, profileId: model.profileId, assistantId: assistant.id };
   active.set(convId, generation);
   const isCurrentGeneration = () => active.get(convId) === generation && !abort.signal.aborted;
+  const timeoutGeneration = () => {
+    if (active.get(convId) !== generation || abort.signal.aborted) return;
+    // Native fetch cancellation can settle late. End the visible request first,
+    // exactly like Stop, so a silent gateway cannot leave typing dots alive.
+    abort.abort();
+    active.delete(convId);
+    haptics.error();
+    useChatsStore.getState().updateMessage(convId, assistant.id, {
+      done: true,
+      error: GENERATION_TIMEOUT_ERROR,
+    });
+    useStreamingStore.getState().end(convId);
+    useChatsStore.getState().touchConversation(convId);
+  };
+  const noteProviderActivity = () => {
+    if (!isCurrentGeneration()) return;
+    if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
+    generation.idleTimeout = setTimeout(timeoutGeneration, GENERATION_IDLE_TIMEOUT_MS);
+  };
   opts.onAccepted?.();
 
   // 2) build the request
@@ -286,6 +311,9 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
   // turn completed successfully; an auth/network failure or user stop must not
   // trigger another hidden request against the same broken endpoint.
   let shouldAutoTitle = false;
+  // Start only when network work is about to begin. Image conversion may take
+  // a moment locally and should not consume the provider-response allowance.
+  noteProviderActivity();
 
   try {
     if (agentMode) {
@@ -300,12 +328,25 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
         confirmDangerous: settings.agentScope.confirmDangerous,
         signal: abort.signal,
         callbacks: {
-          onText: paintContent,
-          onReasoning: paintReasoning,
-          onPlan: upsertPlan,
-          onToolEvent: upsertToolEvent,
+          onText: (text) => {
+            noteProviderActivity();
+            paintContent(text);
+          },
+          onReasoning: (reasoning) => {
+            noteProviderActivity();
+            paintReasoning(reasoning);
+          },
+          onPlan: (steps) => {
+            noteProviderActivity();
+            upsertPlan(steps);
+          },
+          onToolEvent: (event) => {
+            noteProviderActivity();
+            upsertToolEvent(event);
+          },
           onDone: ({ text, reasoning, ms, transcriptTail, toolCallCount, tokensIn, tokensOut, stopReason }) => {
             if (!isCurrentGeneration()) return;
+            if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
             shouldAutoTitle = stopReason !== 'aborted';
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               content: text,
@@ -325,6 +366,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
           },
           onError: (err) => {
             if (!isCurrentGeneration()) return;
+            if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
             haptics.error();
             useChatsStore.getState().updateMessage(convId, assistant.id, {
               done: true,
@@ -339,14 +381,21 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
         params: settings.generation,
         signal: abort.signal,
         handlers: {
-          onContent: paintContent,
+          onContent: (content) => {
+            noteProviderActivity();
+            paintContent(content);
+          },
           // Reasoning-capable providers may stream this separately from text.
           // Paint it live so the collapsed thinking panel is real, not a fake
           // label, and retain it when the reply settles.
-          onReasoning: paintReasoning,
+          onReasoning: (reasoning) => {
+            noteProviderActivity();
+            paintReasoning(reasoning);
+          },
         },
       });
       if (!isCurrentGeneration()) return true;
+      if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
       shouldAutoTitle = true;
       useChatsStore.getState().updateMessage(convId, assistant.id, {
         content: result.content,
@@ -399,6 +448,7 @@ export async function sendMessage(convId: string, opts: SendOptions): Promise<bo
     // chat. This also makes Stop visually immediate and safe to follow by a
     // model switch + resend.
     if (active.get(convId) === generation) {
+      if (generation.idleTimeout) clearTimeout(generation.idleTimeout);
       active.delete(convId);
       useStreamingStore.getState().end(convId);
       useChatsStore.getState().touchConversation(convId);

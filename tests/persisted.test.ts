@@ -78,6 +78,22 @@ test('settings force the workspace boundary back on', () => {
   assert.equal(merged.generation.maxTokens, 4096);
 });
 
+test('settings retain a selected installed read-aloud voice and reject malformed voice fields', () => {
+  const selected = mergeSettingsState(
+    { agentScope: { speechVoice: 'en-us-voice', speechVoiceName: 'English · enhanced' } },
+    settingsBase()
+  );
+  assert.equal(selected.agentScope.speechVoice, 'en-us-voice');
+  assert.equal(selected.agentScope.speechVoiceName, 'English · enhanced');
+
+  const invalid = mergeSettingsState(
+    { agentScope: { speechVoice: 7, speechVoiceName: {} } },
+    settingsBase()
+  );
+  assert.equal(invalid.agentScope.speechVoice, undefined);
+  assert.equal(invalid.agentScope.speechVoiceName, undefined);
+});
+
 test('chats drop malformed records instead of rendering them', () => {
   const base = { conversations: [] };
   const merged = mergeChatsState(
