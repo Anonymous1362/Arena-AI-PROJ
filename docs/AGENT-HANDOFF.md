@@ -625,3 +625,12 @@ start in this Arena sandbox because neither `JAVA_HOME` nor a `java` executable
 is installed. This is an environment prerequisite failure before Gradle could
 compile an APK, not a successful local APK claim. The generated `android/`
 directory is ignored and did not change the repository.
+
+GitHub CI for the implementation commit passed:
+[`45955542684`](https://github.com/Anonymous1362/Arena-AI-PROJ/actions/runs/45955542684)
+on `e7e73b2f91955a53df06b0a9dc033ddc3c888762` completed TypeScript plus
+Android and web bundle smoke tests successfully. Its runtime/device jobs were
+intentionally skipped and it did **not** produce an installable release APK.
+The separate Android APK workflow `45934293457` was successful, but it built
+`main` SHA `2f584f48c6267636c8dab2882d7cf6992ff22e31`, not these repairs; do
+not use that artifact as device evidence for the Arena branch.
